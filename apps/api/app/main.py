@@ -11,12 +11,21 @@ from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.search.repo import Candidate, search_complexes
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
 
 app = FastAPI(title="ht-estate API", version="0.1.0")
+
+# dev 프론트(Next.js localhost:3000)가 API를 호출할 수 있게 — 개인 단계 범위.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_db() -> Iterator[sqlite3.Connection]:

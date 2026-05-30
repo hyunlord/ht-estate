@@ -12,6 +12,9 @@ SHELL := /bin/bash
 API_DIR := apps/api
 WEB_DIR := apps/web
 export NEXT_TELEMETRY_DISABLED := 1
+# 게이트는 키리스·결정론: web 빌드에서 Kakao JS 키를 비운다(Next는 process.env가
+# .env.local보다 우선 → e2e가 placeholder 경로로 결정론적). 라이브 지도는 `next dev`.
+export NEXT_PUBLIC_KAKAO_JS_KEY :=
 
 .PHONY: gate gate-api gate-web gate-e2e \
         ruff-api pyright-api pytest-api api-run \
