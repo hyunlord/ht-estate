@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>부동산 Agent — 시스템 아키텍처</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e16; --surface:#111826; --surface2:#161f30;
+    --border:#283145; --border-soft:#1d2536;
+    --ink:#e9edf5; --muted:#95a1b5; --faint:#6b7689;
+    --warm:#f2a64c; --warm-bg:rgba(242,166,76,.08); --warm-line:rgba(242,166,76,.45);
+    --cool:#46c8e0; --cool-bg:rgba(70,200,224,.08); --cool-line:rgba(70,200,224,.45);
+    --green:#5fd99a; --green-bg:rgba(95,217,154,.09);
+    --pink:#f47fb3; --pink-bg:rgba(244,127,179,.10);
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
+    --sans:'Sora',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--sans); background:var(--bg); color:var(--ink);
+    line-height:1.5; padding:48px 24px 64px; -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at center, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size:23px 23px;
+  }
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(ellipse 80% 60% at 50% -10%, rgba(70,200,224,.06), transparent 60%),
+               radial-gradient(ellipse 70% 50% at 10% 110%, rgba(242,166,76,.05), transparent 55%);}
+  .wrap{max-width:1120px;margin:0 auto;position:relative;z-index:1}
+
+  /* header */
+  header{margin-bottom:30px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);margin-bottom:12px}
+  h1{font-size:clamp(26px,4vw,36px);font-weight:700;letter-spacing:-.025em;line-height:1.05}
+  h1 .v{color:var(--cool);font-family:var(--mono);font-size:.5em;font-weight:500;vertical-align:super;margin-left:8px}
+  .lede{color:var(--muted);font-size:14.5px;max-width:760px;margin-top:14px}
+  .lede b{color:var(--warm);font-weight:600}
+  .lede i{color:var(--cool);font-style:normal;font-weight:600}
+
+  /* control bar */
+  .bar{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin:26px 0 8px;
+    padding:14px 16px;background:var(--surface);border:1px solid var(--border-soft);border-radius:12px}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;font-family:var(--mono);font-size:11px}
+  .legend span{display:flex;align-items:center;gap:7px;color:var(--muted)}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .toggle{display:flex;gap:6px;margin-left:auto}
+  .toggle button{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--muted);
+    background:transparent;border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;transition:.18s}
+  .toggle button:hover{color:var(--ink);border-color:var(--faint)}
+  .toggle button.on{color:var(--bg);background:var(--ink);border-color:var(--ink);font-weight:500}
+
+  /* principle banner */
+  .principle{margin:18px 0 30px;padding:16px 20px;border-radius:12px;
+    background:linear-gradient(100deg,var(--warm-bg),var(--cool-bg));
+    border:1px solid var(--border-soft);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  .principle .k{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--ink);font-weight:500}
+  .principle .x{color:var(--muted);font-size:13.5px}
+  .principle .x em{font-style:normal;color:var(--cool);font-family:var(--mono);font-size:12.5px}
+
+  /* layout */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:0}
+
+  /* cards */
+  .card{background:var(--surface);border:1px solid var(--border-soft);border-radius:12px;padding:16px 18px;
+    opacity:0;transform:translateY(14px);animation:rise .55s cubic-bezier(.22,1,.36,1) forwards;transition:opacity .35s,filter .35s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .card.build{border-left:3px solid var(--warm)}
+  .card.query{border-left:3px solid var(--cool)}
+  .card.green{border-left:3px solid var(--green)}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:8px}
+  .build .tag{color:var(--warm)} .query .tag{color:var(--cool)} .green .tag{color:var(--green)}
+  .tag .ph{margin-left:auto;font-size:9.5px;letter-spacing:.1em;color:var(--faint);font-weight:400}
+  .ttl{font-family:var(--sans);font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:4px}
+  .desc{font-size:12.5px;color:var(--muted)}
+
+  /* source chips */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--surface2);
+    border:1px solid var(--border);border-radius:6px;padding:5px 9px}
+  .chip.muted{color:var(--muted);border-style:dashed}
+
+  /* numbered steps */
+  ol.steps{list-style:none;margin-top:12px;display:flex;flex-direction:column;gap:9px;counter-reset:s}
+  ol.steps li{counter-increment:s;display:flex;gap:11px;font-size:12.8px;color:var(--muted)}
+  ol.steps li::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:10.5px;
+    color:var(--warm);background:var(--warm-bg);border:1px solid var(--warm-line);border-radius:5px;
+    padding:2px 5px;height:fit-content;flex:none;font-weight:500}
+  ol.steps li b{color:var(--ink);font-weight:600}
+  ol.steps li code{font-family:var(--mono);font-size:11.5px;color:var(--warm);background:var(--warm-bg);padding:1px 5px;border-radius:4px}
+  ol.steps li.hard::before{content:'!';color:var(--pink);background:var(--pink-bg);border-color:var(--pink)}
+  ol.steps li.hard b{color:var(--pink)}
+
+  /* flow connector */
+  .flow{display:flex;flex-direction:column;align-items:center;height:26px;justify-content:center;transition:opacity .35s}
+  .flow .line{width:2px;flex:1;background:var(--border)}
+  .flow.build .line{background:var(--warm-line)} .flow.query .line{background:var(--cool-line)}
+  .flow .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--faint);padding:3px 0;text-transform:uppercase}
+  .flow .ch{color:var(--faint);font-size:11px;line-height:1}
+  .flow.build .ch{color:var(--warm)} .flow.query .ch{color:var(--cool)}
+
+  /* the store */
+  .store{margin:8px 0;position:relative;background:linear-gradient(180deg,var(--surface2),var(--surface));
+    border:1px solid var(--border);border-radius:14px;padding:22px;
+    box-shadow:0 0 0 1px rgba(70,200,224,.05),0 16px 40px -24px rgba(0,0,0,.8)}
+  .store-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .store-head .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);font-weight:500}
+  .store-head .sub{font-size:12px;color:var(--muted)}
+  .store-tabs{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .store-tabs span{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:4px 9px;border-radius:6px}
+  .store-tabs .w{color:var(--warm);background:var(--warm-bg);border:1px solid var(--warm-line)}
+  .store-tabs .c{color:var(--cool);background:var(--cool-bg);border:1px solid var(--cool-line)}
+  .tables{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:760px){.tables{grid-template-columns:1fr}}
+  .tbl{background:var(--bg);border:1px solid var(--border-soft);border-radius:10px;padding:14px}
+  .tbl.enr{border-color:rgba(95,217,154,.3);background:linear-gradient(180deg,var(--green-bg),var(--bg))}
+  .tbl .nm{font-family:var(--mono);font-size:13px;color:var(--ink);font-weight:500;margin-bottom:3px}
+  .tbl.enr .nm{color:var(--green)}
+  .tbl .role{font-size:11px;color:var(--faint);margin-bottom:10px}
+  .fields{display:flex;flex-direction:column;gap:5px}
+  .fields div{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:7px}
+  .fields div span{color:var(--faint)}
+  .fields .pk{color:var(--cool)} .tbl.enr .fields .pk{color:var(--green)}
+  .fields .derived{color:var(--warm)}
+
+  /* query lazy loop */
+  .branch{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+  .br{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--muted)}
+  .br .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;padding:3px 8px;border-radius:5px;flex:none;font-weight:500;margin-top:1px}
+  .br.hit .k{color:var(--green);background:var(--green-bg);border:1px solid rgba(95,217,154,.4)}
+  .br.miss .k{color:var(--cool);background:var(--cool-bg);border:1px solid var(--cool-line)}
+  .br b{color:var(--ink);font-weight:600}
+  .br code{font-family:var(--mono);font-size:11px;color:var(--green);background:var(--green-bg);padding:1px 5px;border-radius:4px}
+
+  /* explanation card */
+  .rows{margin-top:13px;display:flex;flex-direction:column;gap:8px;font-size:12.8px}
+  .row{display:flex;gap:10px;align-items:baseline;padding-bottom:8px;border-bottom:1px solid var(--border-soft)}
+  .row:last-child{border:none;padding-bottom:0}
+  .row .st{font-family:var(--mono);font-size:13px;width:14px;flex:none;text-align:center}
+  .row .ok{color:var(--green)} .row .mid{color:var(--warm)} .row .info{color:var(--cool)}
+  .row .crit{color:var(--ink);font-weight:600;width:62px;flex:none}
+  .row .val{color:var(--muted);flex:1}
+  .row .src{font-family:var(--mono);font-size:10.5px;color:var(--cool);text-decoration:none;border-bottom:1px dotted var(--cool-line);white-space:nowrap}
+  .row .src:hover{color:var(--ink)}
+
+  /* provenance band */
+  .band{margin:8px 0;padding:18px 20px;border-radius:12px;background:var(--green-bg);border:1px solid rgba(95,217,154,.22)}
+  .band .tag{color:var(--green)}
+  .schema{font-family:var(--mono);font-size:13px;color:var(--ink);margin-top:6px;letter-spacing:.01em}
+  .schema .f{color:var(--green)} .schema .a{color:var(--muted)}
+  .band .note{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .band .note em{font-style:normal;color:var(--green);font-family:var(--mono);font-size:11.5px}
+
+  /* risk footer */
+  .risks{margin-top:8px}
+  .risks .tag{color:var(--pink)}
+  .rlist{display:flex;flex-direction:column;gap:9px;margin-top:11px}
+  .rlist div{font-size:12.6px;color:var(--muted);display:flex;gap:9px}
+  .rlist div::before{content:'▸';color:var(--pink);flex:none}
+  .rlist div b{color:var(--ink);font-weight:600}
+
+  /* dim states */
+  body[data-path="build"] .query, body[data-path="build"] .flow.query{opacity:.16;filter:grayscale(.7)}
+  body[data-path="query"] .build, body[data-path="query"] .flow.build{opacity:.16;filter:grayscale(.7)}
+
+  .sectlbl{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--faint);text-align:center;margin:30px 0 14px}
+</style>
+</head>
+<body data-path="all">
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Realty Discovery Agent</div>
+    <h1>부동산 Agent — 시스템 아키텍처<span class="v">v1</span></h1>
+    <p class="lede">조건으로 검색이 안 되는 정보(헬스장·전용면적·세대당 주차·신축 정도·강아지·구조)를 — <b>벌크로 구축한 결정론 레이어</b>와 <i>필요할 때만 긁어 캐싱하는 확률 레이어</i>로 합치고, 모든 사실에 출처를 단다.</p>
+  </header>
+
+  <div class="bar">
+    <div class="legend">
+      <span><i class="dot" style="background:var(--warm)"></i>eager warm · build-time</span>
+      <span><i class="dot" style="background:var(--cool)"></i>lazy read-through · query-time</span>
+      <span><i class="dot" style="background:var(--green)"></i>provenance · 출처</span>
+      <span><i class="dot" style="background:var(--pink)"></i>핵심 난이도</span>
+    </div>
+    <div class="toggle">
+      <button data-p="all" class="on" onclick="setPath('all',this)">전체</button>
+      <button data-p="build" onclick="setPath('build',this)">Build-time</button>
+      <button data-p="query" onclick="setPath('query',this)">Query-time</button>
+    </div>
+  </div>
+
+  <div class="principle">
+    <span class="k">한 개의 저장소 · 두 가지 적재 모드</span>
+    <span class="x">search = <em>cache miss</em> 로 트리거되는 lazy 적재. build와 search는 같은 store의 cold / warm path.</span>
+  </div>
+
+  <!-- entry row -->
+  <div class="grid2">
+    <div class="col">
+      <div class="card build" style="animation-delay:.05s">
+        <div class="tag">L0 · Sources <span class="ph">구조화 · 벌크</span></div>
+        <div class="ttl">공공 데이터 소스</div>
+        <div class="desc">유한·저변동·고적중·벌크 수신 → 미리 전부 적재</div>
+        <div class="chips">
+          <span class="chip">MOLIT 아파트 매매 실거래</span>
+          <span class="chip">K-apt 단지 기본정보 · 목록</span>
+          <span class="chip">Kakao 지오코딩</span>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card query" style="animation-delay:.05s">
+        <div class="tag">Entry · Query <span class="ph">자연어 질의</span></div>
+        <div class="ttl">사용자 질의 → filter_spec</div>
+        <div class="desc">LLM이 자연어를 hard / soft 조건으로 구조화</div>
+        <div class="chips">
+          <span class="chip">hard: has_gym · 사용승인 · 전용 · 지하주차 · parking_ratio</span>
+          <span class="chip">soft: pet_allowed · floorplan</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="flow build"><span class="line"></span><span class="ch">▼</span></div>
+    <div class="flow query"><span class="line"></span><span class="ch">▼</span></div>
+  </div>
+
+  <!-- processing row -->
+  <div class="grid2">
+    <div class="col">
+      <div class="card build" style="animation-delay:.12s">
+        <div class="tag">L1 · Ingestion <span class="ph">eager warm</span></div>
+        <div class="ttl">적재 파이프라인</div>
+        <ol class="steps">
+          <li>단지 <b>열거</b> — K-apt 목록 API → 단지코드</li>
+          <li>단지정보 적재 → <code>has_gym</code> 파싱 · <code>parking_ratio</code> · 지하주차 · 사용승인일 · 복도유형</li>
+          <li>실거래 적재 → 전용면적 · 가격 · 층 · 건축년도</li>
+          <li>지오코딩 — 주소 → lat/lng <b>(정적 · 영구캐시)</b></li>
+          <li class="hard"><b>퍼지 조인</b> — 실거래엔 단지코드 없음 → 도로명주소 + 사용승인일 매칭 · <code style="color:var(--pink);background:var(--pink-bg)">match_confidence</code></li>
+        </ol>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card query" style="animation-delay:.12s">
+        <div class="tag">L3 · Hard Filter <span class="ph">결정론</span></div>
+        <div class="ttl">SQL → 후보 산출</div>
+        <div class="desc"><code style="font-family:var(--mono);color:var(--cool)">complex ⨝ transaction</code> + 지도면 bbox. 이진 in / out 으로 거른다.</div>
+        <div class="chips">
+          <span class="chip" style="color:var(--cool);border-color:var(--cool-line)">→ 후보 ~20 단지</span>
+        </div>
+        <div class="desc" style="margin-top:11px;font-size:12px">lazy 추출은 <b style="color:var(--cool)">살아남은 후보에만</b> 낸다 — 전국 수만 단지를 미리 추출하지 않는 이유.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="flow build"><span class="line"></span><span class="lbl">writes ▼</span></div>
+    <div class="flow query"><span class="line"></span><span class="lbl">read ▼</span></div>
+  </div>
+
+  <!-- the store -->
+  <div class="store" style="animation:rise .6s cubic-bezier(.22,1,.36,1) .2s forwards;opacity:0;transform:translateY(14px)">
+    <div class="store-head">
+      <span class="lbl">L2 · Canonical Store</span>
+      <span class="sub">두 적재 모드가 만나는 단일 저장소 · SQLite (→ Postgres/PostGIS)</span>
+      <div class="store-tabs">
+        <span class="w">← writes (build)</span>
+        <span class="c">↺ read-through (query)</span>
+      </div>
+    </div>
+    <div class="tables">
+      <div class="tbl">
+        <div class="nm">complex</div>
+        <div class="role">단지 · K-apt · eager</div>
+        <div class="fields">
+          <div class="pk">complex_id <span>PK</span></div>
+          <div>approval_date <span>신축</span></div>
+          <div>household_count</div>
+          <div>parking_underground</div>
+          <div class="derived">parking_ratio <span>파생</span></div>
+          <div class="derived">has_gym <span>파생</span></div>
+          <div>lat · lng · source_url</div>
+        </div>
+      </div>
+      <div class="tbl">
+        <div class="nm">transaction</div>
+        <div class="role">실거래 · MOLIT · eager</div>
+        <div class="fields">
+          <div class="pk">txn_id <span>PK</span></div>
+          <div>complex_id <span>FK</span></div>
+          <div style="color:var(--pink)">match_confidence</div>
+          <div>net_area <span>전용</span></div>
+          <div>price · floor</div>
+          <div>build_year · deal_date</div>
+        </div>
+      </div>
+      <div class="tbl enr">
+        <div class="nm">enrichment</div>
+        <div class="role">lazy 적재 · 출처 보관</div>
+        <div class="fields">
+          <div class="pk">complex_id · attribute · source_url</div>
+          <div>value <span>JSON</span></div>
+          <div>confidence</div>
+          <div>source_type</div>
+          <div>fetched_at</div>
+          <div>ttl_expires_at</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="flow build"><span class="lbl">scheduled</span><span class="line"></span></div>
+    <div class="flow query"><span class="lbl">▲ write-back · ▼ miss</span><span class="line"></span></div>
+  </div>
+
+  <!-- lower row -->
+  <div class="grid2">
+    <div class="col">
+      <div class="card build" style="animation-delay:.28s">
+        <div class="tag">Schedule <span class="ph">신선도</span></div>
+        <div class="ttl">증분 갱신 주기</div>
+        <div class="chips">
+          <span class="chip">실거래 · 월</span>
+          <span class="chip">단지정보 · 분기</span>
+          <span class="chip">지오코드 · 1회</span>
+          <span class="chip muted">매물 실시간 · 캐시 안 함</span>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card query" style="animation-delay:.28s">
+        <div class="tag">L3 · Lazy Read-through <span class="ph">soft 조건</span></div>
+        <div class="ttl">enrichment 조회 → 적재</div>
+        <div class="branch">
+          <div class="br hit"><span class="k">HIT</span><span>TTL 유효 → <b>즉시 반환</b></span></div>
+          <div class="br miss"><span class="k">MISS</span><span>라이브 수집 → LLM 추출 (+confidence+출처) → <code>write-back (TTL)</code> → enrichment</span></div>
+        </div>
+        <div class="chips" style="margin-top:12px">
+          <span class="chip muted">웹검색 · 블로그 · 카페</span>
+          <span class="chip muted">YouTube 자막</span>
+          <span class="chip muted">관리규약</span>
+          <span class="chip muted">(개인용) 호갱노노 · 아실</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow query" style="height:24px"><span class="line"></span><span class="ch">▼</span></div>
+
+  <!-- explanation card -->
+  <div class="card query" style="animation-delay:.34s">
+    <div class="tag">L4 · Ranking & Explanation <span class="ph">출처 보여주기 + 이동</span></div>
+    <div class="ttl">단지 카드 — 조건별 근거 + 딥링크</div>
+    <div class="rows">
+      <div class="row"><span class="st ok">✓</span><span class="crit">헬스장</span><span class="val">부대복리시설 키워드 일치</span><a class="src" href="#">K-apt ↗</a></div>
+      <div class="row"><span class="st ok">✓</span><span class="crit">전용 84㎡</span><span class="val">실거래 14.2억 (2025-04)</span><a class="src" href="#">실거래 ↗</a></div>
+      <div class="row"><span class="st ok">✓</span><span class="crit">지하주차</span><span class="val">세대당 1.42대</span><a class="src" href="#">K-apt ↗</a></div>
+      <div class="row"><span class="st mid">△</span><span class="crit">강아지</span><span class="val">관리규약상 가능 · 견종 제한 / <b style="color:var(--warm)">확인 권장</b> · conf 0.6</span><a class="src" href="#">맘카페 2024-03 ↗</a></div>
+      <div class="row"><span class="st info">○</span><span class="crit">구조</span><span class="val">판상형 · 3bay · 남향 <span style="color:var(--faint)">(VLM feature 추출 · 점수 아님)</span></span><a class="src" href="#">평면도 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="sectlbl">— Cross-cutting —</div>
+
+  <!-- provenance -->
+  <div class="band" style="animation:rise .55s cubic-bezier(.22,1,.36,1) .4s forwards;opacity:0;transform:translateY(14px)">
+    <div class="tag">Provenance · 모든 사실의 메타</div>
+    <div class="schema">fact = ( <span class="f">값</span> <span class="a">·</span> <span class="f">출처유형</span> <span class="a">·</span> <span class="f">source_url</span> <span class="a">·</span> <span class="f">fetched_at</span> <span class="a">·</span> <span class="f">confidence</span> )</div>
+    <div class="note"><em>source_url</em> = 클릭 시 원본으로 이동(출처 이동). 한 속성에 여러 출처를 보관 → 에이전트가 종합·판단하고 UI는 출처를 전부 노출. "언제 적 정보인지 / 믿어도 되는지"에 답할 수 있는 근거.</div>
+  </div>
+
+  <!-- frontend + risks -->
+  <div class="grid2" style="margin-top:8px">
+    <div class="col">
+      <div class="card" style="animation-delay:.46s;border-left:3px solid var(--faint)">
+        <div class="tag" style="color:var(--muted)">L5 · Frontend</div>
+        <div class="ttl">지도 + 필터 + 카드</div>
+        <div class="chips">
+          <span class="chip">Kakao 지도 · 뷰포트 bbox · 줌별 마커</span>
+          <span class="chip">필터 패널 (NL + 수동)</span>
+          <span class="chip">단지 카드 · 실거래 차트</span>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card risks" style="animation-delay:.46s;border-left:3px solid var(--pink)">
+        <div class="tag">Risks · 주의</div>
+        <div class="rlist">
+          <div><b>퍼지 조인</b>이 Tier 1의 실제 난이도 — API 호출이 아니라 여기에 시간이 간다.</div>
+          <div><b>네이버 제외</b> → 매물 실시간 공백. 서비스화 시 DB권 판례 사정권.</div>
+          <div><b>강아지 confidence</b> 낮음 → 자문성 표기 · 관리사무소 확인 안내.</div>
+          <div><b>VLM은 feature 추출만</b> — 주관 점수는 calibration 안 맞음.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+  function setPath(p, btn){
+    document.body.dataset.path = p;
+    document.querySelectorAll('.toggle button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+</script>
+</body>
+</html>
