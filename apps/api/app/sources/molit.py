@@ -36,6 +36,10 @@ class Trade(BaseModel):
     price: int  # dealAmount (만원)
     floor: int  # floor
     deal_date: date  # dealYear·dealMonth·dealDay 조합
+    # 식별 보조 필드(txn_id 구성·T0-4 조인용). 구 데이터엔 빠질 수 있어 optional.
+    sgg_cd: str | None  # sggCd (시군구코드)
+    apt_seq: str | None  # aptSeq (단지 일련, 예 '11680-380')
+    jibun: str | None  # jibun (지번)
 
 
 class TradePage:
@@ -61,6 +65,9 @@ def _parse_item(item: Element) -> Trade:
         price=_parse.to_int(_parse.required_text(item, "dealAmount")),
         floor=_parse.to_int(_parse.required_text(item, "floor")),
         deal_date=deal_date,
+        sgg_cd=_parse.text(item, "sggCd"),
+        apt_seq=_parse.text(item, "aptSeq"),
+        jibun=_parse.text(item, "jibun"),
     )
 
 

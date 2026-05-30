@@ -32,6 +32,10 @@ def test_parse_trades_happy_real_capture(load_fixture: FixtureLoader) -> None:
     assert first.price == 700000  # dealAmount '700,000' 콤마 제거
     assert first.floor == 9
     assert first.deal_date == date(2025, 4, 1)  # dealYear/Month/Day
+    # 식별 보조 필드(txn_id·조인용)
+    assert first.sgg_cd == "11680"
+    assert first.apt_seq == "11680-380"
+    assert first.jibun == "489"
 
 
 def test_parse_trades_empty(load_fixture: FixtureLoader) -> None:

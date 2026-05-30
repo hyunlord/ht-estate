@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<response>
+  <header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header>
+  <body>
+    <items>
+      <!-- 같은 실거래를 MOLIT가 동(aptDong) 있는 행/없는 행으로 2번 내보내는 실제 패턴.
+           txn_id가 aptDong을 제외하므로 한 행으로 dedup되어야 한다. -->
+      <item>
+        <aptDong>32</aptDong><aptNm>한양3</aptNm><aptSeq>11680-380</aptSeq>
+        <buildYear>1978</buildYear><dealAmount>700,000</dealAmount>
+        <dealYear>2025</dealYear><dealMonth>4</dealMonth><dealDay>1</dealDay>
+        <excluUseAr>161.9</excluUseAr><floor>9</floor><jibun>489</jibun>
+        <roadNm>압구정로</roadNm><sggCd>11680</sggCd><umdNm>압구정동</umdNm>
+      </item>
+      <item>
+        <aptDong></aptDong><aptNm>한양3</aptNm><aptSeq>11680-380</aptSeq>
+        <buildYear>1978</buildYear><dealAmount>700,000</dealAmount>
+        <dealYear>2025</dealYear><dealMonth>4</dealMonth><dealDay>1</dealDay>
+        <excluUseAr>161.9</excluUseAr><floor>9</floor><jibun>489</jibun>
+        <roadNm>압구정로</roadNm><sggCd>11680</sggCd><umdNm>압구정동</umdNm>
+      </item>
+    </items>
+    <numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>2</totalCount>
+  </body>
+</response>
