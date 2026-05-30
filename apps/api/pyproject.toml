@@ -1,0 +1,41 @@
+[project]
+name = "ht-estate-api"
+version = "0.1.0"
+description = "ht-estate API (FastAPI) — Phase 0 scaffold"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+
+# uv가 관리하는 개발 의존성 (PEP 735). uv sync/run 시 기본 설치.
+[dependency-groups]
+dev = [
+    "httpx>=0.27",   # FastAPI TestClient 런타임 의존
+    "pyright>=1.1.380",
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pyright]
+include = ["app", "tests"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+extraPaths = ["."]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

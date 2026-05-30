@@ -1,0 +1,33 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+
+# ── Node / Next.js ──
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Playwright ──
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ── 환경/시크릿 ──
+.env
+.env.*
+!.env.example
+
+# ── macOS ──
+.DS_Store
+
+# ── OMC 오케스트레이션 상태 (개인용) ──
+.omc/
