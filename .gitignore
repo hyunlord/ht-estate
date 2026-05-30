@@ -16,6 +16,12 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 
+# ── SQLite (로컬 저장소 — 적재 산출물) ──
+*.db
+*.db-journal
+*.sqlite3
+apps/api/data/
+
 # ── Playwright ──
 test-results/
 playwright-report/

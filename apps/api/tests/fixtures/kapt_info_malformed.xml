@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>00</resultCode>
+    <resultMsg>NORMAL SERVICE.</resultMsg>
+  </header>
+  <body>
+    <item>
+      <kaptCode>A99999999</kaptCode>
+      <kaptName>정보부실단지</kaptName>
+      <kaptAddr>서울특별시 강남구 어딘가</kaptAddr>
+      <kaptUsedate></kaptUsedate>
+      <kaptdaCnt>비공개</kaptdaCnt>
+      <kaptdPcntu>200</kaptdPcntu>
+    </item>
+  </body>
+</response>

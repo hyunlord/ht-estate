@@ -1,0 +1,70 @@
+"""공공 API 공통 HTTP — 타임아웃·바운디드 재시도 + 응답코드 검사.
+
+서비스키는 decoded 형태로 받아 httpx `params=`에 넣는다(httpx가 1회 인코딩).
+encoded 키를 넣으면 이중 인코딩으로 키 미등록 에러가 난다(settings 참고).
+"""
+
+from __future__ import annotations
+
+import time
+from xml.etree.ElementTree import Element
+
+import httpx
+
+from .errors import PublicDataError
+
+DEFAULT_TIMEOUT = httpx.Timeout(10.0)
+SUCCESS_CODES = {"00", "000"}
+
+
+def fetch_xml(
+    url: str,
+    params: dict[str, str | int],
+    *,
+    client: httpx.Client | None = None,
+    timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+    retries: int = 3,
+    backoff: float = 0.5,
+) -> str:
+    """GET → 응답 본문 텍스트. 전송오류/5xx는 지수 백오프로 재시도, 4xx는 즉시 raise.
+
+    `client`를 주입하면(테스트의 MockTransport 등) 그걸 쓰고 닫지 않는다.
+    """
+    own = client is None
+    cl = client or httpx.Client(timeout=timeout)
+    try:
+        last_exc: Exception | None = None
+        for attempt in range(retries):
+            try:
+                resp = cl.get(url, params=params)
+                resp.raise_for_status()
+                return resp.text
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code < 500:
+                    raise  # 4xx는 재시도 무의미
+                last_exc = exc
+            except httpx.TransportError as exc:
+                last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(backoff * (2**attempt))
+        assert last_exc is not None
+        raise last_exc
+    finally:
+        if own:
+            cl.close()
+
+
+def ensure_success(root: Element) -> None:
+    """응답 헤더의 resultCode가 성공(00/000)이 아니면 `PublicDataError`.
+
+    표준 엔벨로프(header/resultCode·resultMsg)와 시스템 에러 엔벨로프
+    (cmmMsgHeader/returnReasonCode·errMsg) 양쪽을 본다. 코드가 아예 없으면
+    (최소 응답) 성공으로 간주하고 본문 파싱에 맡긴다.
+    """
+    code = root.findtext(".//resultCode")
+    msg = root.findtext(".//resultMsg")
+    if code is None:
+        code = root.findtext(".//returnReasonCode")
+        msg = root.findtext(".//errMsg") or root.findtext(".//returnAuthMsg")
+    if code is not None and code.strip() not in SUCCESS_CODES:
+        raise PublicDataError(code.strip(), msg.strip() if msg else None)
