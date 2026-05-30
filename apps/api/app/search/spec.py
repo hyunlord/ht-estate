@@ -1,0 +1,76 @@
+"""HardFilterSpec — 구조화 hard filter 모델 (이진 in/out 입력).
+
+NL→spec 변환(LLM)은 L3/에이전트 소관(별도 티켓). 여기는 **구조화 spec만** 받는다.
+gym 필드는 **없다** — K-apt에 헬스장 데이터가 없어(R1 프로브 0/17) Tier-2 enrichment
+소관이다. soft 필터(pet·floorplan·gym)·점수 랭킹도 여기 없음.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class HardFilterSpec(BaseModel):
+    """결정론 hard 조건. 모든 필드 optional — 준 것만 AND로 좁힌다."""
+
+    # complex 속성
+    approval_year_min: int | None = None
+    approval_year_max: int | None = None
+    parking_ratio_gte: float | None = None
+    parking_underground: bool | None = None  # True면 지하주차 보유(>0) 요구
+    household_count_min: int | None = None
+    household_count_max: int | None = None
+
+    # transaction 속성 (있으면 매칭 거래 EXISTS 요구)
+    net_area_min: float | None = None
+    net_area_max: float | None = None
+    price_min: int | None = None  # 만원
+    price_max: int | None = None
+    deal_since: date | None = None
+
+    # 지도 bbox (4개 모두 또는 모두 없음)
+    min_lat: float | None = None
+    max_lat: float | None = None
+    min_lng: float | None = None
+    max_lng: float | None = None
+
+    limit: int = Field(default=50, ge=1, le=200)
+
+    @model_validator(mode="after")
+    def _check_coherence(self) -> HardFilterSpec:
+        pairs = [
+            (self.approval_year_min, self.approval_year_max, "approval_year"),
+            (self.net_area_min, self.net_area_max, "net_area"),
+            (self.price_min, self.price_max, "price"),
+            (self.household_count_min, self.household_count_max, "household_count"),
+        ]
+        for lo, hi, name in pairs:
+            if lo is not None and hi is not None and lo > hi:
+                raise ValueError(f"{name}: min({lo}) > max({hi})")
+
+        bbox = (self.min_lat, self.max_lat, self.min_lng, self.max_lng)
+        if any(v is not None for v in bbox) and any(v is None for v in bbox):
+            raise ValueError("bbox는 min_lat·max_lat·min_lng·max_lng 4개 모두 필요")
+        if self.min_lat is not None and self.max_lat is not None and self.min_lat > self.max_lat:
+            raise ValueError(f"bbox lat: min({self.min_lat}) > max({self.max_lat})")
+        if self.min_lng is not None and self.max_lng is not None and self.min_lng > self.max_lng:
+            raise ValueError(f"bbox lng: min({self.min_lng}) > max({self.max_lng})")
+        return self
+
+    @property
+    def has_txn_filters(self) -> bool:
+        """transaction 레벨 필터가 하나라도 있나(있으면 매칭 거래 EXISTS 요구)."""
+        txn_fields = (
+            self.net_area_min,
+            self.net_area_max,
+            self.price_min,
+            self.price_max,
+            self.deal_since,
+        )
+        return any(v is not None for v in txn_fields)
+
+    @property
+    def has_bbox(self) -> bool:
+        return self.min_lat is not None
