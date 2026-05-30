@@ -12,7 +12,14 @@ from __future__ import annotations
 
 import os
 
+from dotenv import find_dotenv, load_dotenv
+
 API_KEY_ENV = "DATA_GO_KR_API_KEY"
+
+# 루트 .env를 자동 로딩(export 불필요). override=False라 실제 환경변수가 항상 이긴다.
+# 클린 클론·CI엔 .env가 없으므로(gitignore) 아무것도 로드되지 않음 →
+# 게이트는 키 없이 결정론적으로 돈다(테스트는 키를 요구하지 않는다).
+load_dotenv(find_dotenv(usecwd=True), override=False)
 
 
 class MissingApiKeyError(RuntimeError):

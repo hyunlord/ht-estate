@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.sources._http import fetch_xml, paginate
+from app.sources._http import fetch_text, paginate
 
 OK_BODY = "<response><header><resultCode>00</resultCode></header></response>"
 
@@ -14,7 +14,7 @@ def _client(handler) -> httpx.Client:  # type: ignore[no-untyped-def]
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_fetch_xml_retries_5xx_then_succeeds() -> None:
+def test_fetch_text_retries_5xx_then_succeeds() -> None:
     state = {"n": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -23,12 +23,12 @@ def test_fetch_xml_retries_5xx_then_succeeds() -> None:
             return httpx.Response(503, text="busy")
         return httpx.Response(200, text=OK_BODY)
 
-    out = fetch_xml("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
+    out = fetch_text("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
     assert out == OK_BODY
     assert state["n"] == 3
 
 
-def test_fetch_xml_retries_transport_error_then_succeeds() -> None:
+def test_fetch_text_retries_transport_error_then_succeeds() -> None:
     state = {"n": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -37,12 +37,12 @@ def test_fetch_xml_retries_transport_error_then_succeeds() -> None:
             raise httpx.ConnectError("boom", request=req)
         return httpx.Response(200, text=OK_BODY)
 
-    out = fetch_xml("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
+    out = fetch_text("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
     assert out == OK_BODY
     assert state["n"] == 2
 
 
-def test_fetch_xml_exhausts_retries_and_raises() -> None:
+def test_fetch_text_exhausts_retries_and_raises() -> None:
     state = {"n": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -50,11 +50,11 @@ def test_fetch_xml_exhausts_retries_and_raises() -> None:
         return httpx.Response(500, text="err")
 
     with pytest.raises(httpx.HTTPStatusError):
-        fetch_xml("http://x", {}, client=_client(handler), retries=2, backoff=0.0)
+        fetch_text("http://x", {}, client=_client(handler), retries=2, backoff=0.0)
     assert state["n"] == 2  # 정확히 retries회만 시도
 
 
-def test_fetch_xml_4xx_immediate_no_retry() -> None:
+def test_fetch_text_4xx_immediate_no_retry() -> None:
     state = {"n": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -62,7 +62,7 @@ def test_fetch_xml_4xx_immediate_no_retry() -> None:
         return httpx.Response(404, text="not found")
 
     with pytest.raises(httpx.HTTPStatusError):
-        fetch_xml("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
+        fetch_text("http://x", {}, client=_client(handler), retries=3, backoff=0.0)
     assert state["n"] == 1
 
 

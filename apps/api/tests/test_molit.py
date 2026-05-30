@@ -1,4 +1,8 @@
-"""MOLIT 실거래 클라이언트 — 파싱(happy/empty/malformed/error) + fetch(MockTransport)."""
+"""MOLIT 실거래 — 실캡처 XML(영문 태그) 파싱 + fetch(MockTransport).
+
+fixture molit_trades.xml는 라이브 실응답 캡처(강남구 11680, 2025-04). molit_error는
+시스템 에러 엔벨로프, molit_malformed/empty는 엣지 검증용 구성본.
+"""
 
 from __future__ import annotations
 
@@ -14,20 +18,20 @@ from app.sources.molit import fetch_trades, parse_trades
 FixtureLoader = Callable[[str], str]
 
 
-def test_parse_trades_happy(load_fixture: FixtureLoader) -> None:
+def test_parse_trades_happy_real_capture(load_fixture: FixtureLoader) -> None:
     page = parse_trades(load_fixture("molit_trades.xml"))
-    assert page.total_count == 2
-    assert len(page.items) == 2
+    assert page.total_count == 128  # 실응답 totalCount
+    assert len(page.items) == 3
 
     first = page.items[0]
-    assert first.apt_name == "래미안위브"
-    assert first.legal_dong == "도곡동"  # 앞 공백 strip
-    assert first.road_addr == "역삼로 405"
-    assert first.build_year == 2015
-    assert first.net_area == 84.97
-    assert first.price == 142000  # '142,000' 콤마 제거
-    assert first.floor == 12
-    assert first.deal_date == date(2025, 4, 15)
+    assert first.apt_name == "한양3"  # aptNm
+    assert first.legal_dong == "압구정동"  # umdNm
+    assert first.road_addr == "압구정로"  # roadNm
+    assert first.build_year == 1978  # buildYear
+    assert first.net_area == 161.9  # excluUseAr
+    assert first.price == 700000  # dealAmount '700,000' 콤마 제거
+    assert first.floor == 9
+    assert first.deal_date == date(2025, 4, 1)  # dealYear/Month/Day
 
 
 def test_parse_trades_empty(load_fixture: FixtureLoader) -> None:
@@ -38,10 +42,10 @@ def test_parse_trades_empty(load_fixture: FixtureLoader) -> None:
 
 def test_parse_trades_skips_malformed_rows(load_fixture: FixtureLoader) -> None:
     page = parse_trades(load_fixture("molit_malformed.xml"))
-    # 3개 중 정상 1개만 남고, 전용면적 누락·거래금액 비숫자는 skip
+    # 3개 중 정상 1개만, excluUseAr 누락·dealAmount 비숫자는 skip
     assert len(page.items) == 1
     assert page.items[0].apt_name == "정상단지"
-    assert page.total_count == 3  # totalCount는 응답값 보존
+    assert page.total_count == 3
 
 
 def test_parse_trades_raises_on_error_envelope(load_fixture: FixtureLoader) -> None:
@@ -57,8 +61,9 @@ def _client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
 def test_fetch_trades_single_page(load_fixture: FixtureLoader) -> None:
     body = load_fixture("molit_trades.xml")
     client = _client(lambda _req: httpx.Response(200, text=body))
-    trades = fetch_trades("11680", "202504", api_key="dummy", client=client)
-    assert len(trades) == 2
+    # num_of_rows=200 ≥ totalCount(128) → page1에서 정지
+    trades = fetch_trades("11680", "202504", api_key="dummy", client=client, num_of_rows=200)
+    assert len(trades) == 3
 
 
 def test_fetch_trades_stops_on_empty_page(load_fixture: FixtureLoader) -> None:
@@ -70,12 +75,11 @@ def test_fetch_trades_stops_on_empty_page(load_fixture: FixtureLoader) -> None:
         state["n"] += 1
         return httpx.Response(200, text=pages[idx])
 
-    # num_of_rows=1로 페이지네이션 강제 → page1(2건) 후 page2(빈) 만나 정지
     trades = fetch_trades(
         "11680", "202504", api_key="dummy", client=_client(handler), num_of_rows=1
     )
-    assert len(trades) == 2
-    assert state["n"] == 2  # 정확히 2페이지 호출
+    assert len(trades) == 3  # page1의 3건
+    assert state["n"] == 2  # page2(빈)에서 정지
 
 
 def test_fetch_trades_propagates_error(load_fixture: FixtureLoader) -> None:
@@ -94,4 +98,4 @@ def test_fetch_trades_4xx_raises_without_retry() -> None:
 
     with pytest.raises(httpx.HTTPStatusError):
         fetch_trades("11680", "202504", api_key="dummy", client=_client(handler))
-    assert state["n"] == 1  # 4xx는 재시도 안 함
+    assert state["n"] == 1

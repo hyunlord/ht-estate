@@ -1,28 +1,30 @@
 """K-apt 공동주택 클라이언트 — 단지 목록 + 단지 기본정보.
 
-엔드포인트:
-- 단지 목록제공 (AptListService3): 단지코드 열거 (시도/시군구 단위)
-- 기본 정보제공 (AptBasisInfoServiceV3/getAphusBassInfoV3): 단지코드 → 기본정보
+응답 포맷은 **JSON**이다(라이브 검증 T0-2에서 확정 — XML 아님). 또한 단지 정보가
+두 V4 엔드포인트로 쪼개져 있어 **병합**해야 필수필드가 다 채워진다:
+- getAphusBassInfoV4 (기본): 사용승인일·세대수·복도유형·주소
+- getAphusDtlInfoV4  (상세): 주차·건물구조·부대복리시설(raw)
 
-derived 파싱(has_gym 키워드·parking_ratio)은 OUT — T0-2 소관. 여기선 raw 필드만
-타입드로 뽑는다. parking_total은 지상+지하의 단순 합(키워드 파싱과 무관).
+derived 파싱(has_gym·parking_ratio)은 derive.py, 적재는 store/complex_repo.py.
+여기선 raw 필드만 타입드로 뽑는다. parking_total은 지상+지하 단순합.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from xml.etree.ElementTree import Element, fromstring
+from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml, paginate
+from ._http import DEFAULT_TIMEOUT, fetch_text, json_body, paginate
 
 LIST_TOTAL_URL = "https://apis.data.go.kr/1613000/AptListService3/getTotalAptList3"
 LIST_SIDO_URL = "https://apis.data.go.kr/1613000/AptListService3/getSidoAptList3"
 LIST_SIGUNGU_URL = "https://apis.data.go.kr/1613000/AptListService3/getSigunguAptList3"
-INFO_URL = "https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3"
+BASIS_URL = "https://apis.data.go.kr/1613000/AptBasisInfoServiceV4/getAphusBassInfoV4"
+DETAIL_URL = "https://apis.data.go.kr/1613000/AptBasisInfoServiceV4/getAphusDtlInfoV4"
 DEFAULT_NUM_OF_ROWS = 100
 
 
@@ -37,7 +39,7 @@ class ComplexRef(BaseModel):
 
 
 class ComplexInfo(BaseModel):
-    """단지 기본정보 — provenance 채우기 전의 raw 필드(파생 아님)."""
+    """단지 기본정보 — basis+detail 병합, provenance 채우기 전의 raw 필드(파생 아님)."""
 
     kapt_code: str
     name: str | None
@@ -53,68 +55,78 @@ class ComplexInfo(BaseModel):
     amenities_raw: str | None  # welfareFacility (부대복리시설 원본)
 
 
-def _parse_ref(item: Element) -> ComplexRef:
+def _as_items(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """body.items를 리스트로 정규화. data.go.kr은 단건일 때 dict로 줄 수 있다."""
+    items = body.get("items")
+    if isinstance(items, dict):
+        items = items.get("item")
+    if items is None:
+        return []
+    if isinstance(items, dict):
+        return [items]
+    return [it for it in items if isinstance(it, dict)]
+
+
+def _parse_ref(item: dict[str, Any]) -> ComplexRef | None:
+    code = _parse.json_str(item.get("kaptCode"))
+    if code is None:
+        return None
     return ComplexRef(
-        kapt_code=_parse.required_text(item, "kaptCode"),
-        name=_parse.text(item, "kaptName"),
-        bjd_code=_parse.text(item, "bjdCode"),
-        sido=_parse.text(item, "as1"),
-        sigungu=_parse.text(item, "as2"),
+        kapt_code=code,
+        name=_parse.json_str(item.get("kaptName")),
+        bjd_code=_parse.json_str(item.get("bjdCode")),
+        sido=_parse.json_str(item.get("as1")),
+        sigungu=_parse.json_str(item.get("as2")),
     )
 
 
-def _safe_ref(item: Element) -> ComplexRef | None:
-    try:
-        return _parse_ref(item)
-    except (ValueError, TypeError):
+def _parse_list_page(json_text: str) -> tuple[list[ComplexRef], int]:
+    """목록 JSON → (ComplexRef 리스트, totalCount). kaptCode 없는 항목은 skip."""
+    body = json_body(json_text)
+    refs = [ref for it in _as_items(body) if (ref := _parse_ref(it)) is not None]
+    total = _parse.json_int(body.get("totalCount"))
+    return refs, total if total is not None else len(refs)
+
+
+def parse_complex_list(json_text: str) -> list[ComplexRef]:
+    """단지 목록 JSON → ComplexRef 리스트."""
+    return _parse_list_page(json_text)[0]
+
+
+def _single_item(json_text: str) -> dict[str, Any] | None:
+    """단건 응답(body.item) 추출. 없으면 None."""
+    item = json_body(json_text).get("item")
+    return item if isinstance(item, dict) else None
+
+
+def parse_complex_info(basis_json: str, detail_json: str) -> ComplexInfo | None:
+    """기본(basis)+상세(detail) JSON 병합 → ComplexInfo. 둘 다 item 없으면 None."""
+    basis = _single_item(basis_json) or {}
+    detail = _single_item(detail_json) or {}
+    if not basis and not detail:
         return None
 
-
-def _parse_list_page(xml_text: str) -> tuple[list[ComplexRef], int]:
-    """목록 XML → (ComplexRef 리스트, totalCount). kaptCode 없는 항목은 skip(graceful)."""
-    root = fromstring(xml_text)
-    ensure_success(root)
-    refs = [ref for el in root.findall(".//item") if (ref := _safe_ref(el)) is not None]
-    total_text = root.findtext(".//totalCount")
-    total = _parse.to_int(total_text) if total_text and total_text.strip() else len(refs)
-    return refs, total
-
-
-def parse_complex_list(xml_text: str) -> list[ComplexRef]:
-    """단지 목록 XML → ComplexRef 리스트. kaptCode 없는 항목은 skip(graceful)."""
-    return _parse_list_page(xml_text)[0]
-
-
-def parse_complex_info(xml_text: str) -> ComplexInfo | None:
-    """기본정보 XML → ComplexInfo. item 없거나 kaptCode 없으면 None."""
-    root = fromstring(xml_text)
-    ensure_success(root)
-    item = root.find(".//item")
-    if item is None:
+    code = _parse.json_str(basis.get("kaptCode")) or _parse.json_str(detail.get("kaptCode"))
+    if code is None:
         return None
 
-    ground = _parse.opt_int(item, "kaptdPcnt")
-    underground = _parse.opt_int(item, "kaptdPcntu")
+    ground = _parse.json_int(detail.get("kaptdPcnt"))
+    underground = _parse.json_int(detail.get("kaptdPcntu"))
     total = ground + underground if ground is not None and underground is not None else None
 
-    try:
-        kapt_code = _parse.required_text(item, "kaptCode")
-    except ValueError:
-        return None
-
     return ComplexInfo(
-        kapt_code=kapt_code,
-        name=_parse.text(item, "kaptName"),
-        legal_addr=_parse.text(item, "kaptAddr"),
-        road_addr=_parse.text(item, "doroJuso"),
-        approval_date=_parse.yyyymmdd_to_date(_parse.text(item, "kaptUsedate")),
-        household_count=_parse.opt_int(item, "kaptdaCnt"),
+        kapt_code=code,
+        name=_parse.json_str(basis.get("kaptName")) or _parse.json_str(detail.get("kaptName")),
+        legal_addr=_parse.json_str(basis.get("kaptAddr")),
+        road_addr=_parse.json_str(basis.get("doroJuso")),
+        approval_date=_parse.yyyymmdd_to_date(_parse.json_str(basis.get("kaptUsedate"))),
+        household_count=_parse.json_int(basis.get("kaptdaCnt")),
         parking_total=total,
         parking_ground=ground,
         parking_underground=underground,
-        corridor_type=_parse.text(item, "codeHallNm"),
-        building_type=_parse.text(item, "codeStr"),
-        amenities_raw=_parse.text(item, "welfareFacility"),
+        corridor_type=_parse.json_str(basis.get("codeHallNm")),
+        building_type=_parse.json_str(detail.get("codeStr")),
+        amenities_raw=_parse.json_str(detail.get("welfareFacility")),
     )
 
 
@@ -140,7 +152,7 @@ def list_complexes(
 
     def fetch_page(page: int) -> tuple[list[ComplexRef], int]:
         params["pageNo"] = page
-        return _parse_list_page(fetch_xml(url, params, client=client, timeout=timeout))
+        return _parse_list_page(fetch_text(url, params, client=client, timeout=timeout))
 
     return paginate(fetch_page, num_of_rows=num_of_rows)
 
@@ -152,11 +164,8 @@ def fetch_complex_info(
     client: httpx.Client | None = None,
     timeout: httpx.Timeout = DEFAULT_TIMEOUT,
 ) -> ComplexInfo | None:
-    """단지코드 → 기본정보. 응답에 단지가 없으면 None."""
-    xml_text = fetch_xml(
-        INFO_URL,
-        {"serviceKey": api_key, "kaptCode": kapt_code},
-        client=client,
-        timeout=timeout,
-    )
-    return parse_complex_info(xml_text)
+    """단지코드 → 기본정보. basis·detail 두 엔드포인트를 호출해 병합. 단지 없으면 None."""
+    params = {"serviceKey": api_key, "kaptCode": kapt_code}
+    basis = fetch_text(BASIS_URL, params, client=client, timeout=timeout)
+    detail = fetch_text(DETAIL_URL, params, client=client, timeout=timeout)
+    return parse_complex_info(basis, detail)

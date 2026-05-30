@@ -6,8 +6,10 @@ encoded 키를 넣으면 이중 인코딩으로 키 미등록 에러가 난다(s
 
 from __future__ import annotations
 
+import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 from xml.etree.ElementTree import Element
 
 import httpx
@@ -18,16 +20,16 @@ DEFAULT_TIMEOUT = httpx.Timeout(10.0)
 SUCCESS_CODES = {"00", "000"}
 
 
-def fetch_xml(
+def fetch_text(
     url: str,
-    params: dict[str, str | int],
+    params: Mapping[str, str | int],
     *,
     client: httpx.Client | None = None,
     timeout: httpx.Timeout = DEFAULT_TIMEOUT,
     retries: int = 3,
     backoff: float = 0.5,
 ) -> str:
-    """GET → 응답 본문 텍스트. 전송오류/5xx는 지수 백오프로 재시도, 4xx는 즉시 raise.
+    """GET → 응답 본문 텍스트(XML/JSON 무관). 전송오류/5xx는 지수 백오프 재시도, 4xx 즉시 raise.
 
     `client`를 주입하면(테스트의 MockTransport 등) 그걸 쓰고 닫지 않는다.
     """
@@ -90,3 +92,22 @@ def ensure_success(root: Element) -> None:
         msg = root.findtext(".//errMsg") or root.findtext(".//returnAuthMsg")
     if code is not None and code.strip() not in SUCCESS_CODES:
         raise PublicDataError(code.strip(), msg.strip() if msg else None)
+
+
+def json_body(json_text: str) -> dict[str, Any]:
+    """data.go.kr JSON 응답 → body dict. resultCode가 성공 아니면 `PublicDataError`.
+
+    K-apt(목록·기본·상세)는 XML이 아니라 JSON을 준다. 본문이 JSON이 아니면
+    (시스템 에러 텍스트 등) PublicDataError로 변환한다. body가 없으면 빈 dict.
+    """
+    try:
+        payload = json.loads(json_text)
+    except ValueError as exc:
+        raise PublicDataError(None, json_text[:200]) from exc
+    response = payload.get("response", {}) if isinstance(payload, dict) else {}
+    header = response.get("header", {})
+    code = header.get("resultCode")
+    if code is not None and str(code).strip() not in SUCCESS_CODES:
+        raise PublicDataError(str(code).strip(), header.get("resultMsg"))
+    body = response.get("body")
+    return body if isinstance(body, dict) else {}

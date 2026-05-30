@@ -1,10 +1,11 @@
 """MOLIT 아파트 매매 실거래가 상세 자료 클라이언트.
 
 엔드포인트: 국토교통부_아파트 매매 실거래가 상세 자료
-(RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev) — 응답은 한글 XML 태그.
+(RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev).
 
-이 티켓(T0-1)은 파싱·페이지네이션·에러 처리까지. 실제 DB 적재(txn_id 생성·
-저장)와 단지 조인(match_confidence)은 T0-3·T0-4 소관이라 Trade에 txn_id 없음.
+응답은 **XML + 영문 camelCase 태그**다(라이브 검증 T0-2에서 확정 — 한글 태그 아님):
+aptNm·umdNm(법정동)·roadNm·buildYear·excluUseAr(전용)·dealAmount(만원)·floor·
+dealYear/dealMonth/dealDay. 실거래 DB 적재(txn_id 생성)·단지 조인은 T0-3·T0-4 소관.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml, paginate
+from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_text, paginate
 
 BASE_URL = (
     "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
@@ -27,14 +28,14 @@ DEFAULT_NUM_OF_ROWS = 100
 class Trade(BaseModel):
     """한 건의 아파트 매매 실거래(파싱 결과). 가격 단위는 만원(MOLIT 원단위)."""
 
-    apt_name: str  # 아파트
-    legal_dong: str  # 법정동
-    road_addr: str | None  # 도로명 (구 데이터는 비어있을 수 있음)
-    build_year: int  # 건축년도
-    net_area: float  # 전용면적(㎡)
-    price: int  # 거래금액(만원)
-    floor: int  # 층
-    deal_date: date  # 년·월·일 조합
+    apt_name: str  # aptNm
+    legal_dong: str  # umdNm (읍면동명 = 법정동)
+    road_addr: str | None  # roadNm (구 데이터는 비어있을 수 있음)
+    build_year: int  # buildYear
+    net_area: float  # excluUseAr (전용면적, ㎡)
+    price: int  # dealAmount (만원)
+    floor: int  # floor
+    deal_date: date  # dealYear·dealMonth·dealDay 조합
 
 
 class TradePage:
@@ -47,18 +48,18 @@ class TradePage:
 
 def _parse_item(item: Element) -> Trade:
     deal_date = date(
-        _parse.to_int(_parse.required_text(item, "년")),
-        _parse.to_int(_parse.required_text(item, "월")),
-        _parse.to_int(_parse.required_text(item, "일")),
+        _parse.to_int(_parse.required_text(item, "dealYear")),
+        _parse.to_int(_parse.required_text(item, "dealMonth")),
+        _parse.to_int(_parse.required_text(item, "dealDay")),
     )
     return Trade(
-        apt_name=_parse.required_text(item, "아파트"),
-        legal_dong=_parse.required_text(item, "법정동"),
-        road_addr=_parse.text(item, "도로명"),
-        build_year=_parse.to_int(_parse.required_text(item, "건축년도")),
-        net_area=_parse.to_float(_parse.required_text(item, "전용면적")),
-        price=_parse.to_int(_parse.required_text(item, "거래금액")),
-        floor=_parse.to_int(_parse.required_text(item, "층")),
+        apt_name=_parse.required_text(item, "aptNm"),
+        legal_dong=_parse.required_text(item, "umdNm"),
+        road_addr=_parse.text(item, "roadNm"),
+        build_year=_parse.to_int(_parse.required_text(item, "buildYear")),
+        net_area=_parse.to_float(_parse.required_text(item, "excluUseAr")),
+        price=_parse.to_int(_parse.required_text(item, "dealAmount")),
+        floor=_parse.to_int(_parse.required_text(item, "floor")),
         deal_date=deal_date,
     )
 
@@ -98,7 +99,7 @@ def fetch_trades(
     MockTransport를 주입해 라이브 호출 없이 검증한다.
     """
     def fetch_page(page: int) -> tuple[list[Trade], int]:
-        xml_text = fetch_xml(
+        xml_text = fetch_text(
             BASE_URL,
             {
                 "serviceKey": api_key,

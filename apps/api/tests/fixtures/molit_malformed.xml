@@ -1,49 +1,38 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <response>
-  <header>
-    <resultCode>000</resultCode>
-    <resultMsg>OK</resultMsg>
-  </header>
+  <header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header>
   <body>
     <items>
       <item>
-        <거래금액>110,000</거래금액>
-        <건축년도>2019</건축년도>
-        <년>2025</년>
-        <월>5</월>
-        <일>9</일>
-        <전용면적>74.53</전용면적>
-        <아파트>정상단지</아파트>
-        <법정동>역삼동</법정동>
-        <도로명>테헤란로 1</도로명>
-        <층>3</층>
+        <aptNm>정상단지</aptNm>
+        <umdNm>역삼동</umdNm>
+        <roadNm>테헤란로</roadNm>
+        <buildYear>2019</buildYear>
+        <excluUseAr>74.53</excluUseAr>
+        <dealAmount>110,000</dealAmount>
+        <floor>3</floor>
+        <dealYear>2025</dealYear><dealMonth>5</dealMonth><dealDay>9</dealDay>
       </item>
       <item>
-        <!-- 전용면적 누락 → 이 행은 skip되어야 함 -->
-        <거래금액>120,000</거래금액>
-        <건축년도>2010</건축년도>
-        <년>2025</년>
-        <월>5</월>
-        <일>1</일>
-        <아파트>면적없음단지</아파트>
-        <법정동>역삼동</법정동>
-        <층>5</층>
+        <!-- excluUseAr 누락 → skip -->
+        <aptNm>면적없음단지</aptNm>
+        <umdNm>역삼동</umdNm>
+        <buildYear>2010</buildYear>
+        <dealAmount>120,000</dealAmount>
+        <floor>5</floor>
+        <dealYear>2025</dealYear><dealMonth>5</dealMonth><dealDay>1</dealDay>
       </item>
       <item>
-        <!-- 거래금액 비숫자 → skip -->
-        <거래금액>비공개</거래금액>
-        <건축년도>2011</건축년도>
-        <년>2025</년>
-        <월>5</월>
-        <일>2</일>
-        <전용면적>84.0</전용면적>
-        <아파트>가격깨짐단지</아파트>
-        <법정동>역삼동</법정동>
-        <층>9</층>
+        <!-- dealAmount 비숫자 → skip -->
+        <aptNm>가격깨짐단지</aptNm>
+        <umdNm>역삼동</umdNm>
+        <buildYear>2011</buildYear>
+        <excluUseAr>84.0</excluUseAr>
+        <dealAmount>비공개</dealAmount>
+        <floor>9</floor>
+        <dealYear>2025</dealYear><dealMonth>5</dealMonth><dealDay>2</dealDay>
       </item>
     </items>
-    <numOfRows>100</numOfRows>
-    <pageNo>1</pageNo>
-    <totalCount>3</totalCount>
+    <numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>3</totalCount>
   </body>
 </response>
