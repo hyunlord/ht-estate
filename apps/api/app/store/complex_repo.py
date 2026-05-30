@@ -19,6 +19,7 @@ KAPT_DETAIL_URL = "https://www.k-apt.go.kr/kaptinfo/kaptinfobasis.do?kaptCode={c
 _COLUMNS = (
     "complex_id",
     "name",
+    "bjd_code",
     "legal_addr",
     "road_addr",
     "approval_date",
@@ -54,6 +55,7 @@ def upsert_complex(
     values = {
         "complex_id": info.kapt_code,
         "name": info.name,
+        "bjd_code": info.bjd_code,
         "legal_addr": info.legal_addr,
         "road_addr": info.road_addr,
         "approval_date": info.approval_date.isoformat() if info.approval_date else None,

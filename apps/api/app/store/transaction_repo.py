@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from app.match.jibun import from_molit, to_canonical
 from app.sources.molit import Trade, fetch_trades
 from app.throttle import Throttle
 
@@ -24,6 +25,8 @@ _INSERT_COLUMNS = (
     "txn_id",
     "apt_name_raw",
     "legal_dong",
+    "bjd_code",
+    "jibun",
     "road_addr",
     "build_year",
     "net_area",
@@ -73,6 +76,8 @@ def upsert_transaction(
         "txn_id": txn_id,
         "apt_name_raw": trade.apt_name,
         "legal_dong": trade.legal_dong,
+        "bjd_code": trade.bjd_code,
+        "jibun": to_canonical(from_molit(trade.bonbun, trade.bubun, trade.jibun)),
         "road_addr": trade.road_addr,
         "build_year": trade.build_year,
         "net_area": trade.net_area,

@@ -47,6 +47,7 @@ def test_parse_complex_info_merges_basis_and_detail(load_fixture: FixtureLoader)
     assert info is not None
     assert info.kapt_code == "A10027474"
     assert info.name == "역삼자이아파트"
+    assert info.bjd_code == "1168010100"  # 조인 narrowing 키
     # basis 쪽
     assert info.legal_addr == "서울특별시 강남구 역삼동 711-1 역삼자이아파트"
     assert info.road_addr == "서울특별시 강남구 언주로 420"

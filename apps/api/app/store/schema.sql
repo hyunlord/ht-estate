@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS complex (
   sigungu             TEXT,
   eupmyeon            TEXT,
   dong                TEXT,
+  bjd_code            TEXT,               -- 법정동코드 10자리 (K-apt bjdCode) — 결정론 조인 narrowing
   legal_addr          TEXT,
   road_addr           TEXT,
   lat                 REAL,               -- 지오코딩 (정적, 1회) — T0-5
@@ -46,6 +47,8 @@ CREATE TABLE IF NOT EXISTS "transaction" (
   match_confidence    REAL,                                 -- 조인 신뢰도 (지금 만들고 T0-4에서 채움)
   apt_name_raw        TEXT,                                 -- MOLIT 아파트명 원본
   legal_dong          TEXT,
+  bjd_code            TEXT,                                 -- 법정동코드 = MOLIT sggCd+umdCd (= K-apt bjdCode) — 조인 narrowing
+  jibun               TEXT,                                 -- 캐논 지번 "본번[-부번]" (MOLIT bonbun/bubun) — 지번 매칭 narrowing(T0-4c)
   road_addr           TEXT,
   build_year          INTEGER,
   net_area            REAL,                                 -- 전용면적

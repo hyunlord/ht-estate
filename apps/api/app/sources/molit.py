@@ -37,9 +37,20 @@ class Trade(BaseModel):
     floor: int  # floor
     deal_date: date  # dealYear·dealMonth·dealDay 조합
     # 식별 보조 필드(txn_id 구성·T0-4 조인용). 구 데이터엔 빠질 수 있어 optional.
-    sgg_cd: str | None  # sggCd (시군구코드)
+    sgg_cd: str | None  # sggCd (시군구코드 5자리)
+    umd_cd: str | None  # umdCd (읍면동코드 5자리)
     apt_seq: str | None  # aptSeq (단지 일련, 예 '11680-380')
     jibun: str | None  # jibun (지번)
+    # 지번 매칭용(T0-4c) — 0패딩 4자리 본번/부번. 구 데이터는 빠질 수 있어 optional.
+    bonbun: str | None  # bonbun (본번, 예 '0489')
+    bubun: str | None  # bubun (부번, 예 '0000')
+
+    @property
+    def bjd_code(self) -> str | None:
+        """법정동코드 10자리 = sggCd+umdCd (= K-apt bjdCode). 조인 narrowing 키."""
+        if self.sgg_cd and self.umd_cd:
+            return self.sgg_cd + self.umd_cd
+        return None
 
 
 class TradePage:
@@ -66,8 +77,11 @@ def _parse_item(item: Element) -> Trade:
         floor=_parse.to_int(_parse.required_text(item, "floor")),
         deal_date=deal_date,
         sgg_cd=_parse.text(item, "sggCd"),
+        umd_cd=_parse.text(item, "umdCd"),
         apt_seq=_parse.text(item, "aptSeq"),
         jibun=_parse.text(item, "jibun"),
+        bonbun=_parse.text(item, "bonbun"),
+        bubun=_parse.text(item, "bubun"),
     )
 
 

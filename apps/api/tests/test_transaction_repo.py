@@ -32,8 +32,11 @@ def _trade(**overrides: object) -> Trade:
         "floor": 9,
         "deal_date": date(2025, 4, 1),
         "sgg_cd": "11680",
+        "umd_cd": "11000",
         "apt_seq": "11680-380",
         "jibun": "489",
+        "bonbun": "0489",
+        "bubun": "0000",
     }
     base.update(overrides)
     return Trade(**base)  # type: ignore[arg-type]
@@ -64,6 +67,8 @@ def test_upsert_writes_row_with_nulls_and_provenance() -> None:
     assert row["price"] == 700000
     assert row["net_area"] == 161.9
     assert row["deal_date"] == "2025-04-01"
+    assert row["bjd_code"] == "1168011000"  # sggCd+umdCd → 조인 narrowing 키
+    assert row["jibun"] == "489"  # 캐논 지번(본번 489·부번 0) — 지번 매칭용(T0-4c)
     assert row["updated_at"] == FIXED_NOW.isoformat()
     # 조인 컬럼은 적재 시 NULL (T0-4 소관)
     assert row["complex_id"] is None

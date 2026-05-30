@@ -43,6 +43,7 @@ class ComplexInfo(BaseModel):
 
     kapt_code: str
     name: str | None
+    bjd_code: str | None  # bjdCode (법정동코드 10자리) — 조인 narrowing
     legal_addr: str | None  # kaptAddr (지번주소)
     road_addr: str | None  # doroJuso (도로명주소)
     approval_date: date | None  # kaptUsedate (사용승인일)
@@ -117,6 +118,7 @@ def parse_complex_info(basis_json: str, detail_json: str) -> ComplexInfo | None:
     return ComplexInfo(
         kapt_code=code,
         name=_parse.json_str(basis.get("kaptName")) or _parse.json_str(detail.get("kaptName")),
+        bjd_code=_parse.json_str(basis.get("bjdCode")),
         legal_addr=_parse.json_str(basis.get("kaptAddr")),
         road_addr=_parse.json_str(basis.get("doroJuso")),
         approval_date=_parse.yyyymmdd_to_date(_parse.json_str(basis.get("kaptUsedate"))),

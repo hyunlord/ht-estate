@@ -35,6 +35,7 @@ def test_complex_provenance_columns_present() -> None:
         "parking_ratio",
         "amenities_raw",
         "has_gym",
+        "bjd_code",
     } <= cols
 
 
@@ -42,7 +43,7 @@ def test_transaction_has_match_confidence_and_provenance() -> None:
     conn = get_connection(":memory:")
     init_db(conn)
     cols = _columns(conn, "transaction")
-    assert {"complex_id", "match_confidence", "updated_at", "apt_name_raw"} <= cols
+    assert {"complex_id", "match_confidence", "updated_at", "apt_name_raw", "bjd_code"} <= cols
 
 
 def test_enrichment_provenance_columns_present() -> None:
