@@ -37,6 +37,8 @@ def test_parse_trades_happy_real_capture(load_fixture: FixtureLoader) -> None:
     assert first.umd_cd == "11000"
     assert first.apt_seq == "11680-380"
     assert first.jibun == "489"
+    assert first.bonbun == "0489"  # 0패딩 4자리 (지번 매칭용 — T0-4c)
+    assert first.bubun == "0000"
     assert first.bjd_code == "1168011000"  # sggCd+umdCd = 법정동코드 10자리
 
 

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS "transaction" (
   apt_name_raw        TEXT,                                 -- MOLIT 아파트명 원본
   legal_dong          TEXT,
   bjd_code            TEXT,                                 -- 법정동코드 = MOLIT sggCd+umdCd (= K-apt bjdCode) — 조인 narrowing
+  jibun               TEXT,                                 -- 캐논 지번 "본번[-부번]" (MOLIT bonbun/bubun) — 지번 매칭 narrowing(T0-4c)
   road_addr           TEXT,
   build_year          INTEGER,
   net_area            REAL,                                 -- 전용면적

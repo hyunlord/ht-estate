@@ -41,6 +41,9 @@ class Trade(BaseModel):
     umd_cd: str | None  # umdCd (읍면동코드 5자리)
     apt_seq: str | None  # aptSeq (단지 일련, 예 '11680-380')
     jibun: str | None  # jibun (지번)
+    # 지번 매칭용(T0-4c) — 0패딩 4자리 본번/부번. 구 데이터는 빠질 수 있어 optional.
+    bonbun: str | None  # bonbun (본번, 예 '0489')
+    bubun: str | None  # bubun (부번, 예 '0000')
 
     @property
     def bjd_code(self) -> str | None:
@@ -77,6 +80,8 @@ def _parse_item(item: Element) -> Trade:
         umd_cd=_parse.text(item, "umdCd"),
         apt_seq=_parse.text(item, "aptSeq"),
         jibun=_parse.text(item, "jibun"),
+        bonbun=_parse.text(item, "bonbun"),
+        bubun=_parse.text(item, "bubun"),
     )
 
 
