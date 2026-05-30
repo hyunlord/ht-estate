@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS complex (
   has_gym             BOOLEAN,            -- 파생: 헬스/피트니스 키워드 파싱 — T0-2
   -- provenance --
   updated_at          TIMESTAMP,
-  source_url          TEXT                -- K-apt 단지 페이지 (출처 이동)
+  source_url          TEXT,               -- K-apt 단지 페이지 (출처 이동)
+  geo_source          TEXT,               -- 좌표 출처(DB명+기준일) — T0-5
+  geo_updated_at      TIMESTAMP           -- 좌표 획득시각 — T0-5
 );
 
 -- 실거래 (MOLIT, eager)
