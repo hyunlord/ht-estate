@@ -34,8 +34,10 @@ def test_parse_trades_happy_real_capture(load_fixture: FixtureLoader) -> None:
     assert first.deal_date == date(2025, 4, 1)  # dealYear/Month/Day
     # 식별 보조 필드(txn_id·조인용)
     assert first.sgg_cd == "11680"
+    assert first.umd_cd == "11000"
     assert first.apt_seq == "11680-380"
     assert first.jibun == "489"
+    assert first.bjd_code == "1168011000"  # sggCd+umdCd = 법정동코드 10자리
 
 
 def test_parse_trades_empty(load_fixture: FixtureLoader) -> None:

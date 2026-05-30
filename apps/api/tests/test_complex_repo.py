@@ -27,6 +27,7 @@ def test_upsert_writes_row_with_provenance_and_derived(load_fixture: FixtureLoad
     row = conn.execute("SELECT * FROM complex WHERE complex_id = 'A10027474'").fetchone()
     assert row is not None
     assert row["name"] == "역삼자이아파트"
+    assert row["bjd_code"] == "1168010100"  # 조인 narrowing 키
     assert row["household_count"] == 408
     assert row["parking_total"] == 615
     assert round(row["parking_ratio"], 4) == 1.5074  # 파생
