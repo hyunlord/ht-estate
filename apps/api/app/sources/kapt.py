@@ -17,7 +17,7 @@ import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml
+from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml, paginate
 
 LIST_TOTAL_URL = "https://apis.data.go.kr/1613000/AptListService3/getTotalAptList3"
 LIST_SIDO_URL = "https://apis.data.go.kr/1613000/AptListService3/getSidoAptList3"
@@ -63,17 +63,26 @@ def _parse_ref(item: Element) -> ComplexRef:
     )
 
 
-def parse_complex_list(xml_text: str) -> list[ComplexRef]:
-    """단지 목록 XML → ComplexRef 리스트. kaptCode 없는 항목은 skip(graceful)."""
+def _safe_ref(item: Element) -> ComplexRef | None:
+    try:
+        return _parse_ref(item)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_list_page(xml_text: str) -> tuple[list[ComplexRef], int]:
+    """목록 XML → (ComplexRef 리스트, totalCount). kaptCode 없는 항목은 skip(graceful)."""
     root = fromstring(xml_text)
     ensure_success(root)
-    refs: list[ComplexRef] = []
-    for el in root.findall(".//item"):
-        try:
-            refs.append(_parse_ref(el))
-        except (ValueError, TypeError):
-            continue
-    return refs
+    refs = [ref for el in root.findall(".//item") if (ref := _safe_ref(el)) is not None]
+    total_text = root.findtext(".//totalCount")
+    total = _parse.to_int(total_text) if total_text and total_text.strip() else len(refs)
+    return refs, total
+
+
+def parse_complex_list(xml_text: str) -> list[ComplexRef]:
+    """단지 목록 XML → ComplexRef 리스트. kaptCode 없는 항목은 skip(graceful)."""
+    return _parse_list_page(xml_text)[0]
 
 
 def parse_complex_info(xml_text: str) -> ComplexInfo | None:
@@ -129,32 +138,11 @@ def list_complexes(
     else:
         url = LIST_TOTAL_URL
 
-    collected: list[ComplexRef] = []
-    page = 1
-    while True:
+    def fetch_page(page: int) -> tuple[list[ComplexRef], int]:
         params["pageNo"] = page
-        xml_text = fetch_xml(url, params, client=client, timeout=timeout)
-        root = fromstring(xml_text)
-        ensure_success(root)
-        refs = [
-            ref
-            for el in root.findall(".//item")
-            if (ref := _safe_ref(el)) is not None
-        ]
-        collected.extend(refs)
-        total_text = root.findtext(".//totalCount")
-        total = _parse.to_int(total_text) if total_text and total_text.strip() else len(collected)
-        if not refs or page * num_of_rows >= total:
-            break
-        page += 1
-    return collected
+        return _parse_list_page(fetch_xml(url, params, client=client, timeout=timeout))
 
-
-def _safe_ref(item: Element) -> ComplexRef | None:
-    try:
-        return _parse_ref(item)
-    except (ValueError, TypeError):
-        return None
+    return paginate(fetch_page, num_of_rows=num_of_rows)
 
 
 def fetch_complex_info(

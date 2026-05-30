@@ -7,6 +7,7 @@ encoded 키를 넣으면 이중 인코딩으로 키 미등록 에러가 난다(s
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from xml.etree.ElementTree import Element
 
 import httpx
@@ -52,6 +53,27 @@ def fetch_xml(
     finally:
         if own:
             cl.close()
+
+
+def paginate[T](
+    fetch_page: Callable[[int], tuple[list[T], int]],
+    *,
+    num_of_rows: int,
+) -> list[T]:
+    """공통 페이지 루프. `fetch_page(page) -> (items, total_count)`를 받아 전부 모은다.
+
+    빈 페이지를 만나거나 수집분이 total_count에 도달하면 정지. MOLIT·K-apt 목록이
+    동일 패턴이라 여기로 통일(중복 제거).
+    """
+    collected: list[T] = []
+    page = 1
+    while True:
+        items, total_count = fetch_page(page)
+        collected.extend(items)
+        if not items or page * num_of_rows >= total_count:
+            break
+        page += 1
+    return collected
 
 
 def ensure_success(root: Element) -> None:

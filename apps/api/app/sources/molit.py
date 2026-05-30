@@ -16,7 +16,7 @@ import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml
+from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_xml, paginate
 
 BASE_URL = (
     "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
@@ -97,9 +97,7 @@ def fetch_trades(
     `api_key`는 decoded 서비스키(settings.get_api_key()). 테스트는 `client`에
     MockTransport를 주입해 라이브 호출 없이 검증한다.
     """
-    collected: list[Trade] = []
-    page = 1
-    while True:
+    def fetch_page(page: int) -> tuple[list[Trade], int]:
         xml_text = fetch_xml(
             BASE_URL,
             {
@@ -113,8 +111,6 @@ def fetch_trades(
             timeout=timeout,
         )
         parsed = parse_trades(xml_text)
-        collected.extend(parsed.items)
-        if not parsed.items or page * num_of_rows >= parsed.total_count:
-            break
-        page += 1
-    return collected
+        return parsed.items, parsed.total_count
+
+    return paginate(fetch_page, num_of_rows=num_of_rows)
