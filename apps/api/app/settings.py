@@ -15,6 +15,7 @@ import os
 from dotenv import find_dotenv, load_dotenv
 
 API_KEY_ENV = "DATA_GO_KR_API_KEY"
+KAKAO_KEY_ENV = "KAKAO_REST_API_KEY"
 
 # 루트 .env를 자동 로딩(export 불필요). override=False라 실제 환경변수가 항상 이긴다.
 # 클린 클론·CI엔 .env가 없으므로(gitignore) 아무것도 로드되지 않음 →
@@ -37,5 +38,19 @@ def get_api_key() -> str:
         raise MissingApiKeyError(
             f"환경변수 {API_KEY_ENV}가 설정되지 않았습니다. "
             f".env.example을 참고해 decoded 서비스키를 설정하세요."
+        )
+    return key
+
+
+def get_kakao_key() -> str:
+    """Kakao REST API 키 반환(지오코딩·T0-7 지도 공용). 없으면 `MissingApiKeyError`.
+
+    클라이언트는 `api_key`를 명시 주입할 수 있어 테스트는 이 함수를 안 탄다.
+    """
+    key = os.environ.get(KAKAO_KEY_ENV, "").strip()
+    if not key:
+        raise MissingApiKeyError(
+            f"환경변수 {KAKAO_KEY_ENV}가 설정되지 않았습니다. "
+            f"카카오 개발자센터 REST 키를 .env에 설정하세요."
         )
     return key

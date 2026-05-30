@@ -24,6 +24,7 @@ def fetch_text(
     url: str,
     params: Mapping[str, str | int],
     *,
+    headers: Mapping[str, str] | None = None,
     client: httpx.Client | None = None,
     timeout: httpx.Timeout = DEFAULT_TIMEOUT,
     retries: int = 3,
@@ -32,6 +33,7 @@ def fetch_text(
     """GET → 응답 본문 텍스트(XML/JSON 무관). 전송오류/5xx는 지수 백오프 재시도, 4xx 즉시 raise.
 
     `client`를 주입하면(테스트의 MockTransport 등) 그걸 쓰고 닫지 않는다.
+    `headers`는 인증 헤더(Kakao `Authorization: KakaoAK ...`) 등에 쓴다.
     """
     own = client is None
     cl = client or httpx.Client(timeout=timeout)
@@ -39,7 +41,7 @@ def fetch_text(
         last_exc: Exception | None = None
         for attempt in range(retries):
             try:
-                resp = cl.get(url, params=params)
+                resp = cl.get(url, params=params, headers=headers)
                 resp.raise_for_status()
                 return resp.text
             except httpx.HTTPStatusError as exc:

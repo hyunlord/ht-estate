@@ -1,27 +1,33 @@
-"""complex 좌표 백필 — road_addr를 좌표DB로 매칭해 lat/lng 채움 (영구 캐시).
+"""complex 좌표 백필 — road_addr를 실시간 geocode해 lat/lng 채움 (영구 캐시).
 
-멱등: lat이 이미 있으면 skip(영구 캐시 — 좌표는 정적, 설계 §8). road_addr만 갱신
-대상이 아니므로 적재(T0-2)와 독립. provenance: geo_source(DB명+기준일)·geo_updated_at.
+멱등: lat이 이미 있으면 skip(영구 캐시 — 좌표는 정적, 설계 §8). road_addr는 갱신
+대상이 아니므로 적재(T0-2)와 독립. provenance: geo_source(geocoder명)·geo_updated_at.
+geocode는 (road_addr)->(lat,lng)|None 콜러블(주입) — 테스트는 가짜/MockTransport로.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 
-from app.geo.match import match_coord
+from app.throttle import Throttle
+
+Geocode = Callable[[str], tuple[float, float] | None]
 
 
 def backfill_coords(
     conn: sqlite3.Connection,
-    coord_index: dict[str, tuple[float, float]],
+    geocode: Geocode,
     *,
     geo_source: str,
+    throttle: Throttle | None = None,
     updated_at: datetime | None = None,
 ) -> dict[str, int]:
-    """lat이 NULL인 단지를 좌표DB로 매칭해 lat/lng + provenance 채움. 멱등.
+    """lat NULL인 단지를 geocode해 lat/lng + provenance 채움. 멱등(있으면 skip).
 
-    {matched, unmatched, total} 반환. 무매치는 lat NULL로 남긴다(억지 추정 안 함).
+    {matched, unmatched, total} 반환. 무결과는 lat NULL로 남긴다(억지 추정 안 함).
+    throttle.wait()를 각 geocode 직전에 호출해 쿼터 초과를 막는다.
     """
     when = (updated_at or datetime.now(UTC)).isoformat()
     pending = conn.execute(
@@ -30,7 +36,9 @@ def backfill_coords(
 
     matched = 0
     for row in pending:
-        coord = match_coord(row["road_addr"], coord_index)
+        if throttle is not None:
+            throttle.wait()
+        coord = geocode(row["road_addr"])
         if coord is None:
             continue
         lat, lng = coord
