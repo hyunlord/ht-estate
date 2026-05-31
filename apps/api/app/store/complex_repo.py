@@ -8,10 +8,14 @@ serviceKey를 넣지 않는다(K-apt 단지 페이지 딥링크, secretless).
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 
+import httpx
+
 from app.derive import has_gym, parking_ratio
-from app.sources.kapt import ComplexInfo
+from app.sources.kapt import ComplexInfo, fetch_complex_info, list_complexes
+from app.throttle import Throttle
 
 # K-apt 단지 기본정보 페이지(사람 방문용 딥링크, secretless). UI(T0-7)에서 확정 가능.
 KAPT_DETAIL_URL = "https://www.k-apt.go.kr/kaptinfo/kaptinfobasis.do?kaptCode={code}"
@@ -82,3 +86,33 @@ def upsert_complex(
         values,
     )
     conn.commit()
+
+
+def ingest_complexes(
+    conn: sqlite3.Connection,
+    *,
+    region: str,
+    api_key: str,
+    client: httpx.Client | None = None,
+    throttle: Throttle | None = None,
+    log: Callable[[str], None] | None = None,
+) -> int:
+    """시군구 region의 단지목록 → 각 단지정보 → upsert_complex(파생 포함). 적재 단지수 반환.
+
+    멱등(upsert): 재실행 안전. throttle.wait()를 각 단지정보 호출 직전에 호출(쿼터).
+    파생 has_gym·parking_ratio는 upsert_complex 내부에서 계산된다(T0-2).
+    """
+    refs = list_complexes(api_key=api_key, sigungu=region, client=client)
+    total = len(refs)
+    count = 0
+    for index, ref in enumerate(refs):
+        if throttle is not None:
+            throttle.wait()
+        info = fetch_complex_info(ref.kapt_code, api_key=api_key, client=client)
+        if info is None:
+            continue
+        upsert_complex(conn, info)
+        count += 1
+        if log is not None:
+            log(f"단지 {index + 1}/{total} 적재 ({ref.name})")
+    return count
