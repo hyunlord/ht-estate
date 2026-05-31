@@ -58,11 +58,17 @@ ATTR_CONFIG: dict[str, dict[str, object]] = {
 # 주입형 claude 러너 — (prompt, max_turns) → stdout. 테스트는 mock으로 키리스.
 ClaudeRunner = Callable[[str, int], str]
 
+# 읽기 전용 웹 도구만 사전승인 — 추출기가 공개 출처를 검색·인용(http source_url)하게 한다.
+# 미승인 시 headless claude는 웹을 못 봐 urn/agent_research로만 떨어지거나 출력이 비는 것을
+# 라이브 검증(C13)에서 확인. 파일 쓰기 등은 미승인(시드 append는 부모 드라이버만) → 안전.
+CLAUDE_WEB_TOOLS = ["WebSearch", "WebFetch"]
+
 
 def _default_runner(prompt: str, max_turns: int) -> str:
-    """`claude -p`(headless, 구독 인증) 호출. stdout 반환. Anthropic API 키 불필요."""
+    """`claude -p`(headless, 구독 인증) 호출 + 읽기 전용 웹 도구. stdout 반환. API 키 불필요."""
     proc = subprocess.run(
-        ["claude", "-p", prompt, "--max-turns", str(max_turns)],
+        ["claude", "-p", prompt, "--allowedTools", *CLAUDE_WEB_TOOLS,
+         "--max-turns", str(max_turns)],
         capture_output=True,
         text=True,
         check=False,

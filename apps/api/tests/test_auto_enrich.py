@@ -8,6 +8,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from app.enrich.store import has_fresh, read_facts, write_facts
 from app.store.db import get_connection, init_db
 
@@ -182,6 +184,30 @@ def test_auto_enrich_pet_loads_caveats(tmp_path: Path) -> None:
     assert parsed["pet_allowed"] == "conditional"
     assert parsed["caveats"] == ["견종 제한"]
     assert parsed["confirm_with_office"] is True
+
+
+def test_default_runner_grants_readonly_web_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _default_runner가 claude -p에 읽기전용 웹도구(WebSearch/WebFetch)를 사전승인하는지.
+    import auto_enrich
+
+    captured: dict[str, list[str]] = {}
+
+    class _Proc:
+        stdout = "{}"
+
+    def fake_run(argv, **kw):  # type: ignore[no-untyped-def]
+        captured["argv"] = argv
+        return _Proc()
+
+    monkeypatch.setattr(auto_enrich.subprocess, "run", fake_run)
+    auto_enrich._default_runner("prompt", 30)
+    argv = captured["argv"]
+    assert argv[:2] == ["claude", "-p"]
+    assert "--allowedTools" in argv
+    assert "WebSearch" in argv and "WebFetch" in argv  # 읽기전용 웹도구
+    assert "--max-turns" in argv and "30" in argv
+    # 파일쓰기 도구는 미승인(안전 — 시드 append는 부모만)
+    assert "Write" not in argv and "Edit" not in argv
 
 
 def test_build_prompt_injects_candidates() -> None:
