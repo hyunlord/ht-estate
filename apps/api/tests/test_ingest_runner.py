@@ -70,8 +70,13 @@ def test_runs_all_stages_in_canonical_order(conn, stage_calls: list[str]) -> Non
     assert summary.rent_matched == 4 and summary.rent_join_total == 9
 
 
-def test_all_default_excludes_rent_opt_in(conn, stage_calls: list[str]) -> None:
+def test_all_default_excludes_rent_opt_in(
+    conn, stage_calls: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     # main의 "all"은 DEFAULT_STAGES(rent 미포함) — 기존 ops 동작 불변(매매 회귀 0).
+    # 키리스: main이 complex/transaction에 get_api_key()를 부르므로 키 게터 우회(.env 없는 CI 가정).
+    monkeypatch.setattr(ingest_mod, "get_api_key", lambda: "d")
+    monkeypatch.setattr(ingest_mod, "get_kakao_key", lambda: "d")
     assert "rent" not in DEFAULT_STAGES
     rc = main(["--region", "11680", "--stages", "all", "--db", ":memory:",
                "--months", "202504"])
