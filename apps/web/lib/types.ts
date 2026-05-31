@@ -27,6 +27,19 @@ export interface RepresentativeTrade {
   match_confidence: number | null;
 }
 
+// Tier-2 gym(soft, R1: hard filter 아님). 후보 산출 후 부착. http=클릭 / urn sentinel=비링크.
+export interface GymSource {
+  source_type: string;
+  source_url: string;
+}
+
+export interface GymSummary {
+  has_gym: "yes" | "no" | "unknown" | "none"; // none=미조사, unknown=조사했으나 불명
+  confidence: number | null;
+  evidence: string | null;
+  sources: GymSource[];
+}
+
 export interface Candidate {
   complex_id: string;
   name: string | null;
@@ -41,6 +54,7 @@ export interface Candidate {
   price_min: number | null;
   price_max: number | null;
   representative_trade: RepresentativeTrade | null;
+  gym?: GymSummary | null; // API는 항상 채움(미시드→none). optional: 구버전 mock 호환.
 }
 
 export interface Bbox {

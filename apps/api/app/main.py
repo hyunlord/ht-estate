@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.search.gym import attach_gym
 from app.search.repo import Candidate, search_complexes
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
@@ -47,5 +49,11 @@ def health() -> dict[str, str]:
 def search_complexes_endpoint(
     spec: HardFilterSpec, conn: Annotated[sqlite3.Connection, Depends(get_db)]
 ) -> list[Candidate]:
-    """구조화 hard filter_spec → 후보 단지 리스트(이진 in/out)."""
-    return search_complexes(conn, spec)
+    """구조화 hard filter_spec → 후보 단지(이진 in/out) + Tier-2 gym 부착(읽기 전용).
+
+    gym은 hard filter 후 attach_gym으로 부착(R1: 필터 아님). enrich(stub) read-through라
+    query-time은 읽기만 — 시드 hit=사실, miss=none. 키 불필요.
+    """
+    candidates = search_complexes(conn, spec)
+    attach_gym(conn, candidates, now=datetime.now(UTC))
+    return candidates
