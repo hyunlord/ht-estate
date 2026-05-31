@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.27", # 공공 API 클라이언트 런타임 (MOLIT·K-apt) + FastAPI TestClient
     "pydantic>=2.7", # 타입드 레코드 모델(coercion으로 MOLIT 문자열 정규화)
     "python-dotenv>=1.0", # 루트 .env 자동 로딩(export 불필요)
+    "anthropic>=0.105.2",
 ]
 
 # uv가 관리하는 개발 의존성 (PEP 735). uv sync/run 시 기본 설치.
