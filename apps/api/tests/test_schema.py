@@ -15,7 +15,26 @@ def test_init_db_creates_canonical_tables() -> None:
     conn = get_connection(":memory:")
     init_db(conn)
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"complex", "transaction", "enrichment"} <= tables
+    assert {"complex", "transaction", "enrichment", "rent_transaction"} <= tables
+
+
+def test_rent_transaction_columns_present() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    cols = _columns(conn, "rent_transaction")
+    # 가격축(전월세) + 조인 컬럼(매매와 동형) + provenance
+    assert {"deposit", "monthly_rent", "rent_type", "contract_type"} <= cols
+    assert {"complex_id", "match_confidence", "apt_name_raw", "legal_dong",
+            "bjd_code", "jibun", "net_area", "floor", "deal_date", "updated_at"} <= cols
+
+
+def test_sale_transaction_schema_unchanged() -> None:
+    # 매매 transaction은 P2-1에서 무변경(회귀 0) — price 있고 rent 컬럼 없음.
+    conn = get_connection(":memory:")
+    init_db(conn)
+    cols = _columns(conn, "transaction")
+    assert "price" in cols
+    assert "deposit" not in cols and "monthly_rent" not in cols and "rent_type" not in cols
 
 
 def test_complex_provenance_columns_present() -> None:

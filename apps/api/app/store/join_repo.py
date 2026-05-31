@@ -37,6 +37,9 @@ from app.match.normalize import extract_dong
 JIBUN_NAME_FLOOR = 0.70  # 단일 점유 지번 회수의 이름 타당성 하한(오매칭 0.615 배제)
 JIBUN_MATCH_CONFIDENCE = 0.9  # 지번+법정동 단일 점유 매칭 신뢰도(이름퍼지 0.85 < · < 도로 0.95)
 
+# 퍼지조인 백필 대상 테이블 — 매매·전월세 조인 컬럼 동형(P2-1). f-string SQL 주입 방지 allowlist.
+JOINABLE_TABLES = {"transaction", "rent_transaction"}
+
 # (complex_id, name) 후보 한 건.
 Candidate = tuple[str, str]
 
@@ -114,6 +117,7 @@ def _jibun_match(
 def backfill_matches(
     conn: sqlite3.Connection,
     *,
+    table: str = "transaction",
     threshold: float = DEFAULT_THRESHOLD,
     ambiguity_gap: float = DEFAULT_AMBIGUITY_GAP,
     use_jibun: bool = True,
@@ -122,10 +126,13 @@ def backfill_matches(
 
     무매치/모호는 complex_id를 NULL로 남긴다(억지매칭 금지). 매칭된 행에만
     match_confidence를 채운다. `use_jibun=False`면 이름 path만(T0-4b 베이스라인 — 회수 전후 비교용).
+    `table`은 매매("transaction") 기본 — 전월세("rent_transaction")도 동형 컬럼이라 재사용(P2-1).
     """
+    if table not in JOINABLE_TABLES:
+        raise ValueError(f"조인 불가 테이블: {table} (가능: {sorted(JOINABLE_TABLES)})")
     idx = _Indexes(conn)
     pending = conn.execute(
-        'SELECT txn_id, apt_name_raw, legal_dong, bjd_code, jibun FROM "transaction" '
+        f'SELECT txn_id, apt_name_raw, legal_dong, bjd_code, jibun FROM "{table}" '
         "WHERE complex_id IS NULL"
     ).fetchall()
 
@@ -148,7 +155,7 @@ def backfill_matches(
             continue
         complex_id, score = result
         conn.execute(
-            'UPDATE "transaction" SET complex_id = ?, match_confidence = ? WHERE txn_id = ?',
+            f'UPDATE "{table}" SET complex_id = ?, match_confidence = ? WHERE txn_id = ?',
             (complex_id, score, txn["txn_id"]),
         )
         matched += 1

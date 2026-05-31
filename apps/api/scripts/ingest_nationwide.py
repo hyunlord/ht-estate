@@ -23,7 +23,7 @@ import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHO
 import httpx
 from ingest_seoul import RegionResult, coverage_table, recent_months, run_batch
 
-from app.ingest import STAGE_ORDER, parse_months
+from app.ingest import DEFAULT_STAGES, STAGE_ORDER, parse_months
 from app.settings import get_api_key, get_kakao_key
 from app.sources.kapt import list_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         codes = [row for row in codes if row[0] in wanted]
 
     stages = (
-        list(STAGE_ORDER)
+        list(DEFAULT_STAGES)  # rent는 opt-in(명시) — all에 미포함
         if args.stages == "all"
         else [s.strip() for s in args.stages.split(",") if s.strip()]
     )

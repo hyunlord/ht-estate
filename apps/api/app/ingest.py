@@ -21,12 +21,16 @@ from app.store.complex_repo import ingest_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.geo_repo import backfill_coords
 from app.store.join_repo import backfill_matches
+from app.store.rent_transaction_repo import ingest_rent_months
 from app.store.transaction_repo import ingest_months
 from app.throttle import Throttle
 
-STAGE_ORDER = ["complex", "transaction", "join", "geocode"]
+STAGE_ORDER = ["complex", "transaction", "rent", "join", "geocode"]
+# `--stages all`의 기본 확장 — 전월세(rent)는 별도 활용신청 필요라 **opt-in**(명시 선택)으로 둔다.
+# (기존 ops `--stages all` 동작 불변 = 매매 회귀 0). rent는 `--stages rent` 등으로 명시 선택.
+DEFAULT_STAGES = ["complex", "transaction", "join", "geocode"]
 # 각 단계의 선행(같은 run에 함께 없으면 경고 — 이전 run에서 적재됐을 수 있어 막진 않음).
-_PREREQS = {"join": ("complex", "transaction"), "geocode": ("complex",)}
+_PREREQS = {"join": ("complex", "transaction"), "geocode": ("complex",), "rent": ("complex",)}
 GEO_SOURCE = "Kakao Local 주소검색"
 
 
@@ -38,14 +42,22 @@ class IngestSummary:
     join_total: int = 0
     geocoded: int = 0
     geocode_total: int = 0
+    # P2-1 전월세 (별도 축 — 매매 필드 불변)
+    rent_transactions: int = 0
+    rent_matched: int = 0
+    rent_join_total: int = 0
 
     def __str__(self) -> str:
         join_pct = f"{self.matched}/{self.join_total}" if self.join_total else "—"
         geo_pct = f"{self.geocoded}/{self.geocode_total}" if self.geocode_total else "—"
-        return (
+        base = (
             f"적재 요약 — 단지 {self.complexes} · 거래 {self.transactions} · "
             f"조인 matched {join_pct} · 지오코딩 {geo_pct}"
         )
+        if self.rent_transactions or self.rent_join_total:
+            rp = f"{self.rent_matched}/{self.rent_join_total}" if self.rent_join_total else "—"
+            base += f" · 전월세 {self.rent_transactions}(조인 {rp})"
+        return base
 
 
 def parse_months(spec: str) -> list[str]:
@@ -106,8 +118,17 @@ def run_ingest(
         summary.transactions = ingest_months(
             conn, region, months, api_key=api_key, throttle=throttle
         )
+    if "rent" in selected:
+        assert api_key is not None
+        summary.rent_transactions = ingest_rent_months(
+            conn, region, months, api_key=api_key, throttle=throttle
+        )
+        # 전월세 조인은 rent 스테이지 내에서(동형 조인 재사용). 매매 "join" 스테이지는 불변(회귀 0).
+        rent_stats = backfill_matches(conn, table="rent_transaction")
+        summary.rent_matched = rent_stats["matched"]
+        summary.rent_join_total = rent_stats["total"]
     if "join" in selected:
-        stats = backfill_matches(conn)
+        stats = backfill_matches(conn)  # 매매 — 동작 불변
         summary.matched = stats["matched"]
         summary.join_total = stats["total"]
     if "geocode" in selected:
@@ -135,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite 경로")
     parser.add_argument(
-        "--stages", default="all", help="all 또는 complex,transaction,join,geocode 부분선택"
+        "--stages", default="all",
+        help="all(=complex,transaction,join,geocode) 또는 부분선택. rent는 opt-in(명시 필요)",
     )
     parser.add_argument(
         "--interval", type=float, default=0.2, help="외부 API 호출 간 최소 간격(초)"
@@ -143,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     stages = (
-        list(STAGE_ORDER)
+        list(DEFAULT_STAGES)  # all = 매매 4단계(rent opt-in)
         if args.stages == "all"
         else [s.strip() for s in args.stages.split(",") if s.strip()]
     )
@@ -153,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = get_connection(args.db)
     init_db(conn)
-    api_key = get_api_key() if ({"complex", "transaction"} & set(stages)) else None
+    api_key = get_api_key() if ({"complex", "transaction", "rent"} & set(stages)) else None
     kakao_key = get_kakao_key() if "geocode" in stages else None
 
     run_ingest(

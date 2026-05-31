@@ -21,7 +21,7 @@ from datetime import date
 
 import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
 
-from app.ingest import STAGE_ORDER, IngestSummary, parse_months, run_ingest
+from app.ingest import DEFAULT_STAGES, STAGE_ORDER, IngestSummary, parse_months, run_ingest
 from app.settings import get_api_key, get_kakao_key
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.throttle import Throttle
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"서울 25구에 없는 코드: {sorted(unknown)}")
 
     stages = (
-        list(STAGE_ORDER)
+        list(DEFAULT_STAGES)  # rent는 opt-in(명시) — all에 미포함
         if args.stages == "all"
         else [s.strip() for s in args.stages.split(",") if s.strip()]
     )

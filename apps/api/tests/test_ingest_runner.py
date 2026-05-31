@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 import app.ingest as ingest_mod
-from app.ingest import STAGE_ORDER, main, parse_months, run_ingest
+from app.ingest import DEFAULT_STAGES, STAGE_ORDER, main, parse_months, run_ingest
 from app.store.db import get_connection
 
 
@@ -28,9 +28,18 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         calls.append("transaction")
         return 113
 
+    def fake_rent(conn, region, months, **kw):  # type: ignore[no-untyped-def]
+        calls.append("rent")
+        return 9
+
     def fake_join(conn, **kw):  # type: ignore[no-untyped-def]
-        calls.append("join")
-        return {"matched": 50, "unmatched": 63, "total": 113}
+        # 매매 join(table 미지정=transaction) vs 전월세 join(table=rent_transaction) 구분.
+        table = kw.get("table", "transaction")
+        if table == "transaction":
+            calls.append("join")
+            return {"matched": 50, "unmatched": 63, "total": 113}
+        calls.append("rent_join")
+        return {"matched": 4, "unmatched": 5, "total": 9}
 
     def fake_geo(conn, geocode, **kw):  # type: ignore[no-untyped-def]
         calls.append("geocode")
@@ -38,6 +47,7 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(ingest_mod, "ingest_complexes", fake_complexes)
     monkeypatch.setattr(ingest_mod, "ingest_months", fake_months)
+    monkeypatch.setattr(ingest_mod, "ingest_rent_months", fake_rent)
     monkeypatch.setattr(ingest_mod, "backfill_matches", fake_join)
     monkeypatch.setattr(ingest_mod, "backfill_coords", fake_geo)
     return calls
@@ -48,11 +58,38 @@ def test_runs_all_stages_in_canonical_order(conn, stage_calls: list[str]) -> Non
         conn, region="11680", months=["202504"], stages=list(STAGE_ORDER),
         api_key="d", kakao_key="d", log=lambda _m: None,
     )
-    assert stage_calls == ["complex", "transaction", "join", "geocode"]
+    # rent 스테이지는 적재 후 자체 조인(rent_join) → 매매 "join"은 그대로 별도.
+    assert stage_calls == ["complex", "transaction", "rent", "rent_join", "join", "geocode"]
+    # 매매 필드 불변(회귀 0)
     assert summary.complexes == 5
     assert summary.transactions == 113
     assert summary.matched == 50 and summary.join_total == 113
     assert summary.geocoded == 4 and summary.geocode_total == 4
+    # 전월세 필드 추가
+    assert summary.rent_transactions == 9
+    assert summary.rent_matched == 4 and summary.rent_join_total == 9
+
+
+def test_all_default_excludes_rent_opt_in(conn, stage_calls: list[str]) -> None:
+    # main의 "all"은 DEFAULT_STAGES(rent 미포함) — 기존 ops 동작 불변(매매 회귀 0).
+    assert "rent" not in DEFAULT_STAGES
+    rc = main(["--region", "11680", "--stages", "all", "--db", ":memory:",
+               "--months", "202504"])
+    assert rc == 0
+    assert "rent" not in stage_calls  # all에 rent 없음
+    assert stage_calls == ["complex", "transaction", "join", "geocode"]
+
+
+def test_rent_stage_ingests_and_joins(conn, stage_calls: list[str]) -> None:
+    # rent 명시 → 적재 + 자체 조인. 매매 stage는 안 돈다.
+    summary = run_ingest(
+        conn, region="11680", months=["202504"], stages=["rent"],
+        api_key="d", log=lambda _m: None,
+    )
+    assert stage_calls == ["rent", "rent_join"]
+    assert summary.rent_transactions == 9
+    assert summary.rent_matched == 4
+    assert summary.transactions == 0 and summary.matched == 0  # 매매 미실행
 
 
 def test_canonical_order_regardless_of_input_order(conn, stage_calls: list[str]) -> None:

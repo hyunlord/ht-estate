@@ -62,6 +62,33 @@ CREATE TABLE IF NOT EXISTS "transaction" (
 -- 실거래↔단지 조인 조회용 인덱스 (T0-4·T0-6에서 쓰임, 지금 박아둠)
 CREATE INDEX IF NOT EXISTS idx_transaction_complex ON "transaction"(complex_id);
 
+-- 전월세 실거래 (MOLIT, 매매와 별도 데이터셋 — P2-1). 거래유형 축 확장(설계 §2).
+-- 매매 transaction과 분리해 매매 회귀 0(별도 테이블). 조인 컬럼(complex_id·match_confidence·
+-- apt_name_raw·legal_dong·bjd_code·jibun)은 transaction과 동형 → 퍼지조인(join_repo) 재사용.
+-- 가격축만 다름: 매매=price / 전월세=deposit(보증금)+monthly_rent(월세, 전세=0).
+CREATE TABLE IF NOT EXISTS rent_transaction (
+  txn_id              TEXT PRIMARY KEY,
+  complex_id          TEXT REFERENCES complex(complex_id),  -- 퍼지 매칭 (NULL 가능)
+  match_confidence    REAL,
+  apt_name_raw        TEXT,
+  legal_dong          TEXT,
+  bjd_code            TEXT,                                 -- sggCd+umdCd (조인 narrowing)
+  jibun               TEXT,                                 -- 캐논 지번 (지번 매칭)
+  road_addr           TEXT,
+  build_year          INTEGER,
+  net_area            REAL,                                 -- 전용면적
+  deposit             INTEGER,                              -- 보증금 (만원)
+  monthly_rent        INTEGER,                              -- 월세 (만원, 전세=0)
+  rent_type           TEXT,                                 -- 파생: 'jeonse'(월세 0) | 'monthly'
+  contract_type       TEXT,                                 -- 계약구분 (신규|갱신, MOLIT contractType)
+  floor               INTEGER,
+  deal_date           DATE,
+  -- provenance --
+  updated_at          TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rent_transaction_complex ON rent_transaction(complex_id);
+
 -- enrichment: 출처를 들고 다니는 통합 사실 테이블 (lazy-filled, Phase 1+)
 CREATE TABLE IF NOT EXISTS enrichment (
   complex_id          TEXT REFERENCES complex(complex_id),
