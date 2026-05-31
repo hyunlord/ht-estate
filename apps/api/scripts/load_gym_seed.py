@@ -8,6 +8,8 @@ C4: CC가 에이전트로 추출한 정적 시드를 enrichment 테이블에 적
 
 시드 레코드: complex_id · has_gym(yes|no|unknown) · in_complex · evidence(요지) ·
 confidence · source_type · source_url. complex_id는 K-apt kaptCode(complex FK).
+
+C5에서 공용 코어(_seedlib)로 일반화 — 적재 로직은 공유하되 value 빌더(_to_fact)만 gym 전용.
 """
 
 from __future__ import annotations
@@ -15,25 +17,20 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.enrich.store import EnrichmentFact, has_fresh, write_facts
+from _seedlib import load_seed as _load_seed
+from _seedlib import read_records
+
+from app.enrich.store import EnrichmentFact
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 
 ATTRIBUTE = "gym"
 DEFAULT_SEED = Path(__file__).resolve().parents[1] / "data" / "seeds" / "gym_gangnam.jsonl"
 
-
-def load_seed_records(path: Path) -> list[dict[str, object]]:
-    """jsonl 시드 → 레코드 리스트(빈 줄 skip)."""
-    records: list[dict[str, object]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            records.append(json.loads(line))
-    return records
+# 공용 코어 read_records 별칭(기존 공개 API 유지 — 호출부·테스트 호환).
+load_seed_records = read_records
 
 
 def _to_fact(record: dict[str, object]) -> EnrichmentFact:
@@ -57,19 +54,8 @@ def load_seed(
     ttl: timedelta,
     now: datetime,
 ) -> dict[str, int]:
-    """시드를 enrichment에 멱등 적재. fresh 있는 단지는 skip(재개). {loaded, skipped, complexes}."""
-    by_complex: dict[str, list[EnrichmentFact]] = defaultdict(list)
-    for record in records:
-        by_complex[str(record["complex_id"])].append(_to_fact(record))
-
-    loaded = 0
-    skipped = 0
-    for complex_id, facts in by_complex.items():
-        if has_fresh(conn, complex_id, ATTRIBUTE, now=now):
-            skipped += 1
-            continue
-        loaded += write_facts(conn, complex_id, ATTRIBUTE, facts, ttl=ttl, now=now)
-    return {"loaded": loaded, "skipped": skipped, "complexes": len(by_complex)}
+    """gym 시드를 enrichment에 멱등 적재(공용 코어 위임). {loaded, skipped, complexes}."""
+    return _load_seed(conn, records, attribute=ATTRIBUTE, to_fact=_to_fact, ttl=ttl, now=now)
 
 
 def main(argv: list[str] | None = None) -> int:
