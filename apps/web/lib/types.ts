@@ -1,5 +1,13 @@
 // T0-6 API 계약과 일치하는 타입. gym 필드 없음(R1 — hard filter 제외).
 
+export type Preference = "required" | "preferred" | "none";
+
+// soft 선호 — 랭킹(ORDER)만 바꾸고 후보 SET은 안 바꾼다(설계 §7 demote-not-exclude).
+export interface SoftSpec {
+  gym: Preference;
+  pet: Preference;
+}
+
 export interface HardFilterSpec {
   approval_year_min?: number | null;
   approval_year_max?: number | null;
@@ -17,6 +25,7 @@ export interface HardFilterSpec {
   min_lng?: number | null;
   max_lng?: number | null;
   limit?: number;
+  soft?: SoftSpec; // 랭킹 전용. 생략/none → 중립 정렬.
 }
 
 export interface RepresentativeTrade {

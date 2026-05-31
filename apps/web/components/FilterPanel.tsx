@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { HardFilterSpec } from "@/lib/types";
+import type { HardFilterSpec, Preference } from "@/lib/types";
 
 // HardFilterSpec 편집 폼. gym 토글 없음(R1 — hard filter 제외). bbox는 지도 뷰포트 자동.
 const NUMERIC_FIELDS: { key: keyof HardFilterSpec; label: string; step?: string }[] = [
@@ -25,6 +25,8 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
   const [values, setValues] = useState<Record<string, string>>({});
   const [underground, setUnderground] = useState(false);
   const [dealSince, setDealSince] = useState("");
+  const [gymPref, setGymPref] = useState<Preference>("none");
+  const [petPref, setPetPref] = useState<Preference>("none");
 
   const update = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setValues((prev) => ({ ...prev, [key]: e.target.value }));
@@ -40,8 +42,18 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
     }
     if (underground) spec.parking_underground = true;
     if (dealSince) spec.deal_since = dealSince;
+    // soft 선호 — none 아니면만 보낸다(없으면 서버 기본 none = 중립 정렬).
+    if (gymPref !== "none" || petPref !== "none") {
+      spec.soft = { gym: gymPref, pet: petPref };
+    }
     onSearch(spec);
   };
+
+  const PREF_OPTS: { value: Preference; label: string }[] = [
+    { value: "none", label: "없음" },
+    { value: "preferred", label: "선호" },
+    { value: "required", label: "필수" },
+  ];
 
   return (
     <form
@@ -82,6 +94,39 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
           className="rounded border border-zinc-300 px-2 py-1"
         />
       </label>
+      <fieldset data-testid="soft-prefs" className="flex flex-col gap-2 border-t border-zinc-200 pt-2">
+        <legend className="text-xs text-zinc-500">soft 선호 (랭킹 — 후보는 그대로, 순서만)</legend>
+        <label className="flex items-center justify-between gap-2">
+          <span>헬스장</span>
+          <select
+            data-testid="gym-pref"
+            value={gymPref}
+            onChange={(e) => setGymPref(e.target.value as Preference)}
+            className="rounded border border-zinc-300 px-2 py-1"
+          >
+            {PREF_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center justify-between gap-2">
+          <span>강아지</span>
+          <select
+            data-testid="pet-pref"
+            value={petPref}
+            onChange={(e) => setPetPref(e.target.value as Preference)}
+            className="rounded border border-zinc-300 px-2 py-1"
+          >
+            {PREF_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </fieldset>
       <button
         type="submit"
         data-testid="search-button"

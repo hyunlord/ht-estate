@@ -21,8 +21,9 @@ test("app shell renders keyless with zero console errors", async ({ page }) => {
   await expect(page.getByTestId("map-container")).toBeVisible();
   // 키 부재 → placeholder graceful (게이트는 키리스 빌드)
   await expect(page.getByTestId("map-placeholder")).toBeVisible();
-  // R1: 헬스장 토글 없음
-  await expect(page.getByText("헬스장")).toHaveCount(0);
+  // R1: gym은 hard filter 아님 — soft 랭킹 선호로만 등장(P1-4). hard 숫자필드엔 gym 없음.
+  await expect(page.getByTestId("soft-prefs")).toBeVisible();
+  await expect(page.getByTestId("gym-pref")).toBeVisible();
 
   await page.screenshot({ path: "test-results/home.png", fullPage: true });
 

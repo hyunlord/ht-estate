@@ -8,12 +8,30 @@ gym 필드는 **없다** — K-apt에 헬스장 데이터가 없어(R1 프로브
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+Preference = Literal["required", "preferred", "none"]
+
+
+class SoftSpec(BaseModel):
+    """soft 선호 — 랭킹(ORDER)만 바꾸고 후보 SET은 절대 안 바꾼다(설계 §7·R1).
+
+    none(기본) → 중립 정렬 유지. required > preferred 가중. demote-not-exclude:
+    required 미충족도 제외 0(하위 랭킹). 속성 미존재(floorplan·후기)는 Phase 2/3.
+    """
+
+    gym: Preference = "none"
+    pet: Preference = "none"
+
 
 class HardFilterSpec(BaseModel):
-    """결정론 hard 조건. 모든 필드 optional — 준 것만 AND로 좁힌다."""
+    """결정론 hard 조건(이진 in/out) + soft 선호(랭킹 전용).
+
+    hard 필드만 후보 SET을 결정한다. soft는 ORDER만 — search_complexes는 soft를 무시하고
+    랭킹 레이어(ranking.py)만 읽는다. 모든 hard 필드 optional — 준 것만 AND로 좁힌다.
+    """
 
     # complex 속성
     approval_year_min: int | None = None
@@ -37,6 +55,9 @@ class HardFilterSpec(BaseModel):
     max_lng: float | None = None
 
     limit: int = Field(default=50, ge=1, le=200)
+
+    # soft 선호 — 랭킹 전용(SET 불변). 기본 all-none → 중립 정렬.
+    soft: SoftSpec = Field(default_factory=SoftSpec)
 
     @model_validator(mode="after")
     def _check_coherence(self) -> HardFilterSpec:
