@@ -35,6 +35,18 @@ SEEDS_DIR = Path(__file__).resolve().parents[1] / "data" / "seeds"
 BLOCKED_DOMAINS = ("naver.com", "hogangnono", "hogengnono", "asil.kr")
 DEFAULT_TTL = timedelta(days=90)
 
+# R2: 위키류 출처는 편집가능(약한 권위) → confidence를 이 상한으로 cap(drop 아님).
+WIKI_DOMAINS = ("namu.wiki", "wikipedia.org", "wikipedia.com", "wikiwand.com")
+WIKI_CONF_CAP = 0.5
+# R2: gym 'yes'는 evidence에 명시적 헬스장 토큰이 있어야 — generic '체육시설'만으론 yes 불가.
+GYM_TOKENS = ("헬스", "피트니스", "휘트니스", "짐", "gym", "fitness", "gx", "웨이트", "런닝머신")
+# R1: 미래/계획 마커만 있고 완공/운영 마커가 없으면 yes→unknown 강등(계획을 보유로 오인 방지).
+FUTURE_MARKERS = ("예정", "계획", "추진", "청사진", "예상", "공사 중", "공사중", "착공")
+DONE_MARKERS = (
+    "운영", "보유", "완공", "준공", "이용", "입주민 전용",
+    "오픈", "개장", "신설", "구비", "갖춘", "갖추",
+)
+
 # 속성별 설정 — 프롬프트·시드파일·로더·상태 도메인. 새 속성은 여기 한 줄.
 ATTR_CONFIG: dict[str, dict[str, object]] = {
     "gym": {
@@ -112,6 +124,31 @@ def _iter_json_objects(text: str):  # type: ignore[no-untyped-def]
             yield obj
 
 
+def _apply_backstops(
+    attribute: str, state: str, conf: float, evidence: str, url: str
+) -> tuple[str, float]:
+    """R1/R2 보수 백스톱 — 프롬프트를 어겨도 코드가 막는다. (state, conf) 조정 반환.
+
+    R1(future): 미래/계획 마커만 있고 완공/운영 마커 없는 'yes'/'conditional' → unknown 강등.
+    R2(wiki cap): 위키 출처면 confidence를 WIKI_CONF_CAP로 cap.
+    R2(gym token): gym 'yes'인데 evidence에 명시적 헬스장 토큰 없으면 → unknown 강등(generic 차단).
+    """
+    low = evidence.lower()
+    # R1 — 계획을 보유로 오인 방지
+    if state in ("yes", "conditional"):
+        has_future = any(m in evidence for m in FUTURE_MARKERS)
+        has_done = any(m in evidence for m in DONE_MARKERS)
+        if has_future and not has_done:
+            state = "unknown"
+    # R2 — gym 명시 토큰 요구
+    if attribute == "gym" and state == "yes" and not any(t in low for t in GYM_TOKENS):
+        state = "unknown"
+    # R2 — 위키 출처 conf cap
+    if any(w in url for w in WIKI_DOMAINS):
+        conf = min(conf, WIKI_CONF_CAP)
+    return state, conf
+
+
 def parse_output(
     text: str, attribute: str, valid_ids: set[str], states: set[str], state_key: str
 ) -> list[dict[str, object]]:
@@ -144,12 +181,14 @@ def parse_output(
             conf = float(obj.get("confidence", 0.2))
         except (TypeError, ValueError):
             conf = 0.2
+        conf = max(0.0, min(1.0, conf))
+        state, conf = _apply_backstops(attribute, str(state), conf, evidence, url)  # R1/R2
         rec: dict[str, object] = {
             "complex_id": cid,
             "name": str(obj.get("name", "")),
             state_key: state,
             "evidence": evidence,
-            "confidence": max(0.0, min(1.0, conf)),
+            "confidence": conf,
             "source_type": str(obj.get("source_type", "agent_research")),
             "source_url": url,
         }

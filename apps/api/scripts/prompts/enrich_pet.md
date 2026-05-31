@@ -15,6 +15,8 @@
    확신 없으면 unknown.
 7. **요지만·보수적 conf** — evidence는 요지(원문복사 금지). 관리규약/공식 ≤0.7, 언론 0.5~0.6,
    약한 출처 ≤0.4, unknown 0.2~0.3.
+8. **계획/미래 금지(R1)** — "규약 개정 추진·예정"은 yes/conditional 금지 → 확정 전 unknown.
+9. **위키 약한 근거(R2)** — namu.wiki·wikipedia 등은 약한 근거(confidence 낮게, ≤0.5).
 
 ## 출력 형식 (JSONL — 단지당 한 줄, 그 외 텍스트 금지)
 ```

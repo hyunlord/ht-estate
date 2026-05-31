@@ -186,6 +186,60 @@ def test_auto_enrich_pet_loads_caveats(tmp_path: Path) -> None:
     assert parsed["confirm_with_office"] is True
 
 
+# ───────────────────────── R1/R2 백스톱 (적대적 스모크) ─────────────────────────
+
+
+def test_r2_wiki_source_caps_confidence() -> None:
+    # 위키 출처 conf 0.9 입력 → 0.5로 cap(drop 아님).
+    out = json.dumps({"complex_id": "A", "has_gym": "yes", "evidence": "단지 내 피트니스센터 보유",
+                      "confidence": 0.9, "source_type": "web",
+                      "source_url": "https://namu.wiki/w/고덕그라시움"})
+    recs = parse_output(out, "gym", {"A"}, GYM_STATES, "has_gym")
+    assert recs[0]["has_gym"] == "yes"  # 토큰 있음 → yes 유지
+    assert recs[0]["confidence"] == 0.5  # 위키 cap
+
+
+def test_r2_gym_yes_requires_explicit_token() -> None:
+    # generic '체육시설' yes → 명시 헬스장 토큰 없어 unknown 강등.
+    out = json.dumps({"complex_id": "A", "has_gym": "yes", "evidence": "단지 내 체육시설 보유",
+                      "confidence": 0.8, "source_type": "web", "source_url": "https://x/1"})
+    recs = parse_output(out, "gym", {"A"}, GYM_STATES, "has_gym")
+    assert recs[0]["has_gym"] == "unknown"  # 명시 토큰 없음 → 강등
+
+
+def test_r2_gym_yes_with_token_survives() -> None:
+    out = json.dumps({"complex_id": "A", "has_gym": "yes", "evidence": "입주민 전용 헬스장 운영",
+                      "confidence": 0.8, "source_type": "official", "source_url": "https://x/1"})
+    recs = parse_output(out, "gym", {"A"}, GYM_STATES, "has_gym")
+    assert recs[0]["has_gym"] == "yes" and recs[0]["confidence"] == 0.8  # 토큰+비위키 → 유지
+
+
+def test_r1_future_only_demotes_to_unknown() -> None:
+    # 증설 '추진'(미래)만 + 완공 마커 없음 → yes 강등.
+    out = json.dumps({"complex_id": "A", "has_gym": "yes",
+                      "evidence": "커뮤니티 피트니스 증설 추진 예정", "confidence": 0.7,
+                      "source_type": "news", "source_url": "https://x/1"})
+    recs = parse_output(out, "gym", {"A"}, GYM_STATES, "has_gym")
+    assert recs[0]["has_gym"] == "unknown"  # 미래만 → 강등
+
+
+def test_r1_future_with_completion_survives() -> None:
+    # 증설했고 '신설/운영' 완공 마커 있음 → yes 유지(false-pos 방지).
+    out = json.dumps({"complex_id": "A", "has_gym": "yes",
+                      "evidence": "증설 공사로 피트니스센터를 신설해 운영 중", "confidence": 0.7,
+                      "source_type": "news", "source_url": "https://x/1"})
+    recs = parse_output(out, "gym", {"A"}, GYM_STATES, "has_gym")
+    assert recs[0]["has_gym"] == "yes"  # 완공 마커 있음 → 유지
+
+
+def test_r1_pet_conditional_future_demotes() -> None:
+    out = json.dumps({"complex_id": "A", "pet_allowed": "conditional", "evidence": "규약 개정 추진",
+                      "caveats": [], "confidence": 0.5, "source_type": "news",
+                      "source_url": "https://x/1"})
+    recs = parse_output(out, "pet_allowed", {"A"}, PET_STATES, "pet_allowed")
+    assert recs[0]["pet_allowed"] == "unknown"  # 미래만 → 강등
+
+
 def test_default_runner_grants_readonly_web_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     # _default_runner가 claude -p에 읽기전용 웹도구(WebSearch/WebFetch)를 사전승인하는지.
     import auto_enrich
