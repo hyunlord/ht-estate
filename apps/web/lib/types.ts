@@ -40,6 +40,17 @@ export interface GymSummary {
   sources: GymSource[];
 }
 
+// Tier-2 pet_allowed(soft, R1: hard filter 아님). gym 패턴 재사용 + pet 고유(conditional·
+// caveats·confirm_with_office). source는 GymSource와 동형(backend EnrichSource).
+export interface PetSummary {
+  pet_allowed: "yes" | "conditional" | "no" | "unknown" | "none";
+  confidence: number | null;
+  evidence: string | null;
+  caveats: string[];
+  confirm_with_office: boolean; // 관리사무소 확인 권고(§11 — 카드가 표면화)
+  sources: GymSource[];
+}
+
 export interface Candidate {
   complex_id: string;
   name: string | null;
@@ -55,6 +66,7 @@ export interface Candidate {
   price_max: number | null;
   representative_trade: RepresentativeTrade | null;
   gym?: GymSummary | null; // API는 항상 채움(미시드→none). optional: 구버전 mock 호환.
+  pet?: PetSummary | null;
 }
 
 export interface Bbox {

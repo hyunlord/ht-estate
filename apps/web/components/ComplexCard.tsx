@@ -1,12 +1,44 @@
 "use client";
 
-import type { Candidate, GymSummary } from "@/lib/types";
+import type { Candidate, GymSummary, PetSummary } from "@/lib/types";
 
-// 단지 카드 — hard 조건 ✓ 값 + 추정매칭 배지 + 출처 딥링크 + 대표거래 + Tier-2 gym(soft).
-// gym은 hard filter 아님(R1) — 표시만. pet·floorplan·후기는 Phase 1+.
+// 단지 카드 — hard 조건 ✓ 값 + 추정매칭 배지 + 출처 딥링크 + 대표거래 + Tier-2 soft(gym·pet).
+// soft는 hard filter 아님(R1) — 표시만. floorplan·후기는 Phase 1+.
 
 function year(date: string | null): string {
   return date ? date.slice(0, 4) : "—";
+}
+
+type Source = { source_type: string; source_url: string };
+
+// 공유 출처 딥링크 — http는 클릭(새 탭), urn sentinel은 "에이전트 조사" 비링크. prefix로 testid 구분.
+function SourceLinks({ sources, prefix }: { sources: Source[]; prefix: string }) {
+  if (sources.length === 0) return null;
+  return (
+    <span className="ml-1">
+      ↳ 출처:{" "}
+      {sources.map((s, i) => (
+        <span key={i}>
+          {i > 0 && " · "}
+          {s.source_url.startsWith("http") ? (
+            <a
+              data-testid={`${prefix}-source-link`}
+              href={s.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline"
+            >
+              이동 ↗
+            </a>
+          ) : (
+            <span data-testid={`${prefix}-source-agent`} className="text-zinc-500">
+              에이전트 조사
+            </span>
+          )}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 // gym 상태 → 아이콘. none(미조사)은 아이콘 없이 텍스트로 unknown(불명)과 구분.
@@ -34,31 +66,59 @@ function GymRow({ gym }: { gym: GymSummary }) {
       {gym.confidence != null && (
         <span className="text-zinc-400"> (conf {gym.confidence.toFixed(2)})</span>
       )}
-      {gym.sources.length > 0 && (
-        <span className="ml-1">
-          ↳ 출처:{" "}
-          {gym.sources.map((s, i) => (
-            <span key={i}>
-              {i > 0 && " · "}
-              {s.source_url.startsWith("http") ? (
-                <a
-                  data-testid="gym-source-link"
-                  href={s.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline"
-                >
-                  이동 ↗
-                </a>
-              ) : (
-                <span data-testid="gym-source-agent" className="text-zinc-500">
-                  에이전트 조사
-                </span>
-              )}
-            </span>
-          ))}
+      <SourceLinks sources={gym.sources} prefix="gym" />
+    </div>
+  );
+}
+
+// pet 상태 → 아이콘 + 라벨. conditional·unknown 둘 다 △지만 라벨로 구분(조건부 vs 확인 불가).
+const PET_ICON: Record<PetSummary["pet_allowed"], string> = {
+  yes: "✓",
+  conditional: "△",
+  no: "✗",
+  unknown: "△",
+  none: "",
+};
+const PET_LABEL: Record<PetSummary["pet_allowed"], string> = {
+  yes: "",
+  conditional: "조건부",
+  no: "",
+  unknown: "확인 불가",
+  none: "정보 없음",
+};
+
+// §11 "가장 약한 고리": 모든 pet 행에 관리사무소 확인 권고를 표면화(보수성).
+function ConfirmBadge() {
+  return (
+    <span
+      data-testid="pet-confirm-badge"
+      className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800"
+    >
+      ⚠ 관리사무소 확인 권장
+    </span>
+  );
+}
+
+function PetRow({ pet }: { pet: PetSummary }) {
+  const label = PET_LABEL[pet.pet_allowed];
+  const status =
+    pet.pet_allowed === "none" ? label : `${PET_ICON[pet.pet_allowed]} ${label}`.trim();
+  return (
+    <div data-testid="pet-row" className="text-sm">
+      <span className="text-zinc-500">강아지</span>{" "}
+      <span data-testid="pet-status">{status}</span>{" "}
+      {pet.evidence && <span data-testid="pet-evidence">{pet.evidence}</span>}
+      {pet.confidence != null && (
+        <span className="text-zinc-400"> (conf {pet.confidence.toFixed(2)})</span>
+      )}
+      {pet.caveats.length > 0 && (
+        <span data-testid="pet-caveats" className="text-amber-700">
+          {" "}
+          · 제한: {pet.caveats.join(" · ")}
         </span>
       )}
+      {pet.confirm_with_office && <ConfirmBadge />}
+      <SourceLinks sources={pet.sources} prefix="pet" />
     </div>
   );
 }
@@ -93,6 +153,7 @@ export function ComplexCard({ candidate }: { candidate: Candidate }) {
       </dl>
 
       {candidate.gym && <GymRow gym={candidate.gym} />}
+      {candidate.pet && <PetRow pet={candidate.pet} />}
 
       {rep && (
         <p className="text-sm" data-testid="representative-trade">

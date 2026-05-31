@@ -12,6 +12,7 @@ import sqlite3
 from pydantic import BaseModel
 
 from app.search.gym import GymSummary
+from app.search.pet import PetSummary
 from app.search.spec import HardFilterSpec
 
 
@@ -41,8 +42,9 @@ class Candidate(BaseModel):
     price_min: int | None
     price_max: int | None
     representative_trade: RepresentativeTrade | None
-    # Tier-2 gym(R1: hard filter 아님 — 후보 산출 후 attach_gym으로 부착). repo는 안 채움.
+    # Tier-2 soft(R1: hard filter 아님 — 후보 산출 후 attach_gym/attach_pet로 부착). repo는 안 채움.
     gym: GymSummary | None = None
+    pet: PetSummary | None = None
 
 
 def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:

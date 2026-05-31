@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.search.gym import attach_gym
+from app.search.pet import attach_pet
 from app.search.repo import Candidate, search_complexes
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
@@ -49,11 +50,13 @@ def health() -> dict[str, str]:
 def search_complexes_endpoint(
     spec: HardFilterSpec, conn: Annotated[sqlite3.Connection, Depends(get_db)]
 ) -> list[Candidate]:
-    """구조화 hard filter_spec → 후보 단지(이진 in/out) + Tier-2 gym 부착(읽기 전용).
+    """구조화 hard filter_spec → 후보 단지(이진 in/out) + Tier-2 gym·pet 부착(읽기 전용).
 
-    gym은 hard filter 후 attach_gym으로 부착(R1: 필터 아님). enrich(stub) read-through라
+    soft 속성은 hard filter 후 attach_*로 부착(R1: 필터 아님). enrich(stub) read-through라
     query-time은 읽기만 — 시드 hit=사실, miss=none. 키 불필요.
     """
     candidates = search_complexes(conn, spec)
-    attach_gym(conn, candidates, now=datetime.now(UTC))
+    now = datetime.now(UTC)
+    attach_gym(conn, candidates, now=now)
+    attach_pet(conn, candidates, now=now)
     return candidates
