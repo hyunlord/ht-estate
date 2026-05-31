@@ -51,6 +51,14 @@ def test_select_respects_limit() -> None:
     assert len(select_candidates(conn, "gym", now=NOW, limit=2)) == 2
 
 
+def test_select_complex_ids_targeting() -> None:
+    # complex_ids로 재배치 타겟팅 — 해당 단지만(fresh 제외 유지).
+    conn = _db(("A", "a", 500), ("B", "b", 400), ("C", "c", 300))
+    picked = select_candidates(conn, "gym", now=NOW, limit=10, complex_ids=["B", "C"])
+    assert {c["complex_id"] for c in picked} == {"B", "C"}
+    assert select_candidates(conn, "gym", now=NOW, limit=10, complex_ids=[]) == []  # 빈 → 0
+
+
 # ───────────────────────── 규율 강제 파싱 ─────────────────────────
 
 GYM_STATES = {"yes", "no", "unknown"}

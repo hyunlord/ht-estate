@@ -89,18 +89,29 @@ def _default_runner(prompt: str, max_turns: int) -> str:
 
 
 def select_candidates(
-    conn: sqlite3.Connection, attribute: str, *, now: datetime, limit: int
+    conn: sqlite3.Connection, attribute: str, *, now: datetime, limit: int,
+    complex_ids: list[str] | None = None,
 ) -> list[dict[str, str]]:
-    """fresh enrichment 없는 단지 limit개 — 세대수 desc 우선(영향 큰 단지 먼저)."""
-    rows = conn.execute(
+    """fresh enrichment 없는 단지 limit개 — 세대수 desc 우선(영향 큰 단지 먼저).
+
+    complex_ids 주면 그 단지들로 한정(재배치 타겟팅 — fresh는 여전히 제외). 빈 리스트면 결과 0.
+    """
+    sql = (
         "SELECT c.complex_id, c.name FROM complex c "
         "WHERE NOT EXISTS ("
         "  SELECT 1 FROM enrichment e WHERE e.complex_id = c.complex_id "
         "  AND e.attribute = ? AND e.ttl_expires_at > ?) "
-        "ORDER BY c.household_count DESC NULLS LAST, c.complex_id "
-        "LIMIT ?",
-        (attribute, now.isoformat(), limit),
-    ).fetchall()
+    )
+    params: list[object] = [attribute, now.isoformat()]
+    if complex_ids is not None:
+        if not complex_ids:
+            return []
+        placeholders = ",".join("?" for _ in complex_ids)
+        sql += f"AND c.complex_id IN ({placeholders}) "
+        params += complex_ids
+    sql += "ORDER BY c.household_count DESC NULLS LAST, c.complex_id LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
     return [{"complex_id": r["complex_id"], "name": r["name"] or ""} for r in rows]
 
 
@@ -224,11 +235,15 @@ def auto_enrich(
     max_turns: int,
     runner: ClaudeRunner = _default_runner,
     seeds_dir: Path = SEEDS_DIR,
+    complex_ids: list[str] | None = None,
 ) -> dict[str, int]:
-    """한 속성 자동 prefill: 선택→claude→파싱→append→적재. 멱등(미적재만 선택). 통계 반환."""
+    """한 속성 자동 prefill: 선택→claude→파싱→append→적재. 멱등(미적재만 선택). 통계 반환.
+
+    complex_ids 주면 그 단지로 한정(재배치 타겟팅).
+    """
     cfg = ATTR_CONFIG[attr]
     attribute = str(cfg["attribute"])
-    candidates = select_candidates(conn, attribute, now=now, limit=limit)
+    candidates = select_candidates(conn, attribute, now=now, limit=limit, complex_ids=complex_ids)
     if not candidates:
         return {"selected": 0, "extracted": 0, "appended": 0, "loaded": 0}
 
@@ -257,14 +272,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=20, help="이번 run 단지 수(저volume 권장)")
     parser.add_argument("--max-turns", type=int, default=60, help="claude -p turn 상한")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite 경로")
+    parser.add_argument("--complex-ids", default="", help="콤마구분 단지코드로 한정(재배치 타겟팅)")
     args = parser.parse_args(argv)
 
     conn = get_connection(args.db)
     init_db(conn)
     now = datetime.now(UTC)
+    ids = [c.strip() for c in args.complex_ids.split(",") if c.strip()] or None
     attrs = ["gym", "pet"] if args.attribute == "both" else [args.attribute]
     for attr in attrs:
-        stats = auto_enrich(conn, attr, now=now, limit=args.limit, max_turns=args.max_turns)
+        stats = auto_enrich(conn, attr, now=now, limit=args.limit,
+                            max_turns=args.max_turns, complex_ids=ids)
         print(
             f"[{attr}] 선택 {stats['selected']} · 추출 {stats['extracted']} · "
             f"append {stats['appended']} · 적재 {stats['loaded']}"
