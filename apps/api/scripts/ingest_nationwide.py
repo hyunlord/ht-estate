@@ -19,6 +19,7 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
+import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
 import httpx
 from ingest_seoul import RegionResult, coverage_table, recent_months, run_batch
 

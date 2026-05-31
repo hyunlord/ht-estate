@@ -19,7 +19,13 @@ export NEXT_PUBLIC_KAKAO_JS_KEY :=
 .PHONY: gate gate-api gate-web gate-e2e \
         ruff-api pyright-api pytest-api api-run \
         lint-web build-web typecheck-web e2e-web \
+        load-gym load-pet auto-enrich ingest-seoul ingest-nationwide \
         clean
+
+# 데이터 적재/시드 스크립트 — apps/api에서 실행(스크립트가 _bootstrap으로 sys.path 처리 →
+# PYTHONPATH 불필요). cron은 이 타겟이나 스크립트를 직접 호출하면 된다. ARGS로 인자 전달.
+ATTR ?= both
+LIMIT ?= 20
 
 ## ───────── API (Python · uv · FastAPI) ─────────
 ruff-api:
@@ -62,6 +68,23 @@ gate-e2e: e2e-web
 # build-web은 prereq DAG에서 한 번만 실행된다.
 gate: gate-api gate-web gate-e2e
 	@echo "✅✅ ALL GATES GREEN"
+
+## ───────── 데이터 적재/enrichment (키 필요 — 게이트 밖) ─────────
+load-gym:
+	cd $(API_DIR) && uv run python scripts/load_gym_seed.py $(ARGS)
+
+load-pet:
+	cd $(API_DIR) && uv run python scripts/load_pet_seed.py $(ARGS)
+
+# enrichment 자동 prefill(cron'd claude -p, 구독 인증). make auto-enrich ATTR=gym LIMIT=20
+auto-enrich:
+	cd $(API_DIR) && uv run python scripts/auto_enrich.py --attribute $(ATTR) --limit $(LIMIT) $(ARGS)
+
+ingest-seoul:
+	cd $(API_DIR) && uv run python scripts/ingest_seoul.py $(ARGS)
+
+ingest-nationwide:
+	cd $(API_DIR) && uv run python scripts/ingest_nationwide.py $(ARGS)
 
 clean:
 	rm -rf $(WEB_DIR)/.next $(WEB_DIR)/test-results $(WEB_DIR)/playwright-report

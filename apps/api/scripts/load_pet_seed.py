@@ -20,6 +20,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
 from _seedlib import load_seed as _load_seed
 from _seedlib import read_records
 

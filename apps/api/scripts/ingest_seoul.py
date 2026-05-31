@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
+import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
+
 from app.ingest import STAGE_ORDER, IngestSummary, parse_months, run_ingest
 from app.settings import get_api_key, get_kakao_key
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
