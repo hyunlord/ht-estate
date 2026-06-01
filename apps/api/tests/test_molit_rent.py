@@ -20,18 +20,21 @@ def test_parse_rent_jeonse_and_monthly(load_fixture: FixtureLoader) -> None:
     jeonse = page.items[0]  # 래미안대치팰리스 — 월세 0 = 전세
     assert jeonse.apt_name == "래미안대치팰리스"
     assert jeonse.legal_dong == "대치동"
+    assert jeonse.road_addr == "삼성로"  # 전월세 소문자 roadnm (P2-1-live 보정)
     assert jeonse.deposit == 180000  # '180,000' 콤마 제거
     assert jeonse.monthly_rent == 0
     assert jeonse.rent_type == "jeonse"  # 파생: 월세 0 → 전세
     assert jeonse.contract_type == "신규"
-    assert jeonse.deal_date == date(2025, 4, 10)
-    assert jeonse.bjd_code == "1168010600"  # sggCd+umdCd
+    assert jeonse.deal_date == date(2025, 5, 10)
+    # 전월세 API는 umdCd 미제공 → bjd_code None(조인은 법정동명 폴백). 라이브 확정.
+    assert jeonse.bjd_code is None
+    assert jeonse.jibun == "1027"
 
     monthly = page.items[1]  # 은마 — 월세 180 = 월세
     assert monthly.deposit == 5000
     assert monthly.monthly_rent == 180
     assert monthly.rent_type == "monthly"  # 파생: 월세 > 0 → 월세
-    assert monthly.contract_type == "갱신"
+    assert monthly.contract_type is None  # 빈 contractType → None(라이브 178건 사례)
 
 
 def _client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:

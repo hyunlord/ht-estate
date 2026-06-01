@@ -101,6 +101,29 @@ def test_join_reused_for_rent_transaction() -> None:
     assert row["match_confidence"] is not None
 
 
+def test_join_rent_via_dong_fallback_when_bjd_none() -> None:
+    # 라이브 전월세 현실: umdCd 없음 → bjd_code None → 법정동명(legal_dong) narrowing 폴백.
+    conn = _db()
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, bjd_code, dong, legal_addr) "
+        "VALUES ('A10027800', '래미안대치팰리스', '1168010600', '대치동', '대치동 670')"
+    )
+    conn.commit()
+    # bjd 없는 rent 거래(sgg만, umd None) — 실 전월세 응답 형태.
+    trade = RentTrade(
+        apt_name="래미안대치팰리스", legal_dong="대치동", road_addr="삼성로", build_year=2015,
+        net_area=94.49, deposit=180000, monthly_rent=0, floor=12, deal_date=date(2025, 5, 10),
+        contract_type="신규", sgg_cd="11680", umd_cd=None, jibun="670", bonbun=None, bubun=None,
+    )
+    assert trade.bjd_code is None  # umdCd 없어 bjd 못 만듦
+    upsert_rent_transaction(conn, trade, updated_at=NOW)
+    stats = backfill_matches(conn, table="rent_transaction")
+    assert stats["matched"] == 1  # 법정동명 폴백으로 매칭
+    assert conn.execute(
+        "SELECT complex_id FROM rent_transaction"
+    ).fetchone()["complex_id"] == "A10027800"
+
+
 def test_join_rejects_unknown_table() -> None:
     conn = _db()
     try:

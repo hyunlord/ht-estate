@@ -5,41 +5,37 @@
     <items>
       <item>
         <aptNm>래미안대치팰리스</aptNm>
+        <aptSeq>11680-1027</aptSeq>
         <umdNm>대치동</umdNm>
-        <roadNm>삼성로</roadNm>
+        <roadnm>삼성로</roadnm>
         <buildYear>2015</buildYear>
         <excluUseAr>94.49</excluUseAr>
         <deposit>180,000</deposit>
         <monthlyRent>0</monthlyRent>
         <floor>12</floor>
         <dealYear>2025</dealYear>
-        <dealMonth>4</dealMonth>
+        <dealMonth>5</dealMonth>
         <dealDay>10</dealDay>
         <contractType>신규</contractType>
         <sggCd>11680</sggCd>
-        <umdCd>10600</umdCd>
-        <jibun>670</jibun>
-        <bonbun>0670</bonbun>
-        <bubun>0000</bubun>
+        <jibun>1027</jibun>
       </item>
       <item>
         <aptNm>은마</aptNm>
+        <aptSeq>11680-316</aptSeq>
         <umdNm>대치동</umdNm>
-        <roadNm>삼성로</roadNm>
+        <roadnm>삼성로</roadnm>
         <buildYear>1979</buildYear>
         <excluUseAr>76.79</excluUseAr>
         <deposit>5,000</deposit>
         <monthlyRent>180</monthlyRent>
         <floor>5</floor>
         <dealYear>2025</dealYear>
-        <dealMonth>4</dealMonth>
+        <dealMonth>5</dealMonth>
         <dealDay>12</dealDay>
-        <contractType>갱신</contractType>
+        <contractType></contractType>
         <sggCd>11680</sggCd>
-        <umdCd>10600</umdCd>
         <jibun>316</jibun>
-        <bonbun>0316</bonbun>
-        <bubun>0000</bubun>
       </item>
     </items>
     <numOfRows>100</numOfRows>

@@ -3,9 +3,14 @@
 엔드포인트: 국토교통부_아파트 전월세 실거래가 자료
 (RTMSDataSvcAptRent/getRTMSDataSvcAptRent). 매매(molit.py)와 분리 — `_http`/`_parse`는 공유.
 
-응답은 XML + 영문 camelCase 태그: aptNm·umdNm(법정동)·jibun·excluUseAr(전용)·
+응답 XML(라이브 검증 P2-1-live, 강남 202505 2076건): aptNm·umdNm(법정동명)·jibun·excluUseAr·
 deposit(보증금 만원)·monthlyRent(월세 만원, 전세=0)·floor·buildYear·dealYear/Month/Day·
-sggCd·umdCd·contractType(계약구분 신규/갱신). 적재·조인은 store/rent_transaction_repo·join_repo.
+sggCd·contractType(신규/갱신, 일부 빈값). 적재·조인은 store/rent_transaction_repo·join_repo.
+
+**매매(molit.py)와 다른 점(라이브 확정)**:
+- 도로명 태그가 **`roadnm`(소문자)** — 매매 `roadNm`과 다름.
+- **`umdCd` 없음** → bjd_code(sgg+umd 10자리) 못 만듦 → None. 조인은 법정동명(umdNm) 폴백으로 동작.
+- jibun-level `bonbun`/`bubun` 없음(도로명용 roadnm*만) → `jibun` 문자열로 from_molit 폴백.
 """
 
 from __future__ import annotations
@@ -75,7 +80,7 @@ def _parse_item(item: Element) -> RentTrade:
     return RentTrade(
         apt_name=_parse.required_text(item, "aptNm"),
         legal_dong=_parse.required_text(item, "umdNm"),
-        road_addr=_parse.text(item, "roadNm"),
+        road_addr=_parse.text(item, "roadnm"),  # 전월세는 소문자 roadnm (매매 roadNm과 다름)
         build_year=_parse.to_int(build_year) if build_year else None,
         net_area=_parse.to_float(_parse.required_text(item, "excluUseAr")),
         deposit=_parse.to_int(_parse.required_text(item, "deposit")),
