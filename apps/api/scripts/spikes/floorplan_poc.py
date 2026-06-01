@@ -38,11 +38,15 @@ from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 FLOORPLAN_PROMPT = PROMPTS_DIR / "enrich_floorplan.md"
 
-# data.go.kr 15037046 "LH 주택 평면도 현황" — JSON 이미지 레코드 필드(주문서 명세).
-# 필드명은 데이터셋마다 흔들려 방어적으로 후보 키를 훑는다(라이브 확정 전 가정).
-_IMG_DATA_KEYS = ("data", "image", "imageData", "img", "base64")
-_NAME_KEYS = ("complexName", "단지명", "aptName", "bldgName", "name", "hsmpNm")
-_ADDR_KEYS = ("address", "주소", "addr", "legalAddr", "rnAddr", "lotnoAddr")
+# data.go.kr 15037046 "LH 주택 평면도 현황". ⚠ 라이브 확정(P3-2-live-run, docs/reports/
+# floorplan-real/SCHEMA-FINDING.md): 이 데이터셋은 **오픈API가 아니라 1회성(2021-08-26) 파일
+# 다운로드**(로그인 게이트·serviceKey 비인가)다. JSON 평면도 레코드 스키마는 정확히
+# {image, mime, data, width, height} — **단지명/주소 없음**(data=base64 이미지). 단지명·주소·
+# 공급면적은 **별도 CSV(평면도 파일별 현황)** 에 있고 JSON과는 `image`(파일명)로 조인한다.
+# → 아래 _NAME/_ADDR 키는 JSON 레코드엔 매칭되지 않는다(CSV-조인 필요). _http 라이브 fetch는 불가.
+_IMG_DATA_KEYS = ("data", "image", "imageData", "img", "base64")  # 확정: data(=base64)
+_NAME_KEYS = ("complexName", "단지명", "aptName", "bldgName", "name", "hsmpNm")  # JSON엔 없음→CSV
+_ADDR_KEYS = ("address", "주소", "addr", "legalAddr", "rnAddr", "lotnoAddr")  # JSON엔 없음→CSV
 
 
 def _first(d: dict, keys: tuple[str, ...]) -> str | None:
@@ -223,10 +227,18 @@ def match_to_complex(
 
 
 def fetch_inventory(api_key: str, limit: int) -> list[dict]:
-    """15037046 JSON 인벤토리 N개 fetch(라이브). 스키마 라이브 확정 전 — _http 재사용·방어 파싱."""
+    """⚠ 라이브 확정 결과 막힘(P3-2-live-run): 15037046은 오픈API가 아니라 **로그인 게이트 파일
+    다운로드**다 — 아래 추정 odcloud 엔드포인트는 `{"code":-3,"등록되지 않은 서비스"}`(400)를 반환.
+    fetch_text는 영구 4xx를 raise하므로 이 함수는 `HTTPStatusError`를 던진다(main이 잡아 진단 출력).
+
+    실 적재는 (a) CSV+JSON 두 파일을 포털 로그인으로 받아 `image`(파일명)로 CSV↔JSON 조인하는
+    파일기반 producer 재설계, 또는 (b) 설계 §3 원칙대로 후보-온디맨드 `auto_enrich --attribute
+    floorplan`(claude -p WebSearch, 이미 구현·키리스) 경로 사용이 필요. docs/reports/floorplan-real/
+    SCHEMA-FINDING.md 참고. 추정 endpoint·방어 파싱은 진단 재현용으로 남겨 둔다.
+    """
     from app.sources._http import fetch_text  # 지연 import — 키리스 selftest 경로 비의존
 
-    BASE = "https://api.odcloud.kr/api/15037046/v1/uddi"  # 라이브에서 정확한 엔드포인트 확정 필요
+    BASE = "https://api.odcloud.kr/api/15037046/v1/uddi"  # 확정: 등록 안 된 서비스(파일 데이터셋)
     body = fetch_text(BASE, {"serviceKey": api_key, "page": 1, "perPage": limit})
     payload = json.loads(body)
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -307,7 +319,20 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = get_connection(args.db)
     init_db(conn)
-    records = fetch_inventory(key, args.limit)
+    try:
+        records = fetch_inventory(key, args.limit)
+    except Exception as exc:  # noqa: BLE001 — 확정-사망 엔드포인트는 traceback 대신 진단 출력
+        import re
+
+        # 예외 메시지에 박힌 serviceKey 노출 차단(출력 리다이렉트 시 키 유출 방지).
+        safe = re.sub(r"serviceKey=[^&\s'\"]+", "serviceKey=<REDACTED>", str(exc))
+        print(
+            f"LH 인벤토리 fetch 실패: {safe}\n"
+            "→ 15037046은 오픈API가 아니라 **로그인 게이트 1회성 파일 데이터셋**입니다"
+            "(serviceKey 비인가). 라이브 --run 경로 막힘 — "
+            "docs/reports/floorplan-real/SCHEMA-FINDING.md 참고."
+        )
+        return 3
     print(f"=== LH 평면도 표본 {len(records)}건 ===")
     samples: list[dict] = []
     raw_seed: list[dict[str, object]] = []

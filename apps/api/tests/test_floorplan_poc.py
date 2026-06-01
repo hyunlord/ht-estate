@@ -46,6 +46,23 @@ def test_run_uses_get_api_key_not_raw_environ(monkeypatch: pytest.MonkeyPatch) -
     assert rc == 2  # 키 없음 → graceful 2(get_api_key 경로 탔다는 증거)
 
 
+def test_run_blocked_endpoint_prints_diagnosis_not_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 라이브 확정(P3-2-live-run): 15037046은 오픈API가 아닌 로그인 게이트 파일 데이터셋 →
+    # fetch가 400 raise. main은 traceback 대신 진단 출력 + rc=3(키없음 rc=2와 구분).
+    monkeypatch.setattr(settings, "get_api_key", lambda: "DUMMY")
+
+    def _raise(key: str, limit: int) -> list[dict]:
+        raise RuntimeError("400 Bad Request: 등록되지 않은 서비스")
+
+    monkeypatch.setattr(floorplan_poc, "fetch_inventory", _raise)
+    rc = floorplan_poc.main(["--run", "--limit", "5", "--db", ":memory:"])
+    assert rc == 3
+    out = capsys.readouterr().out
+    assert "파일 데이터셋" in out and "SCHEMA-FINDING.md" in out
+
+
 def test_source_has_no_raw_environ_key_read() -> None:
     # 정적 가드: DATA_GO_KR 키를 os.environ로 직접 읽지 않는다(.env 무시 papercut 재발 방지).
     src = Path(floorplan_poc.__file__ or "").read_text(encoding="utf-8")
