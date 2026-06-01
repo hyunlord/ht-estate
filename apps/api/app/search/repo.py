@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from app.search.gym import GymSummary
 from app.search.pet import PetSummary
+from app.search.review import ReviewSummary
 from app.search.spec import HardFilterSpec
 
 
@@ -45,9 +46,10 @@ class Candidate(BaseModel):
     price_min: int | None
     price_max: int | None
     representative_trade: RepresentativeTrade | None
-    # Tier-2 soft(R1: hard filter 아님 — 후보 산출 후 attach_gym/attach_pet로 부착). repo는 안 채움.
+    # Tier-2 soft(R1: hard filter 아님 — 후보 산출 후 attach_*로 부착). repo는 안 채움.
     gym: GymSummary | None = None
     pet: PetSummary | None = None
+    review: ReviewSummary | None = None  # 후기(표시 전용 — 랭킹 신호 아님, P3-1)
 
 
 def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:

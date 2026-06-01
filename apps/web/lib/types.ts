@@ -71,6 +71,15 @@ export interface PetSummary {
   sources: GymSource[];
 }
 
+// Tier-2 review(후기, P3-1). **표시 전용 — 랭킹 신호 아님**(주관적·SoftSpec에 없음).
+// summary=짧은 자기표현 요약(없으면 null=미조사). 다출처는 sources 딥링크로 노출.
+export interface ReviewSummary {
+  summary: string | null;
+  points: string[];
+  confidence: number | null;
+  sources: GymSource[];
+}
+
 export interface Candidate {
   complex_id: string;
   name: string | null;
@@ -87,6 +96,7 @@ export interface Candidate {
   representative_trade: RepresentativeTrade | null;
   gym?: GymSummary | null; // API는 항상 채움(미시드→none). optional: 구버전 mock 호환.
   pet?: PetSummary | null;
+  review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.
 }
 
 export interface Bbox {

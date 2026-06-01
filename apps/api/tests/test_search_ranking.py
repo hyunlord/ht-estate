@@ -53,6 +53,34 @@ def _ids(cands: list[Candidate]) -> list[str]:
     return [c.complex_id for c in cands]
 
 
+# ───────────────────────── review 랭킹 불변 (P3-1) ─────────────────────────
+
+
+def test_review_is_never_a_ranking_signal() -> None:
+    # 후기는 표시 전용 — soft 점수에 안 들어간다. 같은 gym/pet에 review만 달라도 순서 불변.
+    from app.search.enrichment import EnrichSource
+    from app.search.review import ReviewSummary
+
+    high = _cand("A", gym="yes", gym_conf=0.9)
+    high.review = ReviewSummary(
+        summary="극찬 후기", points=["조용"], confidence=0.5,
+        sources=[EnrichSource(source_type="youtube", source_url="https://y/1")],
+    )
+    low = _cand("B", gym="yes", gym_conf=0.9)  # 동일 gym, review 없음
+    # gym 동점(둘 다 yes·0.9) → review가 신호면 A가 위로. 안정정렬로 입력순(A,B) 유지여야.
+    ranked = rank_candidates([high, low], SoftSpec(gym="required"))
+    assert _ids(ranked) == ["A", "B"]  # review 무관 — 동점 안정정렬(입력순)
+    # 역순 입력이면 역순 유지(= review가 순서를 못 바꾼다)
+    ranked_rev = rank_candidates([low, high], SoftSpec(gym="required"))
+    assert _ids(ranked_rev) == ["B", "A"]
+
+
+def test_softspec_has_no_review_field() -> None:
+    # 구조적 보장: SoftSpec에 review 선호 자체가 없다(랭킹에 표현 불가).
+    assert "review" not in SoftSpec.model_fields
+    assert set(SoftSpec.model_fields) == {"gym", "pet"}
+
+
 # ───────────────────────── 순수 랭킹 ─────────────────────────
 
 

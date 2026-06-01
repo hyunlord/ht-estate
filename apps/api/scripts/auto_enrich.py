@@ -27,6 +27,7 @@ from pathlib import Path
 import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
 import load_gym_seed
 import load_pet_seed
+import load_review_seed
 
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 
@@ -65,7 +66,21 @@ ATTR_CONFIG: dict[str, dict[str, object]] = {
         "state_key": "pet_allowed",
         "states": {"yes", "conditional", "no", "unknown"},
     },
+    # review는 상태(state)가 아니라 요약 텍스트 → kind="review"로 별도 파서(parse_review_output).
+    # 표시 전용·주관적이라 랭킹 신호 아님(P3-1). 저작권: 파서가 요약 길이 캡으로 원문 재현 방지.
+    "review": {
+        "attribute": "review_summary",
+        "prompt": "enrich_review.md",
+        "seed": "review_gangnam.jsonl",
+        "loader": load_review_seed,
+        "kind": "review",
+    },
 }
+
+# 저작권 백스톱(코드 강제) — 저장 값이 캡을 못 넘게 해 원문 재현을 구조적으로 차단(P3-1).
+REVIEW_SUMMARY_CAP = 220  # 요약 길이 캡(문자) — 길면 절단(…). 짧은 자기표현 요약만 보관.
+REVIEW_POINT_CAP = 60     # 핵심 포인트 한 줄 길이 캡.
+REVIEW_MAX_POINTS = 5     # 포인트 개수 캡.
 
 # 주입형 claude 러너 — (prompt, max_turns) → stdout. 테스트는 mock으로 키리스.
 ClaudeRunner = Callable[[str, int], str]
@@ -214,6 +229,67 @@ def parse_output(
     return records
 
 
+def _cap_text(s: str, limit: int) -> str:
+    """문자열을 limit 이하로 — 넘으면 절단 후 '…'(저작권 백스톱: 원문 재현 구조적 차단)."""
+    s = s.strip()
+    return s if len(s) <= limit else s[:limit].rstrip() + "…"
+
+
+def parse_review_output(text: str, valid_ids: set[str]) -> list[dict[str, object]]:
+    """모델 출력 → 검증된 review 시드 레코드. **규율 강제**(무검토 안전 + 저작권 백스톱):
+
+    - complex_id가 요청 후보(valid_ids)에 있어야(환각 단지 drop).
+    - source_url 필수 · 차단도메인이면 drop · http도 urn도 아니면 drop(출처 추적 불가).
+    - summary 필수(없으면 drop=근거 없음) · **길이 캡으로 절단**(원문 재현 방지).
+    - points 개수·길이 캡. confidence 보수적 clamp(위키 출처는 R2 cap).
+    - dedup은 (complex_id, source_url) — 같은 단지의 **다출처는 여러 줄 허용**(§4 다출처 보관).
+    """
+    records: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for obj in _iter_json_objects(text):
+        cid = str(obj.get("complex_id", ""))
+        if cid not in valid_ids:
+            continue
+        url = str(obj.get("source_url", "")).strip()
+        if not url or any(b in url for b in BLOCKED_DOMAINS):
+            continue
+        if not (url.startswith("http") or url.startswith("urn:")):
+            continue
+        if (cid, url) in seen:
+            continue
+        summary = str(obj.get("summary", "")).strip()
+        if not summary:
+            continue  # 근거 없음 drop(빈 요약·날조 방지)
+        summary = _cap_text(summary, REVIEW_SUMMARY_CAP)  # 저작권 백스톱
+        raw_points = obj.get("points")
+        points = (
+            [_cap_text(str(p), REVIEW_POINT_CAP) for p in raw_points][:REVIEW_MAX_POINTS]
+            if isinstance(raw_points, list)
+            else []
+        )
+        points = [p for p in points if p]
+        try:
+            conf = float(obj.get("confidence", 0.3))
+        except (TypeError, ValueError):
+            conf = 0.3
+        conf = max(0.0, min(1.0, conf))
+        if any(w in url for w in WIKI_DOMAINS):  # R2 — 위키 약한 근거 cap
+            conf = min(conf, WIKI_CONF_CAP)
+        records.append(
+            {
+                "complex_id": cid,
+                "name": str(obj.get("name", "")),
+                "summary": summary,
+                "points": points,
+                "confidence": conf,
+                "source_type": str(obj.get("source_type", "agent_research")),
+                "source_url": url,
+            }
+        )
+        seen.add((cid, url))
+    return records
+
+
 def append_seed(path: Path, records: list[dict[str, object]]) -> int:
     """검증된 레코드를 시드 JSONL에 append(누적). 쓴 줄 수 반환."""
     if not records:
@@ -250,9 +326,12 @@ def auto_enrich(
     prompt = build_prompt(str(cfg["prompt"]), candidates)
     output = runner(prompt, max_turns)
     valid_ids = {c["complex_id"] for c in candidates}
-    records = parse_output(
-        output, attribute, valid_ids, set(cfg["states"]), str(cfg["state_key"])  # type: ignore[arg-type]
-    )
+    if cfg.get("kind") == "review":  # review는 상태 아님 → 별도 파서(요약+다출처+저작권 캡)
+        records = parse_review_output(output, valid_ids)
+    else:
+        records = parse_output(
+            output, attribute, valid_ids, set(cfg["states"]), str(cfg["state_key"])  # type: ignore[arg-type]
+        )
 
     seed_path = seeds_dir / str(cfg["seed"])
     appended = append_seed(seed_path, records)
@@ -268,7 +347,9 @@ def auto_enrich(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="auto_enrich", description="enrichment 자동 prefill")
-    parser.add_argument("--attribute", choices=["gym", "pet", "both"], default="both")
+    parser.add_argument(
+        "--attribute", choices=["gym", "pet", "review", "both"], default="both"
+    )
     parser.add_argument("--limit", type=int, default=20, help="이번 run 단지 수(저volume 권장)")
     parser.add_argument("--max-turns", type=int, default=60, help="claude -p turn 상한")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite 경로")

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Candidate, GymSummary, PetSummary } from "@/lib/types";
+import type { Candidate, GymSummary, PetSummary, ReviewSummary } from "@/lib/types";
 
 // 단지 카드 — hard 조건 ✓ 값 + 추정매칭 배지 + 출처 딥링크 + 대표거래 + Tier-2 soft(gym·pet).
 // soft는 hard filter 아님(R1) — 표시만. floorplan·후기는 Phase 1+.
@@ -123,6 +123,36 @@ function PetRow({ pet }: { pet: PetSummary }) {
   );
 }
 
+// 후기(P3-1) — 표시 전용(랭킹 신호 아님). 짧은 요약 + 핵심 포인트 + 출처 딥링크.
+// summary 없으면 '미조사'. 주관적이라 출처 전부 노출(원문은 출처에서 — 저작권: 요약은 짧게).
+function ReviewRow({ review }: { review: ReviewSummary }) {
+  if (review.summary == null) {
+    return (
+      <div data-testid="review-row" className="text-sm">
+        <span className="text-zinc-500">후기</span>{" "}
+        <span data-testid="review-status">정보 없음 / 미조사</span>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="review-row" className="text-sm">
+      <span className="text-zinc-500">후기</span>{" "}
+      <span className="text-zinc-400">(주관적)</span>{" "}
+      <span data-testid="review-summary">{review.summary}</span>
+      {review.confidence != null && (
+        <span className="text-zinc-400"> (conf {review.confidence.toFixed(2)})</span>
+      )}
+      {review.points.length > 0 && (
+        <span data-testid="review-points" className="text-zinc-600">
+          {" "}
+          · {review.points.join(" · ")}
+        </span>
+      )}
+      <SourceLinks sources={review.sources} prefix="review" />
+    </div>
+  );
+}
+
 export function ComplexCard({ candidate }: { candidate: Candidate }) {
   const rep = candidate.representative_trade;
   const lowConfidence = rep?.match_confidence != null && rep.match_confidence < 0.7;
@@ -154,6 +184,7 @@ export function ComplexCard({ candidate }: { candidate: Candidate }) {
 
       {candidate.gym && <GymRow gym={candidate.gym} />}
       {candidate.pet && <PetRow pet={candidate.pet} />}
+      {candidate.review && <ReviewRow review={candidate.review} />}
 
       {rep && (
         <p className="text-sm" data-testid="representative-trade">

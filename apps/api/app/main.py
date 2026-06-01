@@ -18,6 +18,7 @@ from app.search.gym import attach_gym
 from app.search.pet import attach_pet
 from app.search.ranking import rank_candidates
 from app.search.repo import Candidate, search_complexes
+from app.search.review import attach_review
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
 
@@ -60,4 +61,5 @@ def search_complexes_endpoint(
     now = datetime.now(UTC)
     attach_gym(conn, candidates, now=now)
     attach_pet(conn, candidates, now=now)
+    attach_review(conn, candidates, now=now)  # 표시 전용 — 랭킹 입력 아님(rank는 gym/pet만)
     return rank_candidates(candidates, spec.soft)
