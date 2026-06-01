@@ -68,7 +68,27 @@ uv run python scripts/coverage_report.py
 - **데이터 새로고침(재fetch)이 필요할 때**: `--resume` 없이 실행하면 해당 월을 강제 재fetch(MOLIT 정정 반영).
   (원장은 resume 경로에서만 기록되므로, refresh 후 다시 resume 적재하면 정상 추적된다.)
 
-## 6. 검증(키리스)
-resume/skip·원장·커버리지 집계 로직은 `tests/test_progress_repo.py`,
-`tests/test_ingest_runner.py`(resume), `tests/test_ingest_nationwide.py`,
-`tests/test_coverage_report.py`로 키 없이 검증된다(`make gate-api`).
+## 6. 네트워크 회복력 (C22) — 끊김에도 안 죽고, 죽어도 자동 재개
+세 층으로 인터넷 일시 끊김을 흡수한다:
+
+1. **호출 내부 재시도(`_http`)** — 일시 오류(`ConnectError`·`ReadTimeout`·`ConnectTimeout`·DNS·5xx·429)는
+   지수 백오프+지터로 재시도(기본 ~1분 라이드아웃). **영구 오류(400/401/403)는 즉시 실패**(일일캡·키
+   오류를 무한 재시도로 가리지 않음). 429는 `Retry-After` 존중. `throttle`과 독립(공존).
+2. **원장 체크포인트(C20)** — region×월마다 커밋·기록 → 하드 크래시/강제종료 시 **손실 ≤1개월**.
+   재개하면 그 1개월만 재fetch(멱등).
+3. **자동 재개 래퍼(`ingest_loop.py`)** — 긴 끊김/프로세스 종료/재부팅엔 `--resume`를 *완료까지* 반복.
+   일시 오류는 백오프 재시도, 영구 오류(인가·일일캡)는 중단(다음 날/cron).
+```bash
+uv run python scripts/ingest_loop.py --stages transaction --months 202505-202604
+uv run python scripts/ingest_loop.py --stages complex      # complex 완료까지(끊겨도 이어서)
+```
+**재부팅까지 견디려면 cron/systemd로 주기 기동**(래퍼가 매번 원장에서 이어받음):
+```cron
+*/30 * * * * cd /path/apps/api && uv run python scripts/ingest_loop.py --stages transaction >> ingest.log 2>&1
+```
+일일캡(`PublicDataError "22"`) 도달 시 래퍼는 중단 → 다음 날 cron이 자동 재개.
+
+## 7. 검증(키리스)
+resume/skip·원장·커버리지·**재시도/백오프(일시)·빠른실패(영구)·래퍼 루프**는
+`tests/test_progress_repo.py`·`test_ingest_runner.py`(resume·체크포인트)·`test_ingest_nationwide.py`·
+`test_coverage_report.py`·`test_http.py`(C22 재시도)·`test_ingest_loop.py`로 키 없이 검증된다(`make gate-api`).

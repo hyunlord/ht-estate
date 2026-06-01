@@ -204,6 +204,30 @@ def test_resume_rent_skips_recorded_months(conn, monkeypatch: pytest.MonkeyPatch
     assert completed_months(conn, "rent", "11680") == {"202401", "202402"}
 
 
+def test_resume_records_each_month_so_crash_loses_at_most_one(
+    conn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C22 체크포인트: region×월 단위 기록 → 3번째 월 크래시여도 앞 2개월은 원장에 남음(손실 ≤1월).
+    from app.store.db import init_db
+    from app.store.progress_repo import completed_months
+
+    init_db(conn)
+
+    def flaky_month(c, region, month, **kw):  # type: ignore[no-untyped-def]
+        if month == "202403":
+            raise ConnectionError("네트워크 끊김")  # 하드 실패(재시도 소진 가정)
+        return 10
+
+    monkeypatch.setattr(ingest_mod, "ingest_month", flaky_month)
+    with pytest.raises(ConnectionError):
+        run_ingest(
+            conn, region="11680", months=["202401", "202402", "202403"],
+            stages=["transaction"], api_key="d", resume=True, log=lambda _m: None,
+        )
+    # 크래시 전 완료한 월만 기록 → 재개 시 그 2개월 skip, 202403만 재fetch(손실 ≤1월)
+    assert completed_months(conn, "transaction", "11680") == {"202401", "202402"}
+
+
 def test_resume_complex_skips_loaded_region(conn, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.store.db import init_db
 

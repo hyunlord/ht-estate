@@ -7,6 +7,7 @@ encoded 키를 넣으면 이중 인코딩으로 키 미등록 에러가 난다(s
 from __future__ import annotations
 
 import json
+import random
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -19,6 +20,38 @@ from .errors import PublicDataError
 DEFAULT_TIMEOUT = httpx.Timeout(10.0)
 SUCCESS_CODES = {"00", "000"}
 
+# 멀티데이 적재 회복력(C22): 일시 네트워크 오류(끊김·타임아웃·DNS·5xx·429)를 지수 백오프+지터로
+# 재시도해 짧은 끊김(수십 초~분)을 라이드아웃한다. 영구 오류(4xx, 단 429 제외)는 빠르게 실패
+# (무한 재시도로 일일캡 낭비·실패 마스킹 금지). 기본 ride-out ≈ 0.5+1+2+4+8+16+30 ≈ 61s.
+DEFAULT_RETRIES = 8
+DEFAULT_BACKOFF = 0.5
+DEFAULT_MAX_BACKOFF = 30.0
+DEFAULT_JITTER = 0.25
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """429 응답의 `Retry-After`(초) → float. HTTP-date 형식이거나 없으면 None(백오프 폴백)."""
+    raw = resp.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None  # HTTP-date는 미지원 — 일반 백오프로 폴백
+
+
+def _backoff_delay(
+    attempt: int, backoff: float, max_backoff: float, jitter: float, rng: Callable[[], float]
+) -> float:
+    """attempt회차의 백오프 지연 — 지수(2^n) capped + 지터(0..jitter 비율 가산). full-jitter류."""
+    base = min(backoff * (2**attempt), max_backoff)
+    return base * (1.0 + jitter * rng())
+
+
+def _is_permanent_status(status: int) -> bool:
+    """HTTP 상태가 영구 오류(재시도 무의미)인지 — 4xx 중 429(레이트리밋)만 예외로 재시도."""
+    return status < 500 and status != 429
+
 
 def fetch_text(
     url: str,
@@ -27,31 +60,45 @@ def fetch_text(
     headers: Mapping[str, str] | None = None,
     client: httpx.Client | None = None,
     timeout: httpx.Timeout = DEFAULT_TIMEOUT,
-    retries: int = 3,
-    backoff: float = 0.5,
+    retries: int = DEFAULT_RETRIES,
+    backoff: float = DEFAULT_BACKOFF,
+    max_backoff: float = DEFAULT_MAX_BACKOFF,
+    jitter: float = DEFAULT_JITTER,
+    sleep: Callable[[float], None] = time.sleep,
+    rng: Callable[[], float] = random.random,
 ) -> str:
-    """GET → 응답 본문 텍스트(XML/JSON 무관). 전송오류/5xx는 지수 백오프 재시도, 4xx 즉시 raise.
+    """GET → 응답 본문 텍스트(XML/JSON 무관). 일시 오류(전송오류·5xx·429)는 백오프+지터 재시도,
+    영구 4xx(400/401/403/404)는 즉시 raise.
 
-    `client`를 주입하면(테스트의 MockTransport 등) 그걸 쓰고 닫지 않는다.
-    `headers`는 인증 헤더(Kakao `Authorization: KakaoAK ...`) 등에 쓴다.
+    일시 끊김 라이드아웃(C22): `ConnectError`·`ReadTimeout`·`ConnectTimeout`·DNS(TransportError)
+    + 5xx + 429(`Retry-After` 존중)를 재시도한다. `throttle`(호출 간 간격)과 독립 — 호출 *내부*
+    재시도라 공존한다. `sleep`/`rng`는 테스트 주입용(결정론). `client` 주입 시 닫지 않는다.
     """
     own = client is None
     cl = client or httpx.Client(timeout=timeout)
     try:
         last_exc: Exception | None = None
         for attempt in range(retries):
+            override: float | None = None  # 429 Retry-After 등 명시 지연
             try:
                 resp = cl.get(url, params=params, headers=headers)
                 resp.raise_for_status()
                 return resp.text
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code < 500:
-                    raise  # 4xx는 재시도 무의미
+                if _is_permanent_status(exc.response.status_code):
+                    raise  # 영구 4xx — 빠른 실패(일일캡·인가 오류는 재시도 무의미)
                 last_exc = exc
+                if exc.response.status_code == 429:
+                    override = _retry_after_seconds(exc.response)
             except httpx.TransportError as exc:
-                last_exc = exc
+                last_exc = exc  # 연결/타임아웃/DNS 등 일시 전송 오류
             if attempt < retries - 1:
-                time.sleep(backoff * (2**attempt))
+                delay = (
+                    min(override, max_backoff)
+                    if override is not None
+                    else _backoff_delay(attempt, backoff, max_backoff, jitter, rng)
+                )
+                sleep(delay)
         assert last_exc is not None
         raise last_exc
     finally:
