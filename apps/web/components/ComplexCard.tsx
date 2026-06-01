@@ -158,7 +158,14 @@ export function ComplexCard({ candidate }: { candidate: Candidate }) {
       {rep && (
         <p className="text-sm" data-testid="representative-trade">
           실거래 {rep.net_area != null ? `전용 ${rep.net_area}㎡ ` : ""}
+          {/* 거래유형별 금액축: 매매=가격 / 전세=보증금 / 월세=보증금/월세 */}
           {rep.price != null ? `${rep.price.toLocaleString()}만원 ` : ""}
+          {rep.rent_type === "jeonse" && rep.deposit != null
+            ? `전세 ${rep.deposit.toLocaleString()}만원 `
+            : ""}
+          {rep.rent_type === "monthly" && rep.deposit != null
+            ? `월세 ${rep.deposit.toLocaleString()}/${(rep.monthly_rent ?? 0).toLocaleString()}만원 `
+            : ""}
           {rep.deal_date ? `(${rep.deal_date})` : ""}
         </p>
       )}

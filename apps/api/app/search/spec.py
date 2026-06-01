@@ -13,6 +13,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 Preference = Literal["required", "preferred", "none"]
+# 거래유형 축(P2-2): 매매=transaction(price) / 전세·월세=rent_transaction(deposit[+monthly_rent]).
+DealType = Literal["sale", "jeonse", "monthly"]
 
 
 class SoftSpec(BaseModel):
@@ -41,11 +43,19 @@ class HardFilterSpec(BaseModel):
     household_count_min: int | None = None
     household_count_max: int | None = None
 
-    # transaction 속성 (있으면 매칭 거래 EXISTS 요구)
+    # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
+    deal_type: DealType = "sale"
+
+    # 거래 속성 (있으면 매칭 거래 EXISTS 요구). 가격축은 deal_type별:
+    #   sale=price / jeonse=deposit / monthly=deposit(+monthly_rent). net_area·deal_since 공유.
     net_area_min: float | None = None
     net_area_max: float | None = None
-    price_min: int | None = None  # 만원
+    price_min: int | None = None  # 만원 (매매)
     price_max: int | None = None
+    deposit_min: int | None = None  # 만원 (전세·월세 보증금)
+    deposit_max: int | None = None
+    monthly_rent_min: int | None = None  # 만원 (월세)
+    monthly_rent_max: int | None = None
     deal_since: date | None = None
 
     # 지도 bbox (4개 모두 또는 모두 없음)
@@ -65,6 +75,8 @@ class HardFilterSpec(BaseModel):
             (self.approval_year_min, self.approval_year_max, "approval_year"),
             (self.net_area_min, self.net_area_max, "net_area"),
             (self.price_min, self.price_max, "price"),
+            (self.deposit_min, self.deposit_max, "deposit"),
+            (self.monthly_rent_min, self.monthly_rent_max, "monthly_rent"),
             (self.household_count_min, self.household_count_max, "household_count"),
         ]
         for lo, hi, name in pairs:
@@ -82,15 +94,20 @@ class HardFilterSpec(BaseModel):
 
     @property
     def has_txn_filters(self) -> bool:
-        """transaction 레벨 필터가 하나라도 있나(있으면 매칭 거래 EXISTS 요구)."""
-        txn_fields = (
-            self.net_area_min,
-            self.net_area_max,
-            self.price_min,
-            self.price_max,
-            self.deal_since,
-        )
-        return any(v is not None for v in txn_fields)
+        """거래 레벨 가격/면적 필터가 하나라도 있나(있으면 매칭 거래 EXISTS 요구).
+
+        deal_type별 가격축만 본다: sale=price / jeonse=deposit / monthly=deposit+monthly_rent.
+        (rent_type 제약은 rep·매칭에만 적용 — SET을 좁히지 않아 여기 미포함, sale 동작 불변.)
+        """
+        shared = (self.net_area_min, self.net_area_max, self.deal_since)
+        if self.deal_type == "sale":
+            axis: tuple[object, ...] = (self.price_min, self.price_max)
+        elif self.deal_type == "jeonse":
+            axis = (self.deposit_min, self.deposit_max)
+        else:  # monthly
+            axis = (self.deposit_min, self.deposit_max,
+                    self.monthly_rent_min, self.monthly_rent_max)
+        return any(v is not None for v in shared + axis)
 
     @property
     def has_bbox(self) -> bool:

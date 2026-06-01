@@ -8,7 +8,11 @@ export interface SoftSpec {
   pet: Preference;
 }
 
+// 거래유형 축(P2-2): 매매/전세/월세. 기본 sale → 기존 매매 동작.
+export type DealType = "sale" | "jeonse" | "monthly";
+
 export interface HardFilterSpec {
+  deal_type?: DealType; // 생략=sale
   approval_year_min?: number | null;
   approval_year_max?: number | null;
   parking_ratio_gte?: number | null;
@@ -17,8 +21,12 @@ export interface HardFilterSpec {
   household_count_max?: number | null;
   net_area_min?: number | null;
   net_area_max?: number | null;
-  price_min?: number | null;
+  price_min?: number | null; // 만원 (매매)
   price_max?: number | null;
+  deposit_min?: number | null; // 만원 (전세·월세 보증금)
+  deposit_max?: number | null;
+  monthly_rent_min?: number | null; // 만원 (월세)
+  monthly_rent_max?: number | null;
   deal_since?: string | null; // ISO date
   min_lat?: number | null;
   max_lat?: number | null;
@@ -30,7 +38,10 @@ export interface HardFilterSpec {
 
 export interface RepresentativeTrade {
   net_area: number | null;
-  price: number | null; // 만원
+  price: number | null; // 만원 (매매)
+  deposit: number | null; // 만원 (전세·월세)
+  monthly_rent: number | null; // 만원 (월세)
+  rent_type: "jeonse" | "monthly" | null;
   floor: number | null;
   deal_date: string | null;
   match_confidence: number | null;

@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 
-import type { HardFilterSpec, Preference } from "@/lib/types";
+import type { DealType, HardFilterSpec, Preference } from "@/lib/types";
 
-// HardFilterSpec 편집 폼. gym 토글 없음(R1 — hard filter 제외). bbox는 지도 뷰포트 자동.
-const NUMERIC_FIELDS: { key: keyof HardFilterSpec; label: string; step?: string }[] = [
+type Field = { key: keyof HardFilterSpec; label: string; step?: string };
+
+// deal_type 무관 공유 필드(단지 속성 + 전용/거래일은 별도).
+const SHARED_FIELDS: Field[] = [
   { key: "approval_year_min", label: "사용승인 최소(년)" },
   { key: "approval_year_max", label: "사용승인 최대(년)" },
   { key: "net_area_min", label: "전용 최소(㎡)", step: "0.01" },
@@ -13,8 +15,30 @@ const NUMERIC_FIELDS: { key: keyof HardFilterSpec; label: string; step?: string 
   { key: "parking_ratio_gte", label: "세대당 주차 ≥", step: "0.1" },
   { key: "household_count_min", label: "세대수 최소" },
   { key: "household_count_max", label: "세대수 최대" },
-  { key: "price_min", label: "가격 최소(만원)" },
-  { key: "price_max", label: "가격 최대(만원)" },
+];
+
+// 거래유형별 적응형 금액 입력 — 매매=가격 / 전세=보증금 / 월세=보증금+월세.
+const AMOUNT_FIELDS: Record<DealType, Field[]> = {
+  sale: [
+    { key: "price_min", label: "가격 최소(만원)" },
+    { key: "price_max", label: "가격 최대(만원)" },
+  ],
+  jeonse: [
+    { key: "deposit_min", label: "보증금 최소(만원)" },
+    { key: "deposit_max", label: "보증금 최대(만원)" },
+  ],
+  monthly: [
+    { key: "deposit_min", label: "보증금 최소(만원)" },
+    { key: "deposit_max", label: "보증금 최대(만원)" },
+    { key: "monthly_rent_min", label: "월세 최소(만원)" },
+    { key: "monthly_rent_max", label: "월세 최대(만원)" },
+  ],
+};
+
+const DEAL_TYPES: { value: DealType; label: string }[] = [
+  { value: "sale", label: "매매" },
+  { value: "jeonse", label: "전세" },
+  { value: "monthly", label: "월세" },
 ];
 
 function toNumber(value: string): number | undefined {
@@ -23,6 +47,7 @@ function toNumber(value: string): number | undefined {
 
 export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [dealType, setDealType] = useState<DealType>("sale");
   const [underground, setUnderground] = useState(false);
   const [dealSince, setDealSince] = useState("");
   const [gymPref, setGymPref] = useState<Preference>("none");
@@ -34,12 +59,14 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const spec: HardFilterSpec = { limit: 50 };
-    for (const { key } of NUMERIC_FIELDS) {
+    // 현재 거래유형의 금액 필드만 전송(전환 시 다른 축 값은 무시 — 적응형).
+    for (const { key } of [...SHARED_FIELDS, ...AMOUNT_FIELDS[dealType]]) {
       const n = toNumber(values[key] ?? "");
       if (n !== undefined) {
         (spec as Record<string, unknown>)[key] = n;
       }
     }
+    if (dealType !== "sale") spec.deal_type = dealType; // sale은 기본 → 미전송(매매 회귀 0)
     if (underground) spec.parking_underground = true;
     if (dealSince) spec.deal_since = dealSince;
     // soft 선호 — none 아니면만 보낸다(없으면 서버 기본 none = 중립 정렬).
@@ -54,6 +81,7 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
     { value: "preferred", label: "선호" },
     { value: "required", label: "필수" },
   ];
+  const amountFields = AMOUNT_FIELDS[dealType];
 
   return (
     <form
@@ -62,8 +90,26 @@ export function FilterPanel({ onSearch }: { onSearch: (spec: HardFilterSpec) => 
       className="flex flex-col gap-3 p-4 text-sm"
     >
       <h2 className="font-semibold">필터</h2>
+      <fieldset data-testid="deal-type" className="flex gap-1">
+        {DEAL_TYPES.map((d) => (
+          <button
+            key={d.value}
+            type="button"
+            data-testid={`deal-type-${d.value}`}
+            aria-pressed={dealType === d.value}
+            onClick={() => setDealType(d.value)}
+            className={`flex-1 rounded border px-2 py-1 ${
+              dealType === d.value
+                ? "border-zinc-900 bg-zinc-900 text-white"
+                : "border-zinc-300"
+            }`}
+          >
+            {d.label}
+          </button>
+        ))}
+      </fieldset>
       <div className="grid grid-cols-2 gap-2">
-        {NUMERIC_FIELDS.map(({ key, label, step }) => (
+        {[...SHARED_FIELDS, ...amountFields].map(({ key, label, step }) => (
           <label key={key} className="flex flex-col gap-1">
             <span className="text-xs text-zinc-500">{label}</span>
             <input

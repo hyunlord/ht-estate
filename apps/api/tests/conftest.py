@@ -42,6 +42,14 @@ _TRANSACTIONS = [
     ("C3", 84.0, 130000, 10, "2025-02-01", 0.95),
     (None, 50.0, 50000, 3, "2025-04-20", None),  # 구조적 미매치(complex_id NULL) — 절대 후보 아님
 ]
+# 전월세 거래(P2-2) — 전세(월세 0)·월세 섞음. complex_id 직접 부여(조인은 P2-1에서 검증).
+_RENT_TRANSACTIONS = [
+    # complex_id, net_area, deposit, monthly_rent, rent_type, floor, deal_date, match_confidence
+    ("C1", 84.97, 90000, 0, "jeonse", 12, "2025-04-18", 1.0),   # 전세
+    ("C1", 59.92, 20000, 120, "monthly", 7, "2025-03-05", 1.0),  # 월세
+    ("C2", 76.79, 50000, 0, "jeonse", 5, "2025-04-11", 0.7),     # 전세(저신뢰)
+    ("C3", 84.0, 30000, 90, "monthly", 10, "2025-02-03", 0.95),  # 월세
+]
 
 
 @pytest.fixture
@@ -60,6 +68,12 @@ def search_db() -> sqlite3.Connection:
         "(txn_id, complex_id, net_area, price, floor, deal_date, match_confidence) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         [(f"T{i}", *t) for i, t in enumerate(_TRANSACTIONS)],
+    )
+    conn.executemany(
+        "INSERT INTO rent_transaction "
+        "(txn_id, complex_id, net_area, deposit, monthly_rent, rent_type, floor, "
+        "deal_date, match_confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(f"R{i}", *t) for i, t in enumerate(_RENT_TRANSACTIONS)],
     )
     conn.commit()
     return conn

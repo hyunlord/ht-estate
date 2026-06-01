@@ -17,10 +17,13 @@ from app.search.spec import HardFilterSpec
 
 
 class RepresentativeTrade(BaseModel):
-    """범위 내 최근 1건 — 카드의 실거래 줄."""
+    """범위 내 최근 1건 — 카드의 실거래 줄. deal_type별 가격축만 채워짐(나머지 None)."""
 
     net_area: float | None
-    price: int | None  # 만원
+    price: int | None  # 만원 (매매)
+    deposit: int | None = None  # 만원 (전세·월세 보증금)
+    monthly_rent: int | None = None  # 만원 (월세)
+    rent_type: str | None = None  # 'jeonse' | 'monthly' (전월세만)
     floor: int | None
     deal_date: str | None  # ISO
     match_confidence: float | None  # 추정매칭 배지용 (저신뢰면 낮음 / NULL=직접확인불가)
@@ -74,7 +77,18 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     return clauses, params
 
 
+# deal_type → 거래 테이블 · select 컬럼. sale은 기존 transaction(회귀 0).
+_TRADE_TABLE = {"sale": "transaction", "jeonse": "rent_transaction", "monthly": "rent_transaction"}
+_SALE_COLS = "net_area, price, floor, deal_date, match_confidence"
+_RENT_COLS = "net_area, deposit, monthly_rent, rent_type, floor, deal_date, match_confidence"
+
+
 def _txn_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
+    """deal_type별 거래-where. sale=price / jeonse·monthly=rent_type+deposit(+monthly_rent).
+
+    rent_type 제약은 rep·매칭·EXISTS 모두에 적용되나 SET 자체는 has_txn_filters가 결정
+    (가격/면적 필터 없으면 EXISTS 미요구 → 전 단지, sale과 동일 의미).
+    """
     clauses: list[str] = []
     params: list[object] = []
     if spec.net_area_min is not None:
@@ -83,12 +97,29 @@ def _txn_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     if spec.net_area_max is not None:
         clauses.append("t.net_area <= ?")
         params.append(spec.net_area_max)
-    if spec.price_min is not None:
-        clauses.append("t.price >= ?")
-        params.append(spec.price_min)
-    if spec.price_max is not None:
-        clauses.append("t.price <= ?")
-        params.append(spec.price_max)
+    if spec.deal_type == "sale":
+        if spec.price_min is not None:
+            clauses.append("t.price >= ?")
+            params.append(spec.price_min)
+        if spec.price_max is not None:
+            clauses.append("t.price <= ?")
+            params.append(spec.price_max)
+    else:
+        clauses.append("t.rent_type = ?")  # jeonse | monthly — 전월세 유형 한정
+        params.append(spec.deal_type)
+        if spec.deposit_min is not None:
+            clauses.append("t.deposit >= ?")
+            params.append(spec.deposit_min)
+        if spec.deposit_max is not None:
+            clauses.append("t.deposit <= ?")
+            params.append(spec.deposit_max)
+        if spec.deal_type == "monthly":
+            if spec.monthly_rent_min is not None:
+                clauses.append("t.monthly_rent >= ?")
+                params.append(spec.monthly_rent_min)
+            if spec.monthly_rent_max is not None:
+                clauses.append("t.monthly_rent <= ?")
+                params.append(spec.monthly_rent_max)
     if spec.deal_since is not None:
         clauses.append("t.deal_date >= ?")
         params.append(spec.deal_since.isoformat())
@@ -96,18 +127,34 @@ def _txn_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
 
 
 def _matching_trades(
-    conn: sqlite3.Connection, complex_id: str, twhere: list[str], tparams: list[object]
+    conn: sqlite3.Connection, spec: HardFilterSpec, complex_id: str,
+    twhere: list[str], tparams: list[object],
 ) -> list[sqlite3.Row]:
+    table = _TRADE_TABLE[spec.deal_type]
+    cols = _SALE_COLS if spec.deal_type == "sale" else _RENT_COLS
     where = "t.complex_id = ?"
     params: list[object] = [complex_id]
     if twhere:
         where += " AND " + " AND ".join(twhere)
         params += tparams
     return conn.execute(
-        f"SELECT net_area, price, floor, deal_date, match_confidence "
-        f'FROM "transaction" t WHERE {where} ORDER BY t.deal_date DESC',
+        f'SELECT {cols} FROM "{table}" t WHERE {where} ORDER BY t.deal_date DESC',
         params,
     ).fetchall()
+
+
+def _build_rep(spec: HardFilterSpec, row: sqlite3.Row) -> RepresentativeTrade:
+    """deal_type별 대표거래 — sale은 price, 전월세는 deposit/monthly_rent/rent_type."""
+    if spec.deal_type == "sale":
+        return RepresentativeTrade(
+            net_area=row["net_area"], price=row["price"], floor=row["floor"],
+            deal_date=row["deal_date"], match_confidence=row["match_confidence"],
+        )
+    return RepresentativeTrade(
+        net_area=row["net_area"], price=None, deposit=row["deposit"],
+        monthly_rent=row["monthly_rent"], rent_type=row["rent_type"], floor=row["floor"],
+        deal_date=row["deal_date"], match_confidence=row["match_confidence"],
+    )
 
 
 def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
@@ -119,12 +166,15 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
         "SELECT c.complex_id, c.name, c.approval_date, c.parking_ratio, c.parking_underground, "
         "c.household_count, c.lat, c.lng, c.source_url FROM complex c"
     )
+    trade_table = _TRADE_TABLE[spec.deal_type]
+    # 가격축 집계 컬럼: 매매=price / 전월세=deposit. price_min/max에 deal_type 가격을 싣는다.
+    amount_col = "price" if spec.deal_type == "sale" else "deposit"
     parts = list(cwhere)
     params = list(cparams)
     if spec.has_txn_filters:
         txn_cond = " AND " + " AND ".join(twhere)
         parts.append(
-            f'EXISTS (SELECT 1 FROM "transaction" t '
+            f'EXISTS (SELECT 1 FROM "{trade_table}" t '
             f"WHERE t.complex_id = c.complex_id{txn_cond})"
         )
         params += tparams
@@ -133,9 +183,9 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
 
     candidates: list[Candidate] = []
     for row in conn.execute(sql, params).fetchall():
-        trades = _matching_trades(conn, row["complex_id"], twhere, tparams)
+        trades = _matching_trades(conn, spec, row["complex_id"], twhere, tparams)
         rep = trades[0] if trades else None
-        prices = [t["price"] for t in trades if t["price"] is not None]
+        amounts = [t[amount_col] for t in trades if t[amount_col] is not None]
         candidates.append(
             Candidate(
                 complex_id=row["complex_id"],
@@ -148,17 +198,9 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
                 lng=row["lng"],
                 source_url=row["source_url"],
                 transaction_count=len(trades),
-                price_min=min(prices) if prices else None,
-                price_max=max(prices) if prices else None,
-                representative_trade=RepresentativeTrade(
-                    net_area=rep["net_area"],
-                    price=rep["price"],
-                    floor=rep["floor"],
-                    deal_date=rep["deal_date"],
-                    match_confidence=rep["match_confidence"],
-                )
-                if rep is not None
-                else None,
+                price_min=min(amounts) if amounts else None,
+                price_max=max(amounts) if amounts else None,
+                representative_trade=_build_rep(spec, rep) if rep is not None else None,
             )
         )
 
