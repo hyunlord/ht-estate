@@ -1,6 +1,12 @@
 "use client";
 
-import type { Candidate, GymSummary, PetSummary, ReviewSummary } from "@/lib/types";
+import type {
+  Candidate,
+  FloorplanSummary,
+  GymSummary,
+  PetSummary,
+  ReviewSummary,
+} from "@/lib/types";
 
 // 단지 카드 — hard 조건 ✓ 값 + 추정매칭 배지 + 출처 딥링크 + 대표거래 + Tier-2 soft(gym·pet).
 // soft는 hard filter 아님(R1) — 표시만. floorplan·후기는 Phase 1+.
@@ -153,6 +159,40 @@ function ReviewRow({ review }: { review: ReviewSummary }) {
   );
 }
 
+// 평면도(P3-2) — 표시 전용(랭킹 신호 아님). 객관 feature(bay·향·판상/타워) + 출처. §11: 점수화 아님.
+// 셋 다 null이면 '미조사', 일부만 있으면 있는 것만(null-tolerant 안전 degrade).
+function FloorplanRow({ floorplan }: { floorplan: FloorplanSummary }) {
+  const parts = [
+    floorplan.bay != null ? `${floorplan.bay}bay` : null,
+    floorplan.orientation,
+    floorplan.structure,
+  ].filter((p): p is string => p != null);
+  if (parts.length === 0) {
+    return (
+      <div data-testid="floorplan-row" className="text-sm">
+        <span className="text-zinc-500">평면도</span>{" "}
+        <span data-testid="floorplan-status">정보 없음 / 미조사</span>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="floorplan-row" className="text-sm">
+      <span className="text-zinc-500">평면도</span>{" "}
+      <span data-testid="floorplan-features">{parts.join(" · ")}</span>
+      {floorplan.confidence != null && (
+        <span className="text-zinc-400"> (conf {floorplan.confidence.toFixed(2)})</span>
+      )}
+      {floorplan.evidence && (
+        <span data-testid="floorplan-evidence" className="text-zinc-600">
+          {" "}
+          · {floorplan.evidence}
+        </span>
+      )}
+      <SourceLinks sources={floorplan.sources} prefix="floorplan" />
+    </div>
+  );
+}
+
 export function ComplexCard({ candidate }: { candidate: Candidate }) {
   const rep = candidate.representative_trade;
   const lowConfidence = rep?.match_confidence != null && rep.match_confidence < 0.7;
@@ -185,6 +225,7 @@ export function ComplexCard({ candidate }: { candidate: Candidate }) {
       {candidate.gym && <GymRow gym={candidate.gym} />}
       {candidate.pet && <PetRow pet={candidate.pet} />}
       {candidate.review && <ReviewRow review={candidate.review} />}
+      {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
 
       {rep && (
         <p className="text-sm" data-testid="representative-trade">

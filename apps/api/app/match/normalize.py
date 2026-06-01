@@ -21,15 +21,23 @@ _DONG = re.compile(r"[가-힣]+(?:동|가|읍|면|리)")
 # 범위 구분자는 물결(~/∼)만 — 하이픈은 지번·정상명에 흔해 범위로 오인하면 정체성을 깎는다.
 # 단동은 반드시 '동'을 요구 → 끝자리 맨숫자(차/단지 신호: "한양4")는 보존(번호가드 근거).
 _BLDG_SUFFIX = re.compile(r"\d+동?\s*[~∼]\s*\d+동?$|\d+동$")
+# 선행 'LH' 운영사 접두 — LH 평면도 단지명("LH수서1단지")과 K-apt("수서1단지")가 갈리는 비대칭
+# (P3-2 스파이크: sim 0.83<0.85, 포함부스트 미발동)을 메운다. **선행 LH만** 제거(운영사 접두) —
+# '주공'·'휴먼시아'는 이름 중간 정체성 토큰("개포주공7단지"≠"개포7단지") → 제거하면 오매칭, 보존.
+_LH_PREFIX = re.compile(r"^lh")
 
 
 def normalize_name(raw: str) -> str:
-    """단지명을 비교용 canonical 토큰으로. 번호(차/단지)는 보존, 끝 건물 동번호/범위는 제거."""
+    """단지명을 비교용 canonical 토큰으로. 번호(차/단지)는 보존, 끝 건물 동번호/범위는 제거.
+
+    소문자화 뒤 선행 'LH' 운영사 접두 제거(LH 평면도↔K-apt 매칭, P3-2). 주공/휴먼시아는 미제거.
+    """
     s = _PAREN.sub("", raw)
     s = _BLDG_SUFFIX.sub("", s)
     s = _SEP.sub("", s)
     s = _SUFFIX.sub("", s)
-    return s.strip().lower()
+    s = s.strip().lower()
+    return _LH_PREFIX.sub("", s)
 
 
 def name_numbers(name: str) -> set[str]:

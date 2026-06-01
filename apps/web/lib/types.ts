@@ -80,6 +80,17 @@ export interface ReviewSummary {
   sources: GymSource[];
 }
 
+// Tier-2 floorplan(평면도, P3-2). **표시 전용 — 랭킹 신호 아님**(객관 feature·SoftSpec에 없음).
+// bay·orientation·structure 각각 null 가능(못 읽음). §11: 점수화 아님, 중립 feature.
+export interface FloorplanSummary {
+  bay: number | null;
+  orientation: string | null;
+  structure: string | null;
+  evidence: string | null;
+  confidence: number | null;
+  sources: GymSource[];
+}
+
 export interface Candidate {
   complex_id: string;
   name: string | null;
@@ -97,6 +108,7 @@ export interface Candidate {
   gym?: GymSummary | null; // API는 항상 채움(미시드→none). optional: 구버전 mock 호환.
   pet?: PetSummary | null;
   review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.
+  floorplan?: FloorplanSummary | null; // 평면도 feature(표시 전용). optional: 구버전 mock 호환.
 }
 
 export interface Bbox {

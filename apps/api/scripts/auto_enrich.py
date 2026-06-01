@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHONPATH 불필요)
+import load_floorplan_seed
 import load_gym_seed
 import load_pet_seed
 import load_review_seed
@@ -75,12 +76,28 @@ ATTR_CONFIG: dict[str, dict[str, object]] = {
         "loader": load_review_seed,
         "kind": "review",
     },
+    # floorplan은 평면도 VLM **객관 feature**(bay·향·판상/타워) → kind="floorplan" 별도 파서.
+    # 표시 전용·랭킹 아님(P3-2). §11 점수화 금지: 파서가 feature-only·null-tolerant·환각 거부 강제.
+    "floorplan": {
+        "attribute": "floorplan",
+        "prompt": "enrich_floorplan.md",
+        "seed": "floorplan_gangnam.jsonl",
+        "loader": load_floorplan_seed,
+        "kind": "floorplan",
+    },
 }
 
 # 저작권 백스톱(코드 강제) — 저장 값이 캡을 못 넘게 해 원문 재현을 구조적으로 차단(P3-1).
 REVIEW_SUMMARY_CAP = 220  # 요약 길이 캡(문자) — 길면 절단(…). 짧은 자기표현 요약만 보관.
 REVIEW_POINT_CAP = 60     # 핵심 포인트 한 줄 길이 캡.
 REVIEW_MAX_POINTS = 5     # 포인트 개수 캡.
+
+# floorplan feature 도메인(코드 강제 — 도메인 밖/점수화 토큰은 null로 떨어뜨려 객관 feature만 보관).
+FLOORPLAN_STRUCTURES = {"판상형", "타워형", "혼합"}
+FLOORPLAN_ORIENTATIONS = {
+    "남향", "남동향", "남서향", "동향", "서향", "북향", "북동향", "북서향",
+}
+FLOORPLAN_EVIDENCE_CAP = 200  # evidence 길이 캡.
 
 # 주입형 claude 러너 — (prompt, max_turns) → stdout. 테스트는 mock으로 키리스.
 ClaudeRunner = Callable[[str, int], str]
@@ -290,6 +307,77 @@ def parse_review_output(text: str, valid_ids: set[str]) -> list[dict[str, object
     return records
 
 
+def _norm_bay(v: object) -> int | None:
+    """bay → 양의 정수 또는 null(못 읽음/범위 밖/점수화 시도 거부). float·str 관용 파싱."""
+    if isinstance(v, bool):  # bool은 int 서브클래스 — 명시 거부
+        return None
+    if isinstance(v, int):
+        return v if 1 <= v <= 9 else None
+    if isinstance(v, float) and v.is_integer():
+        return int(v) if 1 <= v <= 9 else None
+    if isinstance(v, str) and v.strip().isdigit():
+        n = int(v.strip())
+        return n if 1 <= n <= 9 else None
+    return None
+
+
+def _norm_enum(v: object, domain: set[str]) -> str | None:
+    """도메인 안의 문자열만 통과, 그 외(점수·주관·불명)는 null — 객관 feature만 강제."""
+    return v if isinstance(v, str) and v in domain else None
+
+
+def parse_floorplan_output(text: str, valid_ids: set[str]) -> list[dict[str, object]]:
+    """모델 출력 → 검증된 floorplan 시드 레코드. **규율 강제**(스파이크 §11 가드를 코드로):
+
+    - complex_id ∈ valid_ids(환각 단지 drop) · source_url 필수/차단도메인/http-urn.
+    - **feature-only**: bay(1~9 정수)·orientation(향 도메인)·structure(판상/타워/혼합)만 — 도메인 밖
+      값·점수/등급 토큰은 **null**로 떨어뜨린다(객관 feature만, 점수화 구조적 차단 §11).
+    - **null-tolerant**: 못 읽은 필드는 null 허용. 단 **세 feature가 전부 null이면 drop**
+      (out-of-domain/불명 — 보여줄 게 없으니 안전 degrade).
+    - dedup (complex_id, source_url) — 같은 단지 다출처(타입별 평면도 여러 장) 허용.
+    """
+    records: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for obj in _iter_json_objects(text):
+        cid = str(obj.get("complex_id", ""))
+        if cid not in valid_ids:
+            continue
+        url = str(obj.get("source_url", "")).strip()
+        if not url or any(b in url for b in BLOCKED_DOMAINS):
+            continue
+        if not (url.startswith("http") or url.startswith("urn:")):
+            continue
+        if (cid, url) in seen:
+            continue
+        bay = _norm_bay(obj.get("bay"))
+        orientation = _norm_enum(obj.get("orientation"), FLOORPLAN_ORIENTATIONS)
+        structure = _norm_enum(obj.get("structure"), FLOORPLAN_STRUCTURES)
+        if bay is None and orientation is None and structure is None:
+            continue  # 전부 불명 → 안전 degrade(보관 안 함)
+        try:
+            conf = float(obj.get("confidence", 0.4))
+        except (TypeError, ValueError):
+            conf = 0.4
+        conf = max(0.0, min(1.0, conf))
+        if any(w in url for w in WIKI_DOMAINS):
+            conf = min(conf, WIKI_CONF_CAP)
+        records.append(
+            {
+                "complex_id": cid,
+                "name": str(obj.get("name", "")),
+                "bay": bay,
+                "orientation": orientation,
+                "structure": structure,
+                "evidence": _cap_text(str(obj.get("evidence", "")), FLOORPLAN_EVIDENCE_CAP),
+                "confidence": conf,
+                "source_type": str(obj.get("source_type", "agent_research")),
+                "source_url": url,
+            }
+        )
+        seen.add((cid, url))
+    return records
+
+
 def append_seed(path: Path, records: list[dict[str, object]]) -> int:
     """검증된 레코드를 시드 JSONL에 append(누적). 쓴 줄 수 반환."""
     if not records:
@@ -326,8 +414,11 @@ def auto_enrich(
     prompt = build_prompt(str(cfg["prompt"]), candidates)
     output = runner(prompt, max_turns)
     valid_ids = {c["complex_id"] for c in candidates}
-    if cfg.get("kind") == "review":  # review는 상태 아님 → 별도 파서(요약+다출처+저작권 캡)
+    kind = cfg.get("kind")
+    if kind == "review":  # review는 상태 아님 → 별도 파서(요약+다출처+저작권 캡)
         records = parse_review_output(output, valid_ids)
+    elif kind == "floorplan":  # floorplan은 VLM 객관 feature → 별도 파서(null-tolerant·점수화 금지)
+        records = parse_floorplan_output(output, valid_ids)
     else:
         records = parse_output(
             output, attribute, valid_ids, set(cfg["states"]), str(cfg["state_key"])  # type: ignore[arg-type]
@@ -348,7 +439,7 @@ def auto_enrich(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="auto_enrich", description="enrichment 자동 prefill")
     parser.add_argument(
-        "--attribute", choices=["gym", "pet", "review", "both"], default="both"
+        "--attribute", choices=["gym", "pet", "review", "floorplan", "both"], default="both"
     )
     parser.add_argument("--limit", type=int, default=20, help="이번 run 단지 수(저volume 권장)")
     parser.add_argument("--max-turns", type=int, default=60, help="claude -p turn 상한")

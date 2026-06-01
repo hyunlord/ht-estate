@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.search.floorplan import attach_floorplan
 from app.search.gym import attach_gym
 from app.search.pet import attach_pet
 from app.search.ranking import rank_candidates
@@ -62,4 +63,5 @@ def search_complexes_endpoint(
     attach_gym(conn, candidates, now=now)
     attach_pet(conn, candidates, now=now)
     attach_review(conn, candidates, now=now)  # 표시 전용 — 랭킹 입력 아님(rank는 gym/pet만)
+    attach_floorplan(conn, candidates, now=now)  # 표시 전용 — 랭킹 입력 아님(P3-2)
     return rank_candidates(candidates, spec.soft)

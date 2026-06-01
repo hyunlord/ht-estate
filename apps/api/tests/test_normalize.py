@@ -40,6 +40,19 @@ def test_normalize_preserves_trailing_bare_number() -> None:
     assert name_numbers(normalize_name("한양4")) == {"4"}
 
 
+def test_normalize_strips_leading_lh_operator_prefix() -> None:
+    # P3-2: LH 평면도 단지명("LH수서1단지")과 K-apt("수서1단지")가 같은 canonical로 → 매칭됨.
+    assert normalize_name("LH수서1단지") == normalize_name("수서1단지") == "수서1단지"
+    assert normalize_name("LH 서초3단지") == "서초3단지"
+
+
+def test_normalize_preserves_jugong_and_humansia_identity() -> None:
+    # 주공·휴먼시아는 이름 중간 정체성 토큰 — 제거하면 오매칭(개포주공7 ≠ 개포7). 보존.
+    assert normalize_name("개포주공7단지") != normalize_name("개포7단지")
+    assert "주공" in normalize_name("개포주공7단지")
+    assert "휴먼시아" in normalize_name("성남판교휴먼시아")
+
+
 def test_name_numbers_extracts_digits() -> None:
     assert name_numbers(normalize_name("쌍용대치2")) == {"2"}
     assert name_numbers(normalize_name("은마")) == set()

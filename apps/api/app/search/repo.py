@@ -11,6 +11,7 @@ import sqlite3
 
 from pydantic import BaseModel
 
+from app.search.floorplan import FloorplanSummary
 from app.search.gym import GymSummary
 from app.search.pet import PetSummary
 from app.search.review import ReviewSummary
@@ -50,6 +51,7 @@ class Candidate(BaseModel):
     gym: GymSummary | None = None
     pet: PetSummary | None = None
     review: ReviewSummary | None = None  # 후기(표시 전용 — 랭킹 신호 아님, P3-1)
+    floorplan: FloorplanSummary | None = None  # 평면도 feature(표시 전용 — 랭킹 아님, P3-2)
 
 
 def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
