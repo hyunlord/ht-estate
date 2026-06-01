@@ -20,7 +20,7 @@ from app.settings import get_api_key, get_kakao_key
 from app.store.complex_repo import ingest_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.geo_repo import backfill_coords
-from app.store.join_repo import backfill_matches
+from app.store.join_repo import backfill_matches, backfill_rent_bjd
 from app.store.rent_transaction_repo import ingest_rent_months
 from app.store.transaction_repo import ingest_months
 from app.throttle import Throttle
@@ -123,6 +123,8 @@ def run_ingest(
         summary.rent_transactions = ingest_rent_months(
             conn, region, months, api_key=api_key, throttle=throttle
         )
+        # 전월세는 umdCd 없어 bjd_code NULL → (sgg,동명)→bjd 룩업으로 채워 bjd narrowing 회복(P2-3).
+        backfill_rent_bjd(conn)
         # 전월세 조인은 rent 스테이지 내에서(동형 조인 재사용). 매매 "join" 스테이지는 불변(회귀 0).
         rent_stats = backfill_matches(conn, table="rent_transaction")
         summary.rent_matched = rent_stats["matched"]

@@ -49,6 +49,46 @@ def _complex_dong(row: sqlite3.Row) -> str | None:
     return row["dong"] or extract_dong(row["legal_addr"])
 
 
+def _sgg_dong_to_bjd(conn: sqlite3.Connection) -> dict[tuple[str, str], str]:
+    """(sgg 5자리, 법정동명) → bjd_code 10자리 룩업 — complex에서 **도출**(단지 있는 동만, 최신).
+
+    같은 (sgg, 동명)이 여러 bjd_code로 갈리면(모호) 제외 — 억지 매핑 금지(미스는 동명 폴백).
+    """
+    pairs: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for c in conn.execute(
+        "SELECT bjd_code, dong, legal_addr FROM complex WHERE bjd_code IS NOT NULL"
+    ):
+        dong = _complex_dong(c)
+        if dong:
+            pairs[(c["bjd_code"][:5], dong)].add(c["bjd_code"])
+    return {key: next(iter(v)) for key, v in pairs.items() if len(v) == 1}
+
+
+def backfill_rent_bjd(conn: sqlite3.Connection) -> dict[str, int]:
+    """전월세 bjd_code를 (sgg_cd, legal_dong)→bjd 룩업으로 채운다 — bjd narrowing 회복(P2-3).
+
+    전월세 API는 umdCd 미제공이라 bjd_code가 NULL → 동명 string 폴백(저정밀)이었다. complex에서
+    도출한 (sgg,동명)→bjd로 채우면 이후 backfill_matches가 **bjd 동등 narrowing**을 쓴다(고정밀).
+    매매 무관(rent_transaction만 갱신). 멱등(채운 행 skip). 룩업 미스/모호는 NULL(동명 폴백).
+    {filled, pending} 반환.
+    """
+    lookup = _sgg_dong_to_bjd(conn)
+    pending = conn.execute(
+        "SELECT txn_id, sgg_cd, legal_dong FROM rent_transaction "
+        "WHERE bjd_code IS NULL AND sgg_cd IS NOT NULL AND legal_dong IS NOT NULL"
+    ).fetchall()
+    filled = 0
+    for r in pending:
+        bjd = lookup.get((r["sgg_cd"], r["legal_dong"]))
+        if bjd:
+            conn.execute(
+                "UPDATE rent_transaction SET bjd_code = ? WHERE txn_id = ?", (bjd, r["txn_id"])
+            )
+            filled += 1
+    conn.commit()
+    return {"filled": filled, "pending": len(pending)}
+
+
 class _Indexes:
     """narrowing 인덱스 묶음 — 단지 1패스로 구성, backfill/breakdown이 공유한다."""
 

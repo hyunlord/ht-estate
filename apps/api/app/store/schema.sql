@@ -71,8 +71,9 @@ CREATE TABLE IF NOT EXISTS rent_transaction (
   complex_id          TEXT REFERENCES complex(complex_id),  -- 퍼지 매칭 (NULL 가능)
   match_confidence    REAL,
   apt_name_raw        TEXT,
-  legal_dong          TEXT,
-  bjd_code            TEXT,                                 -- sggCd+umdCd (조인 narrowing)
+  legal_dong          TEXT,                                 -- umdNm (법정동명 — 전월세는 코드 없이 이름만)
+  sgg_cd              TEXT,                                 -- sggCd 5자리 — (sgg,동명)→bjd 룩업 키(P2-3)
+  bjd_code            TEXT,                                 -- 법정동코드 10자리 — 전월세는 룩업으로 채움(P2-3)
   jibun               TEXT,                                 -- 캐논 지번 (지번 매칭)
   road_addr           TEXT,
   build_year          INTEGER,

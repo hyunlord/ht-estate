@@ -32,6 +32,10 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         calls.append("rent")
         return 9
 
+    def fake_rent_bjd(conn, **kw):  # type: ignore[no-untyped-def]
+        calls.append("rent_bjd")
+        return {"filled": 7, "pending": 9}
+
     def fake_join(conn, **kw):  # type: ignore[no-untyped-def]
         # 매매 join(table 미지정=transaction) vs 전월세 join(table=rent_transaction) 구분.
         table = kw.get("table", "transaction")
@@ -48,6 +52,7 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(ingest_mod, "ingest_complexes", fake_complexes)
     monkeypatch.setattr(ingest_mod, "ingest_months", fake_months)
     monkeypatch.setattr(ingest_mod, "ingest_rent_months", fake_rent)
+    monkeypatch.setattr(ingest_mod, "backfill_rent_bjd", fake_rent_bjd)
     monkeypatch.setattr(ingest_mod, "backfill_matches", fake_join)
     monkeypatch.setattr(ingest_mod, "backfill_coords", fake_geo)
     return calls
@@ -58,8 +63,10 @@ def test_runs_all_stages_in_canonical_order(conn, stage_calls: list[str]) -> Non
         conn, region="11680", months=["202504"], stages=list(STAGE_ORDER),
         api_key="d", kakao_key="d", log=lambda _m: None,
     )
-    # rent 스테이지는 적재 후 자체 조인(rent_join) → 매매 "join"은 그대로 별도.
-    assert stage_calls == ["complex", "transaction", "rent", "rent_join", "join", "geocode"]
+    # rent 스테이지: 적재 → bjd 룩업 채움 → 자체 조인(rent_join). 매매 "join"은 그대로 별도.
+    assert stage_calls == [
+        "complex", "transaction", "rent", "rent_bjd", "rent_join", "join", "geocode"
+    ]
     # 매매 필드 불변(회귀 0)
     assert summary.complexes == 5
     assert summary.transactions == 113
@@ -91,7 +98,7 @@ def test_rent_stage_ingests_and_joins(conn, stage_calls: list[str]) -> None:
         conn, region="11680", months=["202504"], stages=["rent"],
         api_key="d", log=lambda _m: None,
     )
-    assert stage_calls == ["rent", "rent_join"]
+    assert stage_calls == ["rent", "rent_bjd", "rent_join"]
     assert summary.rent_transactions == 9
     assert summary.rent_matched == 4
     assert summary.transactions == 0 and summary.matched == 0  # 매매 미실행

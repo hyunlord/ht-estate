@@ -22,6 +22,7 @@ _INSERT_COLUMNS = (
     "txn_id",
     "apt_name_raw",
     "legal_dong",
+    "sgg_cd",
     "bjd_code",
     "jibun",
     "road_addr",
@@ -70,7 +71,8 @@ def upsert_rent_transaction(
         "txn_id": txn_id,
         "apt_name_raw": trade.apt_name,
         "legal_dong": trade.legal_dong,
-        "bjd_code": trade.bjd_code,
+        "sgg_cd": trade.sgg_cd,
+        "bjd_code": trade.bjd_code,  # 전월세는 보통 None(umdCd 없음) → backfill_rent_bjd가 채움
         "jibun": to_canonical(from_molit(trade.bonbun, trade.bubun, trade.jibun)),
         "road_addr": trade.road_addr,
         "build_year": trade.build_year,
