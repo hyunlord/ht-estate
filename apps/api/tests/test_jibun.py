@@ -48,6 +48,16 @@ def test_from_kapt_address_ignores_name_embedded_numbers() -> None:
     assert from_kapt_address("서울특별시 강남구 역삼동 역삼래미안3차 711") == (711, 0)
 
 
+def test_from_kapt_address_trailing_dash_bonbun() -> None:
+    # K-apt가 빈 부번을 "본번-"로 렌더("…삼성동 126- 삼성파크아파트") — 부번 없음 = (본번, 0).
+    # 이 파싱 실패가 단지 지번 커버리지를 깎아 지번 회수를 막던 버그(P2-4).
+    assert from_kapt_address("서울특별시 강남구 삼성동 126- 삼성파크아파트") == (126, 0)
+    assert from_kapt_address("서울특별시 강남구 도곡동 462- 개포럭키아파트") == (462, 0)
+    assert from_kapt_address("서울특별시 용산구 한남동 805- 한남동현대하이페리온아파트") == (805, 0)
+    # 부번 있는 정상 케이스는 불변(회귀 0)
+    assert from_kapt_address("서울특별시 강남구 역삼동 711-1 역삼자이아파트") == (711, 1)
+
+
 def test_from_kapt_address_san_lot_is_unmatchable() -> None:
     # 산 번지는 번호공간이 달라 정규 번지와 매칭하면 오매칭 → None
     assert from_kapt_address("서울특별시 강남구 개포동 산 1-2 개포자이") is None

@@ -31,7 +31,7 @@ from app.match.fuzzy import (
     similarity,
 )
 from app.match.jibun import from_kapt_address, to_canonical
-from app.match.normalize import extract_dong
+from app.match.normalize import extract_dong, name_numbers, normalize_name
 
 # 지번 회수 경로 정책 상수.
 JIBUN_NAME_FLOOR = 0.70  # 단일 점유 지번 회수의 이름 타당성 하한(오매칭 0.615 배제)
@@ -148,10 +148,38 @@ def _jibun_match(
         if similarity(txn["apt_name_raw"], cand_name) >= JIBUN_NAME_FLOOR:
             return complex_id, JIBUN_MATCH_CONFIDENCE
         return None
-    # 지번 충돌 — 같은 지번 단지들 사이에서 이름으로 disambiguate(임계+모호갭).
-    return best_match(
+    # 지번 충돌 — 같은 지번 단지들 사이에서 disambiguate.
+    return _disambiguate_collision(
         txn["apt_name_raw"], peers, threshold=threshold, ambiguity_gap=ambiguity_gap
     )
+
+
+def _disambiguate_collision(
+    name: str, peers: list[Candidate], *, threshold: float, ambiguity_gap: float
+) -> tuple[str, float] | None:
+    """지번 충돌 peer들 중 매칭. 강한 신호(중복엔트리·번호일치)를 먼저, 아니면 임계+모호갭.
+
+    충돌은 같은 물리 필지(지번 일치)가 전제다. 그 위에서:
+    - (a) 모든 peer가 같은 정규화명 → K-apt가 같은 단지를 접미사 유무로 중복 등재한 것(가짜 충돌).
+      이름 타당성(floor) 이상이면 top 채택 — 어느 행이든 같은 단지라 오인 아님.
+    - (b) 거래 번호셋과 정확히 한 peer만 번호 일치(base vs N차) → 그 peer 채택. 같은 필지 +
+      번호 일치는 강한 동일성 증거라 모호갭을 우회한다(base로 가던 오매칭을 차수로 교정).
+    - (c) 그 외 → 이름 임계+모호갭(모호하면 NULL). 억지매칭 금지.
+    floor·임계·번호가드는 불변 — 완화가 아니라 *같은 지번* 위 추가 신호로만 가른다.
+    """
+    scored = sorted(
+        ((similarity(name, cn), cid, cn) for cid, cn in peers), key=lambda x: x[0], reverse=True
+    )
+    top_score, top_id, top_name = scored[0]
+    if top_score >= JIBUN_NAME_FLOOR:
+        if len({normalize_name(cn) for _, cn in peers}) == 1:  # (a) 중복 엔트리
+            return top_id, JIBUN_MATCH_CONFIDENCE
+        qn = name_numbers(normalize_name(name))  # (b) 번호 일치
+        if qn:
+            agree = [(cid, cn) for cid, cn in peers if name_numbers(normalize_name(cn)) == qn]
+            if len(agree) == 1 and similarity(name, agree[0][1]) >= JIBUN_NAME_FLOOR:
+                return agree[0][0], JIBUN_MATCH_CONFIDENCE
+    return best_match(name, peers, threshold=threshold, ambiguity_gap=ambiguity_gap)
 
 
 def backfill_matches(

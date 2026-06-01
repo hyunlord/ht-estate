@@ -16,11 +16,17 @@ _SUFFIX = re.compile(r"(아파트|apt)$", re.IGNORECASE)
 _SEP = re.compile(r"[-'’·\s]+")
 _NUM = re.compile(r"\d+")
 _DONG = re.compile(r"[가-힣]+(?:동|가|읍|면|리)")
+# 거래명 끝의 *건물* 동 번호/범위 — 단지 정체성이 아닌 노이즈라 제거한다(P2-4 라이브 보정).
+#   "…101동~111동" / "…1동~8동" / "…1~6" (동 범위) · "…101동"(단동) → 제거.
+# 범위 구분자는 물결(~/∼)만 — 하이픈은 지번·정상명에 흔해 범위로 오인하면 정체성을 깎는다.
+# 단동은 반드시 '동'을 요구 → 끝자리 맨숫자(차/단지 신호: "한양4")는 보존(번호가드 근거).
+_BLDG_SUFFIX = re.compile(r"\d+동?\s*[~∼]\s*\d+동?$|\d+동$")
 
 
 def normalize_name(raw: str) -> str:
-    """단지명을 비교용 canonical 토큰으로. 번호(차/단지)는 보존한다."""
+    """단지명을 비교용 canonical 토큰으로. 번호(차/단지)는 보존, 끝 건물 동번호/범위는 제거."""
     s = _PAREN.sub("", raw)
+    s = _BLDG_SUFFIX.sub("", s)
     s = _SEP.sub("", s)
     s = _SUFFIX.sub("", s)
     return s.strip().lower()

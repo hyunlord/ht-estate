@@ -16,7 +16,8 @@ from __future__ import annotations
 import re
 
 # 주소 토큰 하나가 번지인지: 선택적 산 + 본번(-부번) + 선택적 '번지' 접미사.
-_LOT_TOKEN = re.compile(r"^(산)?(\d+)(?:-(\d+))?번?지?$")
+# 부번은 \d* — K-apt가 빈 부번을 "본번-"(예 "126-")로 렌더하는 케이스를 본번만으로 흡수(P2-4).
+_LOT_TOKEN = re.compile(r"^(산)?(\d+)(?:-(\d*))?번?지?$")
 # MOLIT jibun 문자열: 본번(-부번). 산/기타 표기는 매칭에서 제외(None).
 _JIBUN_FIELD = re.compile(r"^(\d+)(?:-(\d+))?$")
 _DONG = re.compile(r"[가-힣]+(?:동|가|읍|면|리)")

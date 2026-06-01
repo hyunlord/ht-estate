@@ -228,6 +228,115 @@ def test_jibun_number_guard_rejects_different_cha_same_lot() -> None:
     assert _complex_id(conn, "T1") is None
 
 
+# ───────── P2-4 이름/지번 매칭 강화 ─────────
+
+
+def test_jibun_parsefix_trailing_dash_enables_rescue() -> None:
+    # K-apt 주소가 "본번-"(빈 부번)이라 지번 파싱 실패 → 지번 peer 없음 → 회수 불가였던 단지.
+    # 실데이터 쌍(목동우성3 → 목동3차우성아파트, 이름 유사도 0.727): 이름 path는 임계(0.85) 미달
+    # 이라 무매치, 지번(338)만이 회수 경로. 파싱 fix로 단지 지번이 떨어져야 단일 점유 회수(P2-4).
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES "
+        "('C1', '목동3차우성아파트', '1147010200', '서울특별시 양천구 목동 338- 목동3차우성아파트')"
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code, jibun) VALUES '
+        "('T1', '목동우성3', '목동', '1147010200', '338')"
+    )
+    conn.commit()
+    # 이름 path만으론 무매치(0.727 < 0.85 임계) — 포함관계도 아님(어순 차이).
+    assert backfill_matches(conn, use_jibun=False)["matched"] == 0
+    assert _complex_id(conn, "T1") is None
+    # 지번 ON: 파싱 fix가 단지 지번 338을 만들어 단일 점유 회수(이름 0.727 ≥ floor 0.70).
+    conn.execute('UPDATE "transaction" SET complex_id = NULL, match_confidence = NULL')
+    conn.commit()
+    assert backfill_matches(conn, use_jibun=True)["matched"] == 1
+    assert _complex_id(conn, "T1") == "C1"
+
+
+def test_dongrange_strip_enables_name_match() -> None:
+    # 거래명 끝 "101동~111동"(건물범위 노이즈) 제거 → 단지명과 정규화 동일 → 이름 path 매칭(P2-4).
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES "
+        "('C1', '푸른마을아파트', '1168011400', '서울특별시 강남구 일원동 700')"
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code) VALUES '
+        "('T1', '푸른마을아파트101동~111동', '일원동', '1168011400')"
+    )
+    conn.commit()
+    stats = backfill_matches(conn, use_jibun=False)  # 이름 path만으로 회수돼야
+    assert stats["matched"] == 1
+    assert _complex_id(conn, "T1") == "C1"
+
+
+def test_dongrange_strip_keeps_cha_number_guard() -> None:
+    # 동범위 제거가 차수를 삼키면 안 됨 — 현대1차 거래가 현대2차로 오매칭되면 안 됨.
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.executemany(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES (?, ?, ?, ?)",
+        [
+            ("C1", "현대1차", "1168011000", "서울특별시 강남구 압구정동 100"),
+            ("C2", "현대2차", "1168011000", "서울특별시 강남구 압구정동 200"),
+        ],
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code) VALUES '
+        "('T1', '현대2차101동~106동', '압구정동', '1168011000')"  # 동범위 제거 후 현대2차
+    )
+    conn.commit()
+    backfill_matches(conn, use_jibun=False)
+    assert _complex_id(conn, "T1") == "C2"  # 차수 보존 → 정확히 2차로
+
+
+def test_jibun_collision_duplicate_kapt_entries_match() -> None:
+    # K-apt가 같은 단지를 두 행(접미사 유무)으로 중복 등재 → 같은 지번 "충돌"이나 실은 같은 단지.
+    # 지번 파싱 fix가 두 행을 같은 지번에 떨어뜨려 드러난 가짜 충돌 → 회수(회귀 0의 핵심).
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.executemany(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES (?, ?, ?, ?)",
+        [
+            ("C1", "하월곡아남아파트", "1129013600", "성북구 하월곡동 218 하월곡아남아파트"),
+            ("C2", "하월곡아남", "1129013600", "성북구 하월곡동 218 하월곡아남"),  # 중복엔트리
+        ],
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code, jibun) VALUES '
+        "('T1', '아남', '하월곡동', '1129013600', '218')"
+    )
+    conn.commit()
+    stats = backfill_matches(conn, use_jibun=True)
+    assert stats["matched"] == 1
+    assert _complex_id(conn, "T1") in {"C1", "C2"}  # 같은 단지라 어느 쪽이든 정답
+
+
+def test_jibun_collision_number_agreement_picks_phase() -> None:
+    # base(번호없음) + N차가 같은 지번 충돌 → 거래 번호셋과 일치하는 차수 채택(base 오매칭 교정).
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.executemany(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES (?, ?, ?, ?)",
+        [
+            ("C1", "비콘드림힐", "1135010500", "노원구 상계동 1310 비콘드림힐"),
+            ("C2", "비콘드림힐3차아파트", "1135010500", "노원구 상계동 1310 비콘드림힐3차아파트"),
+        ],
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code, jibun) VALUES '
+        "('T1', '비콘드림힐3', '상계동', '1135010500', '1310')"
+    )
+    conn.commit()
+    stats = backfill_matches(conn, use_jibun=True)
+    assert stats["matched"] == 1
+    assert _complex_id(conn, "T1") == "C2"  # base(C1) 아닌 번호일치 3차(C2)
+
+
 def test_recall_breakdown_classifies_residual() -> None:
     # 이름만 매칭 후 남은 미매치를 지번-회수 가능 vs 구조적으로 분해.
     conn = get_connection(":memory:")
