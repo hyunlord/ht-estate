@@ -72,15 +72,19 @@ def run_batch(
     api_key: str | None,
     kakao_key: str | None,
     throttle: Throttle | None = None,
+    resume: bool = False,
     log: Callable[[str], None] = print,
 ) -> list[RegionResult]:
-    """각 구를 run_ingest에 위임(공유 throttle). 구별 요약 수집·반환. 멱등(재실행=재개)."""
+    """각 구를 run_ingest에 위임(공유 throttle). 구별 요약 수집·반환. 멱등(재실행=재개).
+
+    `resume`는 run_ingest로 전달 — 스테이지별 기적재 skip(complex region·txn/rent 월).
+    """
     results: list[RegionResult] = []
     for i, (code, name) in enumerate(regions, 1):
         log(f"━━ [{i}/{len(regions)}] {name}({code}) 적재 시작 ━━")
         summary = run_ingest(
             conn, region=code, months=months, stages=stages,
-            api_key=api_key, kakao_key=kakao_key, throttle=throttle, log=log,
+            api_key=api_key, kakao_key=kakao_key, throttle=throttle, resume=resume, log=log,
         )
         results.append(RegionResult(code=code, name=name, summary=summary))
     return results

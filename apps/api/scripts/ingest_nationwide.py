@@ -27,7 +27,12 @@ from app.ingest import DEFAULT_STAGES, STAGE_ORDER, parse_months
 from app.settings import get_api_key, get_kakao_key
 from app.sources.kapt import list_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
+from app.store.progress_repo import completed_months, region_has_complex
 from app.throttle import Throttle
+
+# region 선택을 gating하는 스테이지(미적재 시 그 region에 할 일 있음). geocode/join은
+# present-skip(있으면 skip)이라 region 선택을 막지 않는다 — 이들만 선택되면 전 region 통과.
+_GATING_STAGES = ("complex", "transaction", "rent")
 
 CODES_CSV = Path(__file__).resolve().parents[1] / "data" / "regions" / "sigungu_kr.csv"
 
@@ -73,6 +78,34 @@ def loaded_sigungu(conn: sqlite3.Connection) -> set[str]:
         "SELECT DISTINCT substr(bjd_code, 1, 5) FROM complex WHERE bjd_code IS NOT NULL"
     ).fetchall()
     return {r[0] for r in rows if r[0]}
+
+
+def pending_regions(
+    conn: sqlite3.Connection,
+    codes: list[tuple[str, str, str]],
+    stages: list[str],
+    months: list[str],
+) -> list[tuple[str, str, str]]:
+    """재개: 선택 스테이지에 아직 할 일이 남은 시군구만 남긴다(전국 멀티데이 재개의 진행 추적).
+
+    gating 스테이지(complex·transaction·rent) 기준 — complex 미적재거나, txn/rent에 미적재 월이
+    하나라도 있으면 pending. geocode/join만 선택되면 gating 없음 → 전 region 통과(자체 skip).
+    run_ingest의 스테이지별 self-skip이 region 내 부분완료(예: 5/12개월)를 다시 거른다.
+    """
+    gating = [s for s in _GATING_STAGES if s in stages]
+    if not gating:
+        return codes
+    target = set(months)
+    out: list[tuple[str, str, str]] = []
+    for row in codes:
+        code = row[0]
+        needs = ("complex" in gating and not region_has_complex(conn, code)) or any(
+            s in gating and not target <= completed_months(conn, s, code)
+            for s in ("transaction", "rent")
+        )
+        if needs:
+            out.append(row)
+    return out
 
 
 def sido_summary(results: list[RegionResult]) -> str:
@@ -136,17 +169,11 @@ def main(argv: list[str] | None = None) -> int:
     init_db(conn)
 
     if args.resume:
-        # resume-skip은 complex 적재 유무로 판정 → complex 스테이지 재개 전용.
-        # (transaction/geocode만 도는 run에 적용하면 complex 있는 시군구를 전부 건너뛰는 함정)
-        if "complex" not in stages:
-            parser.error(
-                "--resume는 complex 스테이지 전용(--stages에 complex 필요). "
-                "txn/geocode 재개는 멱등 재실행(geocode=skip-if-present)."
-            )
-        done = loaded_sigungu(conn)
+        # 스테이지별 self-skip(run_ingest)로 재개 — complex 기적재 region·txn/rent 기적재 월 skip.
+        # region 통째 드롭 대신 "할 일 남은" region만 남긴다(풀스택 안전 + limit/진행 유의미).
         before = len(codes)
-        codes = [row for row in codes if row[0] not in done]
-        print(f"재개: {before}개 중 {before - len(codes)}개 이미 적재 → {len(codes)}개 남음")
+        codes = pending_regions(conn, codes, stages, months)
+        print(f"재개: {before}개 중 {before - len(codes)}개 완료 → {len(codes)}개 남음")
     if args.limit > 0:
         codes = codes[: args.limit]
 
@@ -156,11 +183,12 @@ def main(argv: list[str] | None = None) -> int:
         log("적재할 시군구 없음(전부 완료 또는 필터 0).")
         return 0
 
-    api_key = get_api_key() if ({"complex", "transaction"} & set(stages)) else None
+    api_key = get_api_key() if ({"complex", "transaction", "rent"} & set(stages)) else None
     kakao_key = get_kakao_key() if "geocode" in stages else None
     results = run_batch(
         conn, regions, months=months, stages=stages,
-        api_key=api_key, kakao_key=kakao_key, throttle=Throttle(args.interval), log=log,
+        api_key=api_key, kakao_key=kakao_key, throttle=Throttle(args.interval),
+        resume=args.resume, log=log,
     )
     print(coverage_table(results))
     print(sido_summary(results))

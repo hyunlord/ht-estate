@@ -44,7 +44,7 @@ def test_run_batch_loops_regions_in_order_sharing_throttle(
     seen: list[tuple[str, object]] = []
     shared = Throttle(0.0)
 
-    def fake_run_ingest(c, *, region, months, stages, api_key, kakao_key, throttle, log):  # type: ignore[no-untyped-def]
+    def fake_run_ingest(c, *, region, months, stages, api_key, kakao_key, throttle, resume, log):  # type: ignore[no-untyped-def]
         seen.append((region, throttle))
         return IngestSummary(complexes=3, transactions=10)
 

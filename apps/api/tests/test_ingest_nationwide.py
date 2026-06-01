@@ -107,11 +107,41 @@ def test_main_resume_skips_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert passed == ["41135"]  # 11110 skip(이미 적재), 41135만
 
 
-def test_resume_requires_complex_stage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # --resume + complex 없는 스테이지 → 함정 방지 가드(에러).
+def test_resume_works_for_transaction_stage_without_complex(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C20: --resume가 더 이상 complex 전용 아님 — txn/rent 재개(월 단위 skip)도 지원(가드 제거).
     codes_csv = tmp_path / "codes.csv"
     save_codes(codes_csv, [("41135", "경기", "분당구")])
     monkeypatch.setattr(ingest_nationwide, "get_api_key", lambda: "dummy")
-    with pytest.raises(SystemExit):
-        main(["--resume", "--stages", "transaction,geocode",
-              "--codes-file", str(codes_csv), "--db", ":memory:"])
+    captured: dict = {}
+
+    def fake_batch(conn, regions, **kw):  # type: ignore[no-untyped-def]
+        captured["regions"] = [c for c, _ in regions]
+        captured["resume"] = kw.get("resume")
+        return []
+
+    monkeypatch.setattr(ingest_nationwide, "run_batch", fake_batch)
+    rc = main(["--resume", "--stages", "transaction", "--months", "202604",
+               "--codes-file", str(codes_csv), "--db", ":memory:"])
+    assert rc == 0  # 에러 없음(가드 제거)
+    assert captured["regions"] == ["41135"]  # 미적재 → pending → run_batch에 전달
+    assert captured["resume"] is True  # run_batch로 resume 전달
+
+
+def test_pending_regions_filters_by_completed_months(tmp_path: Path) -> None:
+    # 재개: txn 월이 전부 적재된 시군구는 pending에서 빠지고, 일부만 된 곳은 남는다.
+    from ingest_nationwide import pending_regions
+
+    from app.store.progress_repo import record_month
+
+    conn = get_connection(":memory:")
+    init_db(conn)
+    codes = [("11110", "서울", "종로구"), ("41135", "경기", "분당구")]
+    months = ["202603", "202604"]
+    # 11110: 두 달 다 적재(완료) / 41135: 한 달만(미완)
+    record_month(conn, "transaction", "11110", "202603", 5)
+    record_month(conn, "transaction", "11110", "202604", 7)
+    record_month(conn, "transaction", "41135", "202603", 3)
+    pending = pending_regions(conn, codes, ["transaction"], months)
+    assert [c for c, _, _ in pending] == ["41135"]  # 11110 완료 → 제외

@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS rent_transaction (
 
 CREATE INDEX IF NOT EXISTS idx_rent_transaction_complex ON rent_transaction(complex_id);
 
+-- 적재 진행 원장 (C20) — 멀티데이 재개용. (stage, region, month) 완료분을 기록해 재개 시
+-- 이미 fetch한 region×월을 일일캡 소모 없이 skip한다. 코어 적재(transaction/rent)와 별도 테이블이라
+-- 회귀 0(additive). 0행 월도 기록 → 빈 월 재fetch 방지(데이터 추론으론 빈/미적재 구분 불가).
+CREATE TABLE IF NOT EXISTS ingest_progress (
+  stage       TEXT NOT NULL,            -- 'transaction' | 'rent'
+  region      TEXT NOT NULL,            -- 시군구코드 (lawd_cd 5자리)
+  month       TEXT NOT NULL,            -- YYYYMM (계약월)
+  rows        INTEGER,                  -- 그 region×월에 적재된 행 수(0 가능)
+  fetched_at  TIMESTAMP,
+  PRIMARY KEY (stage, region, month)
+);
+
 -- enrichment: 출처를 들고 다니는 통합 사실 테이블 (lazy-filled, Phase 1+)
 CREATE TABLE IF NOT EXISTS enrichment (
   complex_id          TEXT REFERENCES complex(complex_id),

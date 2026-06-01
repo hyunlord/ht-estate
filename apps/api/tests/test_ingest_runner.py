@@ -155,3 +155,84 @@ def test_main_join_only_is_keyless(stage_calls: list[str]) -> None:
 def test_main_rejects_unknown_stage() -> None:
     with pytest.raises(SystemExit):
         main(["--region", "11680", "--stages", "bogus", "--db", ":memory:"])
+
+
+# ───────── C20 resume (멀티데이 재개) ─────────
+
+
+def test_resume_transaction_skips_recorded_months_and_records_new(
+    conn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.store.db import init_db
+    from app.store.progress_repo import completed_months, record_month
+
+    init_db(conn)
+    record_month(conn, "transaction", "11680", "202401", 50)  # 이미 적재된 월
+    fetched: list[str] = []
+
+    def fake_month(c, region, month, **kw):  # type: ignore[no-untyped-def]
+        fetched.append(month)
+        return 7
+
+    monkeypatch.setattr(ingest_mod, "ingest_month", fake_month)
+    summary = run_ingest(
+        conn, region="11680", months=["202401", "202402", "202403"],
+        stages=["transaction"], api_key="d", resume=True, log=lambda _m: None,
+    )
+    assert fetched == ["202402", "202403"]  # 기적재 202401 skip
+    assert summary.transactions == 14  # 2개월 × 7
+    # 새로 적재한 월도 원장 기록 → 다음 재개 시 skip
+    assert completed_months(conn, "transaction", "11680") == {"202401", "202402", "202403"}
+
+
+def test_resume_rent_skips_recorded_months(conn, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.store.db import init_db
+    from app.store.progress_repo import completed_months, record_month
+
+    init_db(conn)
+    record_month(conn, "rent", "11680", "202402", 9)
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        ingest_mod, "ingest_rent_month",
+        lambda c, region, month, **kw: fetched.append(month) or 3,  # type: ignore[no-untyped-def]
+    )
+    run_ingest(
+        conn, region="11680", months=["202401", "202402"], stages=["rent"],
+        api_key="d", resume=True, log=lambda _m: None,
+    )
+    assert fetched == ["202401"]  # 202402 skip
+    assert completed_months(conn, "rent", "11680") == {"202401", "202402"}
+
+
+def test_resume_complex_skips_loaded_region(conn, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.store.db import init_db
+
+    init_db(conn)
+    conn.execute("INSERT INTO complex (complex_id, bjd_code) VALUES ('C1', '1168010100')")
+    conn.commit()
+    called: list[str] = []
+    monkeypatch.setattr(
+        ingest_mod, "ingest_complexes",
+        lambda c, **kw: called.append("x") or 5,  # type: ignore[no-untyped-def]
+    )
+    run_ingest(
+        conn, region="11680", months=[], stages=["complex"], api_key="d",
+        resume=True, log=lambda _m: None,
+    )
+    assert called == []  # region에 complex 있으면 skip
+
+
+def test_resume_complex_runs_when_region_empty(conn, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.store.db import init_db
+
+    init_db(conn)  # complex 없음
+    called: list[str] = []
+    monkeypatch.setattr(
+        ingest_mod, "ingest_complexes",
+        lambda c, **kw: called.append("x") or 5,  # type: ignore[no-untyped-def]
+    )
+    run_ingest(
+        conn, region="11680", months=[], stages=["complex"], api_key="d",
+        resume=True, log=lambda _m: None,
+    )
+    assert called == ["x"]  # 미적재 region은 정상 적재
