@@ -1,0 +1,20 @@
+{
+  "proxy_focsa_apartment.jpeg": {
+    "eye_reading": "북표시 없음→향 null 기대 · 복도식 슬래브(판상-ish) · 상단 LR/BR1/BR2 ~3실(베이 모호, 비한국 plan)",
+    "extracted": {
+      "bay": 3,
+      "orientation": null,
+      "structure": "판상형",
+      "evidence": "상단 외기면에 LR·BR1·BR2 나란히 배치(3bay), 방위표·남향 표기 없음→null, 전체 직사각 일자형 윤곽→판상형"
+    }
+  },
+  "proxy_sample_floorplan.jpg": {
+    "eye_reading": "(아래 별도 육안)",
+    "extracted": {
+      "bay": null,
+      "orientation": null,
+      "structure": null,
+      "evidence": "한국 아파트 평면도가 아니라 영문 표기 단독주택 도면(Eat-in Kitchen·Formal Living·Family·Laundry·1/2 Bath). 우상단 N↑ 방위표는 있으나 '남향' 표기 없고 단지 향 단정 불가→orientation null. 발코니측 나란한 실 배치 없음→bay null. 판상/타워는 아파트 분류라 단독주택엔 불해당→structure null."
+    }
+  }
+}
