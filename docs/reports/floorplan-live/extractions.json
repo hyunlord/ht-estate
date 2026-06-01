@@ -1,0 +1,41 @@
+{
+  "fp1_3bay_panstan_south.png": {
+    "ground_truth": {
+      "bay": 3,
+      "orientation": "남향",
+      "structure": "판상형"
+    },
+    "extracted": {
+      "bay": 3,
+      "orientation": "남향",
+      "structure": "판상형",
+      "evidence": "전면 발코니에 면해 침실1·거실·침실2 나란히(3bay), 우상단 N↑ 화살표가 위쪽=북쪽이라 발코니측 전면은 남향, 가로로 긴 일자형 직사각 판상"
+    }
+  },
+  "fp2_2bay_panstan_south.png": {
+    "ground_truth": {
+      "bay": 2,
+      "orientation": "남향",
+      "structure": "판상형"
+    },
+    "extracted": {
+      "bay": 2,
+      "orientation": "남향",
+      "structure": "판상형",
+      "evidence": "하단 발코니에 면한 거실+침실1 나란히(2bay), 우상단 N↑로 발코니측=남쪽 ∴ 남향, 직사각 일자형 판상"
+    }
+  },
+  "fp3_tower_noorient.png": {
+    "ground_truth": {
+      "bay": null,
+      "orientation": null,
+      "structure": "타워형"
+    },
+    "extracted": {
+      "bay": null,
+      "orientation": null,
+      "structure": "타워형",
+      "evidence": "중앙 코어(EV·계단)를 거실·침실이 사방으로 둘러싼 ㅁ자 정사각 배치 → 타워형. 발코니/외기 표시 없어 bay 산정 불가, N화살표·'남향' 표기 없어 orientation null"
+    }
+  }
+}
