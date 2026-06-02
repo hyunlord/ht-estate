@@ -213,6 +213,8 @@ def test_auto_enrich_main_is_staging_only(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_ranking_invariant_softspec() -> None:
     # gym/pet은 랭킹 신호지만 무검토 자동 적재가 0이므로 랭킹은 사람 promote 전까지 불변.
-    # SoftSpec 자체(랭킹 입력)는 cron이 바꾸지 않는다.
-    assert set(SoftSpec.model_fields) == {"gym", "pet"}
-    assert "review" not in SoftSpec.model_fields
+    # review는 조건 레지스트리 밖 → 랭킹 신호 불가(P4-2a 일반화 후에도). gym/pet 후방호환 유지.
+    from app.search.criteria import REGISTRY
+
+    assert "review" not in REGISTRY and "review_summary" not in REGISTRY
+    assert {"gym", "pet"} <= set(SoftSpec.model_fields)

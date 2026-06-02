@@ -10,22 +10,60 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.search.criteria import REGISTRY
 
 Preference = Literal["required", "preferred", "none"]
 # 거래유형 축(P2-2): 매매=transaction(price) / 전세·월세=rent_transaction(deposit[+monthly_rent]).
 DealType = Literal["sale", "jeonse", "monthly"]
 
+# Preference → 가중치(랭킹). 일반화 criteria의 weight와 동일 스케일(required=2·preferred=1).
+_PREF_WEIGHT: dict[str, float] = {"required": 2.0, "preferred": 1.0, "none": 0.0}
+
+
+class SoftCriterion(BaseModel):
+    """일반화 soft 조건 한 개 — 레지스트리 key + 가중치. weight=0이면 끄기(demote-not-exclude 유지).
+
+    key는 레지스트리의 **soft-able** 조건만(heat_type·builder 등 hard-only는 거부). #2b/#3가 NL/UX
+    튜닝(강/보통/약/끄기)을 weight로 매핑한다 — 여기선 weight 자체만 받는다.
+    """
+
+    key: str
+    weight: float = Field(default=1.0, ge=0.0)
+
+    @field_validator("key")
+    @classmethod
+    def _known_soft_key(cls, v: str) -> str:
+        crit = REGISTRY.get(v)
+        if crit is None:
+            raise ValueError(f"unknown criterion key: {v}")
+        if not crit.soft_able:
+            raise ValueError(f"criterion '{v}' is hard-only (not soft-rankable)")
+        return v
+
 
 class SoftSpec(BaseModel):
-    """soft 선호 — 랭킹(ORDER)만 바꾸고 후보 SET은 절대 안 바꾼다(설계 §7·R1).
+    """soft 선호 — 랭킹(ORDER)만 바꾸고 후보 SET은 절대 안 바꾼다(설계 §7·demote-not-exclude).
 
-    none(기본) → 중립 정렬 유지. required > preferred 가중. demote-not-exclude:
-    required 미충족도 제외 0(하위 랭킹). 속성 미존재(floorplan·후기)는 Phase 2/3.
+    **일반화**(P4-2a): 고정 {gym,pet} → 임의 조건. 레거시 `gym`/`pet`(Preference, 후방호환) +
+    일반화 `criteria`(임의 조건 + weight) 둘 다 지원. 둘 다 활성 조건으로 합쳐 가중합 랭킹.
+    none/빈 리스트 → 중립 정렬 유지. demote-not-exclude: 미충족/데이터없음도 제외 0(강등).
     """
 
     gym: Preference = "none"
     pet: Preference = "none"
+    criteria: list[SoftCriterion] = Field(default_factory=list)
+
+    def active_criteria(self) -> list[tuple[str, float]]:
+        """활성 (key, weight) — 레거시 gym/pet(Preference→weight) + criteria(weight>0)."""
+        active: list[tuple[str, float]] = []
+        if self.gym != "none":
+            active.append(("gym", _PREF_WEIGHT[self.gym]))
+        if self.pet != "none":
+            active.append(("pet", _PREF_WEIGHT[self.pet]))
+        active.extend((c.key, c.weight) for c in self.criteria if c.weight > 0)
+        return active
 
 
 class HardFilterSpec(BaseModel):
@@ -42,6 +80,14 @@ class HardFilterSpec(BaseModel):
     parking_underground: bool | None = None  # True면 지하주차 보유(>0) 요구
     household_count_min: int | None = None
     household_count_max: int | None = None
+    # P4-2a: P4-1 구조화 필드 hard 연결(in/out). 준 것만 AND. gym/pet은 enrichment라 여기 없음(R1).
+    subway_walkable: bool | None = None  # True면 역세권(subway_time ∈ 5분/5~10분이내) 요구
+    has_daycare: bool | None = None  # True면 단지 내 어린이집 보유 요구
+    elevator_count_min: int | None = None  # 승강기 최소 대수
+    cctv_count_min: int | None = None  # CCTV 최소 대수
+    top_floor_min: int | None = None  # 최고층 하한
+    heat_type: str | None = None  # 난방방식 정확 일치(예: '지역난방')
+    builder: str | None = None  # 건설사 부분 일치(LIKE %..%)
 
     # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
     deal_type: DealType = "sale"

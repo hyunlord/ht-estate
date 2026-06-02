@@ -74,9 +74,11 @@ def test_attach_reads_through_seed() -> None:
 
 
 def test_floorplan_is_never_a_ranking_signal() -> None:
-    # 평면도는 표시 전용 — SoftSpec에 없고 _score가 안 본다. 구조적 보장 + 부착해도 순서 불변.
-    assert "floorplan" not in SoftSpec.model_fields
-    assert set(SoftSpec.model_fields) == {"gym", "pet"}
+    # 평면도는 표시 전용 — 조건 레지스트리 밖이라 랭킹 신호 불가. 부착해도 순서 불변.
+    from app.search.criteria import REGISTRY
+
+    assert "floorplan" not in REGISTRY  # 레지스트리 밖 → soft 랭킹 신호 불가
+    assert {"gym", "pet", "criteria"} <= set(SoftSpec.model_fields)
     a, b = _cand("A"), _cand("B")
     a.floorplan = synthesize_floorplan([_fact(conf=0.9, url="https://a/1")])  # A만 평면도
     ranked = rank_candidates([a, b], SoftSpec())  # soft 전부 none

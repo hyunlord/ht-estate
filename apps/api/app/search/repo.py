@@ -11,6 +11,7 @@ import sqlite3
 
 from pydantic import BaseModel
 
+from app.search.criteria import CriterionEval
 from app.search.floorplan import FloorplanSummary
 from app.search.gym import GymSummary
 from app.search.pet import PetSummary
@@ -47,11 +48,21 @@ class Candidate(BaseModel):
     price_min: int | None
     price_max: int | None
     representative_trade: RepresentativeTrade | None
+    # P4-2a: 구조화 soft/hard 조건 평가용 필드(P4-1 적재분). repo가 SELECT해 채운다.
+    subway_time: str | None = None
+    has_daycare: bool | None = None
+    elevator_count: int | None = None
+    cctv_count: int | None = None
+    top_floor: int | None = None
+    heat_type: str | None = None
+    builder: str | None = None
     # Tier-2 soft(R1: hard filter 아님 — 후보 산출 후 attach_*로 부착). repo는 안 채움.
     gym: GymSummary | None = None
     pet: PetSummary | None = None
     review: ReviewSummary | None = None  # 후기(표시 전용 — 랭킹 신호 아님, P3-1)
     floorplan: FloorplanSummary | None = None  # 평면도 feature(표시 전용 — 랭킹 아님, P3-2)
+    # P4-2a: 활성 soft 조건별 평가(설계 §7 ✓/△/✗ + 프론트 튜닝 재료). ranking이 채운다.
+    criteria_eval: list[CriterionEval] | None = None
 
 
 def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
@@ -74,6 +85,26 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     if spec.household_count_max is not None:
         clauses.append("c.household_count <= ?")
         params.append(spec.household_count_max)
+    # P4-2a: 구조화 필드 hard 연결(준 것만 — in/out).
+    if spec.subway_walkable:  # 역세권 — 도보 가까운 카테고리만
+        clauses.append("c.subway_time IN ('5분이내', '5~10분이내')")
+    if spec.has_daycare:
+        clauses.append("c.has_daycare = 1")
+    if spec.elevator_count_min is not None:
+        clauses.append("c.elevator_count >= ?")
+        params.append(spec.elevator_count_min)
+    if spec.cctv_count_min is not None:
+        clauses.append("c.cctv_count >= ?")
+        params.append(spec.cctv_count_min)
+    if spec.top_floor_min is not None:
+        clauses.append("c.top_floor >= ?")
+        params.append(spec.top_floor_min)
+    if spec.heat_type is not None:
+        clauses.append("c.heat_type = ?")
+        params.append(spec.heat_type)
+    if spec.builder is not None:
+        clauses.append("c.builder LIKE ?")
+        params.append(f"%{spec.builder}%")
     if spec.has_bbox:
         clauses.append("c.lat IS NOT NULL AND c.lng IS NOT NULL")
         clauses.append("c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ?")
@@ -168,7 +199,9 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
 
     sql = (
         "SELECT c.complex_id, c.name, c.approval_date, c.parking_ratio, c.parking_underground, "
-        "c.household_count, c.lat, c.lng, c.source_url FROM complex c"
+        "c.household_count, c.lat, c.lng, c.source_url, "
+        "c.subway_time, c.has_daycare, c.elevator_count, c.cctv_count, c.top_floor, "
+        "c.heat_type, c.builder FROM complex c"
     )
     trade_table = _TRADE_TABLE[spec.deal_type]
     # 가격축 집계 컬럼: 매매=price / 전월세=deposit. price_min/max에 deal_type 가격을 싣는다.
@@ -205,6 +238,13 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
                 price_min=min(amounts) if amounts else None,
                 price_max=max(amounts) if amounts else None,
                 representative_trade=_build_rep(spec, rep) if rep is not None else None,
+                subway_time=row["subway_time"],
+                has_daycare=None if row["has_daycare"] is None else bool(row["has_daycare"]),
+                elevator_count=row["elevator_count"],
+                cctv_count=row["cctv_count"],
+                top_floor=row["top_floor"],
+                heat_type=row["heat_type"],
+                builder=row["builder"],
             )
         )
 

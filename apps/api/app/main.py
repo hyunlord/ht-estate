@@ -53,15 +53,17 @@ def health() -> dict[str, str]:
 def search_complexes_endpoint(
     spec: HardFilterSpec, conn: Annotated[sqlite3.Connection, Depends(get_db)]
 ) -> list[Candidate]:
-    """구조화 hard filter_spec → 후보(이진 in/out) + gym·pet 부착(읽기 전용) + soft 랭킹.
+    """구조화 hard filter_spec → 후보(이진 in/out) + soft 조건 부착·랭킹(일반화, P4-2a).
 
-    하드만 SET 결정. attach_* 후 soft 선호로 ORDER만 재정렬(demote-not-exclude — SET 불변).
-    soft none이면 중립 정렬 유지. enrich(stub) read-through라 query-time은 읽기만. 키 불필요.
+    하드만 SET 결정. attach_* 후 활성 soft 조건(gym/pet enrichment + 구조화) 가중합으로 ORDER만
+    재정렬(demote-not-exclude — SET 불변)하고 조건별 평가(criteria_eval)를 후보에 표면화(§7).
+    soft 비활성이면 중립 정렬. review/floorplan은 레지스트리 밖이라 랭킹 신호 아님(표시 전용).
+    enrich(stub) read-through라 query-time은 읽기만. 키 불필요.
     """
     candidates = search_complexes(conn, spec)
     now = datetime.now(UTC)
-    attach_gym(conn, candidates, now=now)
-    attach_pet(conn, candidates, now=now)
-    attach_review(conn, candidates, now=now)  # 표시 전용 — 랭킹 입력 아님(rank는 gym/pet만)
-    attach_floorplan(conn, candidates, now=now)  # 표시 전용 — 랭킹 입력 아님(P3-2)
+    attach_gym(conn, candidates, now=now)  # soft 조건(gym) 사실 부착
+    attach_pet(conn, candidates, now=now)  # soft 조건(pet) 사실 부착
+    attach_review(conn, candidates, now=now)  # 표시 전용 — 레지스트리 밖(랭킹 신호 아님, P3-1)
+    attach_floorplan(conn, candidates, now=now)  # 표시 전용 — 레지스트리 밖(랭킹 아님, P3-2)
     return rank_candidates(candidates, spec.soft)

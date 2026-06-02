@@ -75,10 +75,13 @@ def test_review_is_never_a_ranking_signal() -> None:
     assert _ids(ranked_rev) == ["B", "A"]
 
 
-def test_softspec_has_no_review_field() -> None:
-    # 구조적 보장: SoftSpec에 review 선호 자체가 없다(랭킹에 표현 불가).
-    assert "review" not in SoftSpec.model_fields
-    assert set(SoftSpec.model_fields) == {"gym", "pet"}
+def test_review_is_not_a_soft_criterion() -> None:
+    # 구조적 보장(P4-2a 일반화 후): review는 조건 레지스트리 밖 → soft 랭킹 신호 불가(표시 전용).
+    # (구 SoftSpec=={gym,pet} 체크는 일반화로 폐기 — 대신 레지스트리 + demote-not-exclude로 검증.)
+    from app.search.criteria import REGISTRY
+
+    assert "review" not in REGISTRY and "review_summary" not in REGISTRY
+    assert {"gym", "pet", "criteria"} <= set(SoftSpec.model_fields)  # 후방호환 + 일반화
 
 
 # ───────────────────────── 순수 랭킹 ─────────────────────────

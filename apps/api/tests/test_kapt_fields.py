@@ -216,5 +216,5 @@ def test_schema_has_fullfield_columns() -> None:
 
 
 def test_ranking_invariant_softspec_unchanged() -> None:
-    # P4-1은 적재만 — 새 필드를 hard/soft에 연결하지 않는다(ticket #2).
-    assert set(SoftSpec.model_fields) == {"gym", "pet"}
+    # P4-1은 적재만이었고, P4-2a가 일반화하며 새 필드를 연결한다. 그 후에도 gym/pet 후방호환 유지.
+    assert {"gym", "pet"} <= set(SoftSpec.model_fields)

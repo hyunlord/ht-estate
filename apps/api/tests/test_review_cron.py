@@ -190,7 +190,8 @@ def test_select_candidates_exclude_ids() -> None:
 
 
 def test_review_is_display_only_not_in_ranking() -> None:
-    # 구조적 보장: SoftSpec(랭킹 입력)에 review가 없다 — cron이 이를 바꾸지 않는다.
-    assert "review" not in SoftSpec.model_fields
-    assert "review_summary" not in SoftSpec.model_fields
-    assert set(SoftSpec.model_fields) == {"gym", "pet"}
+    # 구조적 보장: review는 조건 레지스트리 밖 → 랭킹 신호 불가(cron이 이를 바꾸지 않는다).
+    from app.search.criteria import REGISTRY
+
+    assert "review" not in REGISTRY and "review_summary" not in REGISTRY
+    assert {"gym", "pet"} <= set(SoftSpec.model_fields)
