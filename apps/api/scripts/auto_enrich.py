@@ -123,10 +123,13 @@ def _default_runner(prompt: str, max_turns: int) -> str:
 def select_candidates(
     conn: sqlite3.Connection, attribute: str, *, now: datetime, limit: int,
     complex_ids: list[str] | None = None,
+    exclude_ids: set[str] | None = None,
 ) -> list[dict[str, str]]:
     """fresh enrichment 없는 단지 limit개 — 세대수 desc 우선(영향 큰 단지 먼저).
 
     complex_ids 주면 그 단지들로 한정(재배치 타겟팅 — fresh는 여전히 제외). 빈 리스트면 결과 0.
+    exclude_ids 주면 그 단지들을 추가 제외(예: review_cron의 staging 재개 skip — 이미 staging된
+    단지는 DB-fresh가 아니어도 재질의하지 않게). DB-fresh 제외와 직교(둘 다 적용).
     """
     sql = (
         "SELECT c.complex_id, c.name FROM complex c "
@@ -141,6 +144,10 @@ def select_candidates(
         placeholders = ",".join("?" for _ in complex_ids)
         sql += f"AND c.complex_id IN ({placeholders}) "
         params += complex_ids
+    if exclude_ids:
+        placeholders = ",".join("?" for _ in exclude_ids)
+        sql += f"AND c.complex_id NOT IN ({placeholders}) "
+        params += sorted(exclude_ids)  # 결정론(set 순서 비결정 회피)
     sql += "ORDER BY c.household_count DESC NULLS LAST, c.complex_id LIMIT ?"
     params.append(limit)
     rows = conn.execute(sql, params).fetchall()

@@ -19,7 +19,7 @@ export NEXT_PUBLIC_KAKAO_JS_KEY :=
 .PHONY: gate gate-api gate-web gate-e2e \
         ruff-api pyright-api pytest-api api-run \
         lint-web build-web typecheck-web e2e-web \
-        load-gym load-pet auto-enrich ingest-seoul ingest-nationwide \
+        load-gym load-pet load-review auto-enrich review-cron ingest-seoul ingest-nationwide \
         clean
 
 # 데이터 적재/시드 스크립트 — apps/api에서 실행(스크립트가 _bootstrap으로 sys.path 처리 →
@@ -76,9 +76,18 @@ load-gym:
 load-pet:
 	cd $(API_DIR) && uv run python scripts/load_pet_seed.py $(ARGS)
 
+# review 시드 → DB 적재(promote 마지막 단계 — 사람이 spot-audit·seed commit 후 트리거).
+load-review:
+	cd $(API_DIR) && uv run python scripts/load_review_seed.py $(ARGS)
+
 # enrichment 자동 prefill(cron'd claude -p, 구독 인증). make auto-enrich ATTR=gym LIMIT=20
 auto-enrich:
 	cd $(API_DIR) && uv run python scripts/auto_enrich.py --attribute $(ATTR) --limit $(LIMIT) $(ARGS)
+
+# review 후기 cron — **staging까지만**(human commit gate: 라이브 DB write·git commit 안 함).
+# 사람이 spot-audit 후 promote(seed commit + load-review). make review-cron LIMIT=20
+review-cron:
+	cd $(API_DIR) && uv run python scripts/review_cron.py --limit $(LIMIT) $(ARGS)
 
 ingest-seoul:
 	cd $(API_DIR) && uv run python scripts/ingest_seoul.py $(ARGS)

@@ -22,6 +22,11 @@ next-env.d.ts
 *.sqlite3
 # apps/api/data/ 적재 DB는 *.db로 무시되고, data/seeds/ 시드는 추적된다.
 
+# ── enrichment cron staging (무검토 자동 출력 — human commit gate) ──
+# review_cron 등 자동 경로는 여기까지만 쓴다. 사람이 spot-audit 후 seed로 promote·commit.
+# 추적/적재되지 않게 무시(자동 출력이 main에 자동 진입하는 것을 구조적으로 차단).
+apps/api/data/staging/
+
 # ── Playwright ──
 test-results/
 playwright-report/
