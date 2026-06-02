@@ -34,11 +34,49 @@ def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
-    """`schema.sql`을 실행해 canonical 테이블(complex·transaction·enrichment)을 생성.
+# P4-1 additive 마이그레이션 — 기존 DB의 complex 테이블에 풀필드 컬럼을 더한다.
+# schema.sql의 CREATE TABLE은 `IF NOT EXISTS`라 **이미 있는** 테이블엔 새 컬럼이 적용되지 않는다.
+# → PRAGMA introspection으로 빠진 컬럼만 ALTER ADD COLUMN(nullable). 신규 DB는 CREATE가 이미
+# 만들어 no-op. 멱등(빠진 것만)·additive(기존 컬럼/인덱스/데이터 불변)·resume-safe
+# (ADD COLUMN nullable은 SQLite 메타데이터 연산 — 행 재작성 없음 → 실행 중 적재 루프 디스럽트 최소).
+_COMPLEX_ADD_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("heat_type", "TEXT"), ("sale_type", "TEXT"), ("mgmt_type", "TEXT"),
+    ("dong_count", "INTEGER"), ("top_floor", "INTEGER"),
+    ("priv_area", "REAL"), ("mgmt_area", "REAL"),
+    ("builder", "TEXT"), ("developer", "TEXT"),
+    ("mgmt_staff", "INTEGER"),
+    ("security_type", "TEXT"), ("security_staff", "INTEGER"),
+    ("cleaning_type", "TEXT"), ("cleaning_staff", "INTEGER"),
+    ("disinfection_type", "TEXT"), ("disinfection_staff", "INTEGER"),
+    ("disinfection_method", "TEXT"),
+    ("garbage_type", "TEXT"), ("water_supply", "TEXT"),
+    ("electricity_contract", "TEXT"), ("fire_alarm", "TEXT"), ("internet", "TEXT"),
+    ("elevator_count", "INTEGER"), ("cctv_count", "INTEGER"),
+    ("subway_line", "TEXT"), ("subway_station", "TEXT"),
+    ("subway_time", "TEXT"), ("bus_time", "TEXT"),
+    ("convenient_facility_raw", "TEXT"), ("education_facility_raw", "TEXT"),
+    ("has_daycare", "BOOLEAN"), ("has_playground", "BOOLEAN"),
+    ("has_senior_center", "BOOLEAN"), ("has_library", "BOOLEAN"),
+)
 
-    멱등(`CREATE TABLE IF NOT EXISTS`)이라 반복 호출 안전.
+
+def _add_missing_columns(
+    conn: sqlite3.Connection, table: str, columns: tuple[tuple[str, str], ...]
+) -> None:
+    """table에 없는 컬럼만 ALTER ADD COLUMN(nullable). 멱등 — 이미 있으면 skip."""
+    existing = {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+    for name, decl in columns:
+        if name not in existing:
+            conn.execute(f'ALTER TABLE "{table}" ADD COLUMN {name} {decl}')
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    """`schema.sql`을 실행해 canonical 테이블 생성 + additive 컬럼 마이그레이션 적용.
+
+    멱등(`CREATE TABLE IF NOT EXISTS` + 빠진 컬럼만 ADD). 반복 호출 안전. 기존 DB도
+    init_db 호출만으로 P4-1 풀필드 컬럼이 backfill-ready(nullable) 상태가 된다.
     """
     ddl = SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(ddl)
+    _add_missing_columns(conn, "complex", _COMPLEX_ADD_COLUMNS)  # P4-1: 기존 DB 풀필드 컬럼 보강
     conn.commit()

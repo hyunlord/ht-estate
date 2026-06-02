@@ -33,6 +33,41 @@ CREATE TABLE IF NOT EXISTS complex (
   parking_ratio       REAL,               -- = parking_total / household_count (파생) — T0-2
   amenities_raw       TEXT,               -- 부대복리시설 원본 텍스트
   has_gym             BOOLEAN,            -- 파생: 헬스/피트니스 키워드 파싱 — T0-2
+  -- P4-1 풀필드 확장 (K-apt V4 basis+detail, additive·nullable). NL 토대. hard/soft 미연결(ticket #2).
+  heat_type               TEXT,           -- 난방방식 (codeHeatNm)
+  sale_type               TEXT,           -- 분양형태 (codeSaleNm)
+  mgmt_type               TEXT,           -- 관리방식 (codeMgrNm)
+  dong_count              INTEGER,        -- 동수 (kaptDongCnt)
+  top_floor               INTEGER,        -- 최고층 (kaptTopFloor)
+  priv_area               REAL,           -- 전용면적 합 ㎡ (privArea)
+  mgmt_area               REAL,           -- 관리비부과면적 ㎡ (kaptMarea)
+  builder                 TEXT,           -- 건설사 (kaptBcompany)
+  developer               TEXT,           -- 시행사 (kaptAcompany)
+  mgmt_staff              INTEGER,        -- 관리인원 (kaptMgrCnt)
+  security_type           TEXT,           -- 경비방식 (codeSec)
+  security_staff          INTEGER,        -- 경비인원 (kaptdScnt)
+  cleaning_type           TEXT,           -- 청소방식 (codeClean)
+  cleaning_staff          INTEGER,        -- 청소인원 (kaptdClcnt)
+  disinfection_type       TEXT,           -- 소독방식 (codeDisinf)
+  disinfection_staff      INTEGER,        -- 소독인원 (kaptdDcnt)
+  disinfection_method     TEXT,           -- 소독방법 (disposalType)
+  garbage_type            TEXT,           -- 음식물처리 (codeGarbage)
+  water_supply            TEXT,           -- 급수방식 (codeWsupply)
+  electricity_contract    TEXT,           -- 전기계약방식 (codeEcon)
+  fire_alarm              TEXT,           -- 화재수신반방식 (codeFalarm)
+  internet                TEXT,           -- 인터넷망 유/무 (codeNet)
+  elevator_count          INTEGER,        -- 승강기 대수 (kaptdEcnt)
+  cctv_count              INTEGER,        -- CCTV 대수 (kaptdCccnt)
+  subway_line             TEXT,           -- 지하철 노선 (subwayLine)
+  subway_station          TEXT,           -- 지하철 역명 (subwayStation)
+  subway_time             TEXT,           -- 지하철 도보(역세권) (kaptdWtimesub)
+  bus_time                TEXT,           -- 버스정류장 도보 (kaptdWtimebus)
+  convenient_facility_raw TEXT,           -- 편의시설 원본 (convenientFacility)
+  education_facility_raw  TEXT,           -- 교육시설 원본 (educationFacility)
+  has_daycare             BOOLEAN,        -- 파생: 보육시설/어린이집
+  has_playground          BOOLEAN,        -- 파생: 놀이터
+  has_senior_center       BOOLEAN,        -- 파생: 노인정/경로당
+  has_library             BOOLEAN,        -- 파생: 문고/도서관
   -- provenance --
   updated_at          TIMESTAMP,
   source_url          TEXT,               -- K-apt 단지 페이지 (출처 이동)

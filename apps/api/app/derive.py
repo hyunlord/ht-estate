@@ -23,6 +23,43 @@ def has_gym(amenities_raw: str | None) -> bool:
     return any(keyword.lower() in text for keyword in GYM_KEYWORDS)
 
 
+# P4-1: welfareFacility(부대복리시설) raw에서 **패턴이 명확한** 시설만 boolean 파생(NL 토대).
+# 모호한 토큰은 파생 안 함(과파생 금지·원칙4) — raw(amenities_raw)는 그대로 보존해 ticket #2가 활용.
+_WELFARE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "daycare": ("보육시설", "어린이집"),
+    "playground": ("놀이터",),
+    "senior_center": ("노인정", "경로당"),
+    "library": ("문고", "도서관"),
+}
+
+
+def _has_welfare(amenities_raw: str | None, kind: str) -> bool:
+    """amenities_raw에 kind의 명확 키워드가 있으면 True(없거나 미지정 kind면 False)."""
+    if not amenities_raw:
+        return False
+    return any(kw in amenities_raw for kw in _WELFARE_KEYWORDS.get(kind, ()))
+
+
+def has_daycare(amenities_raw: str | None) -> bool:
+    """단지 내 보육시설/어린이집 보유(명확 토큰)."""
+    return _has_welfare(amenities_raw, "daycare")
+
+
+def has_playground(amenities_raw: str | None) -> bool:
+    """단지 내 (어린이)놀이터 보유."""
+    return _has_welfare(amenities_raw, "playground")
+
+
+def has_senior_center(amenities_raw: str | None) -> bool:
+    """단지 내 노인정/경로당 보유."""
+    return _has_welfare(amenities_raw, "senior_center")
+
+
+def has_library(amenities_raw: str | None) -> bool:
+    """단지 내 문고/도서관 보유."""
+    return _has_welfare(amenities_raw, "library")
+
+
 def parking_ratio(parking_total: int | None, household_count: int | None) -> float | None:
     """세대당 주차대수 = parking_total / household_count.
 

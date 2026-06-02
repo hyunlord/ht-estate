@@ -67,6 +67,21 @@ def json_int(value: object) -> int | None:
     return None
 
 
+def json_float(value: object) -> float | None:
+    """JSON 값(float·int·'36393.78'·null)을 float로. K-apt는 전용면적='36393.78'(str)·
+    관리비부과면적=51177.508(float)처럼 타입이 섞여 들어온다. 파싱 실패면 None(graceful)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return to_float(value)
+        except ValueError:
+            return None
+    return None
+
+
 def json_str(value: object) -> str | None:
     """JSON 값을 strip된 str로. None/빈문자열이면 None."""
     if value is None:

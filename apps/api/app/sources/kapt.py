@@ -54,6 +54,39 @@ class ComplexInfo(BaseModel):
     corridor_type: str | None  # codeHallNm (계단식/복도식/혼합식)
     building_type: str | None  # codeStr (건물구조)
     amenities_raw: str | None  # welfareFacility (부대복리시설 원본)
+    # ── P4-1 풀필드 확장: V4 basis+detail에서 안 쓰던 구조화 필드 (NL 토대). 전부 nullable. ──
+    # basis (getAphusBassInfoV4)
+    heat_type: str | None  # codeHeatNm (난방방식: 지역난방/개별난방/중앙난방)
+    sale_type: str | None  # codeSaleNm (분양형태: 분양/임대/혼합)
+    mgmt_type: str | None  # codeMgrNm (관리방식: 위탁관리/자치관리)
+    dong_count: int | None  # kaptDongCnt (동수)
+    top_floor: int | None  # kaptTopFloor (최고층)
+    priv_area: float | None  # privArea (전용면적 합, ㎡)
+    mgmt_area: float | None  # kaptMarea (관리비부과면적, ㎡)
+    builder: str | None  # kaptBcompany (건설사/시공사)
+    developer: str | None  # kaptAcompany (시행사)
+    # detail (getAphusDtlInfoV4)
+    mgmt_staff: int | None  # kaptMgrCnt (관리인원)
+    security_type: str | None  # codeSec (경비방식)
+    security_staff: int | None  # kaptdScnt (경비인원)
+    cleaning_type: str | None  # codeClean (청소방식)
+    cleaning_staff: int | None  # kaptdClcnt (청소인원)
+    disinfection_type: str | None  # codeDisinf (소독방식)
+    disinfection_staff: int | None  # kaptdDcnt (소독인원)
+    disinfection_method: str | None  # disposalType (소독방법: 도포식/분무식…)
+    garbage_type: str | None  # codeGarbage (음식물처리)
+    water_supply: str | None  # codeWsupply (급수방식)
+    electricity_contract: str | None  # codeEcon (전기계약방식)
+    fire_alarm: str | None  # codeFalarm (화재수신반방식)
+    internet: str | None  # codeNet (인터넷망 유/무)
+    elevator_count: int | None  # kaptdEcnt (승강기 대수)
+    cctv_count: int | None  # kaptdCccnt (CCTV 대수)
+    subway_line: str | None  # subwayLine (지하철 노선)
+    subway_station: str | None  # subwayStation (지하철 역명)
+    subway_time: str | None  # kaptdWtimesub (지하철까지 도보, 역세권)
+    bus_time: str | None  # kaptdWtimebus (버스정류장까지 도보)
+    convenient_facility_raw: str | None  # convenientFacility (편의시설 원본)
+    education_facility_raw: str | None  # educationFacility (교육시설 원본)
 
 
 def _as_items(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -129,6 +162,39 @@ def parse_complex_info(basis_json: str, detail_json: str) -> ComplexInfo | None:
         corridor_type=_parse.json_str(basis.get("codeHallNm")),
         building_type=_parse.json_str(detail.get("codeStr")),
         amenities_raw=_parse.json_str(detail.get("welfareFacility")),
+        # ── P4-1 풀필드 (실응답에 있는 것만 — 없으면 graceful None) ──
+        # basis
+        heat_type=_parse.json_str(basis.get("codeHeatNm")),
+        sale_type=_parse.json_str(basis.get("codeSaleNm")),
+        mgmt_type=_parse.json_str(basis.get("codeMgrNm")),
+        dong_count=_parse.json_int(basis.get("kaptDongCnt")),
+        top_floor=_parse.json_int(basis.get("kaptTopFloor")),
+        priv_area=_parse.json_float(basis.get("privArea")),
+        mgmt_area=_parse.json_float(basis.get("kaptMarea")),
+        builder=_parse.json_str(basis.get("kaptBcompany")),
+        developer=_parse.json_str(basis.get("kaptAcompany")),
+        # detail
+        mgmt_staff=_parse.json_int(detail.get("kaptMgrCnt")),
+        security_type=_parse.json_str(detail.get("codeSec")),
+        security_staff=_parse.json_int(detail.get("kaptdScnt")),
+        cleaning_type=_parse.json_str(detail.get("codeClean")),
+        cleaning_staff=_parse.json_int(detail.get("kaptdClcnt")),
+        disinfection_type=_parse.json_str(detail.get("codeDisinf")),
+        disinfection_staff=_parse.json_int(detail.get("kaptdDcnt")),
+        disinfection_method=_parse.json_str(detail.get("disposalType")),
+        garbage_type=_parse.json_str(detail.get("codeGarbage")),
+        water_supply=_parse.json_str(detail.get("codeWsupply")),
+        electricity_contract=_parse.json_str(detail.get("codeEcon")),
+        fire_alarm=_parse.json_str(detail.get("codeFalarm")),
+        internet=_parse.json_str(detail.get("codeNet")),
+        elevator_count=_parse.json_int(detail.get("kaptdEcnt")),
+        cctv_count=_parse.json_int(detail.get("kaptdCccnt")),
+        subway_line=_parse.json_str(detail.get("subwayLine")),
+        subway_station=_parse.json_str(detail.get("subwayStation")),
+        subway_time=_parse.json_str(detail.get("kaptdWtimesub")),
+        bus_time=_parse.json_str(detail.get("kaptdWtimebus")),
+        convenient_facility_raw=_parse.json_str(detail.get("convenientFacility")),
+        education_facility_raw=_parse.json_str(detail.get("educationFacility")),
     )
 
 
