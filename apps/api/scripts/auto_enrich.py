@@ -1,8 +1,12 @@
-"""enrichment 자동 prefill — cron'd `claude -p`(headless, 키리스)로 미적재 단지 gym/pet 추출.
+"""enrichment building blocks — select·build_prompt·파서(규율강제)·append·`claude -p` 러너.
 
-C4/C5/C7의 (a) 수동 시드를 무인 자동화: ① fresh 없는 단지 N개 선택 → ② `claude -p`에
-규율 프롬프트+단지목록 전달 → ③ 출력(JSONL) 파싱·**규율 강제**(차단도메인 drop·상태 도메인
-강제·pet confirm 기본 true) → ④ 시드 JSONL append → ⑤ 로더 적재. 멱등·재개(has_fresh skip).
+⚠ **enrich-cron-gate 이후 자동 수집 진입점은 `enrich_cron.py`(staging-only, human commit gate)다.**
+이 모듈의 building block(파서·select·runner)을 enrich_cron이 재사용하되 **DB 적재는 하지 않는다**.
+`auto_enrich()` 함수는 DB에 적재하지만 **무인 cron이 아니라** 테스트·명시적 수동 적재용이고,
+`main()` CLI는 **staging-only로 강등**(enrich_cron 위임 — 무검토 자동 DB write 0).
+
+building block: ① fresh 없는 단지 선택 → ② `claude -p`에 규율 프롬프트+단지목록 → ③ 출력(JSONL)
+파싱·**규율 강제**(차단도메인 drop·상태 도메인 강제·pet confirm 기본 true·R1/R2 백스톱).
 
 **배치 prefill**(라이브 lazy 아님): 미리 채운 단지만 검색 시 즉답. 저volume(구독 rate 보호) ·
 시간 두고 누적. 무검토라 (i) 프롬프트 보수적 + (ii) 파서가 규율 강제 + (iii) 출처 전수 기록 →
@@ -408,9 +412,13 @@ def auto_enrich(
     seeds_dir: Path = SEEDS_DIR,
     complex_ids: list[str] | None = None,
 ) -> dict[str, int]:
-    """한 속성 자동 prefill: 선택→claude→파싱→append→적재. 멱등(미적재만 선택). 통계 반환.
+    """한 속성 prefill: 선택→claude→파싱→append→**적재(DB write)**. 멱등(미적재만 선택). 통계 반환.
 
     complex_ids 주면 그 단지로 한정(재배치 타겟팅).
+
+    ⚠ **라이브 DB에 적재한다(loader→write_facts).** enrich-cron-gate 이후 자동 수집은
+    `enrich_cron.py`(staging-only)다 — 이 함수는 **무인 cron 아님**. 테스트·명시적 수동 적재
+    building block으로만 남는다(CLI·Makefile·cron이 무검토로 안 부름 — main()도 staging 강등).
     """
     cfg = ATTR_CONFIG[attr]
     attribute = str(cfg["attribute"])
@@ -444,27 +452,45 @@ def auto_enrich(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="auto_enrich", description="enrichment 자동 prefill")
+    """**DEPRECATED CLI → enrich_cron(staging-only)로 위임.** 무검토 자동 DB write 0(게이트).
+
+    enrich-cron-gate: 자동 수집은 staging까지만(human commit gate). 이 CLI는 라이브 DB에 쓰지 않고
+    `enrich_cron.run_cron`(staging)으로 라우팅. DB 적재는 사람이 spot-audit 후 `load_<attr>_seed`로.
+    gym/pet/review만(floorplan은 no-go). `--complex-ids`는 staging 모드 미지원(무시).
+    """
+    # 지연 import — enrich_cron이 모듈 로드 시 auto_enrich를 import하므로 순환 회피.
+    from enrich_cron import CRON_ATTRS, run_cron, staging_path
+
+    parser = argparse.ArgumentParser(
+        prog="auto_enrich",
+        description="[DEPRECATED] → enrich_cron(staging-only). 자동 DB write 안 함.",
+    )
     parser.add_argument(
         "--attribute", choices=["gym", "pet", "review", "floorplan", "both"], default="both"
     )
     parser.add_argument("--limit", type=int, default=20, help="이번 run 단지 수(저volume 권장)")
-    parser.add_argument("--max-turns", type=int, default=60, help="claude -p turn 상한")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite 경로")
-    parser.add_argument("--complex-ids", default="", help="콤마구분 단지코드로 한정(재배치 타겟팅)")
+    parser.add_argument("--max-turns", type=int, default=80, help="claude -p turn 상한")
+    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite 경로(읽기전용)")
+    parser.add_argument("--complex-ids", default="", help="(staging 모드 미지원 — 무시)")
     args = parser.parse_args(argv)
+
+    print("⚠ auto_enrich CLI는 deprecated → enrich_cron(staging-only)로 라우팅. "
+          "DB 적재는 사람이 load_<attr>_seed로.", flush=True)
+    if args.complex_ids:
+        print("  (--complex-ids는 staging 모드에서 무시됨)")
 
     conn = get_connection(args.db)
     init_db(conn)
     now = datetime.now(UTC)
-    ids = [c.strip() for c in args.complex_ids.split(",") if c.strip()] or None
-    attrs = ["gym", "pet"] if args.attribute == "both" else [args.attribute]
-    for attr in attrs:
-        stats = auto_enrich(conn, attr, now=now, limit=args.limit,
-                            max_turns=args.max_turns, complex_ids=ids)
+    requested = ["gym", "pet"] if args.attribute == "both" else [args.attribute]
+    for attr in requested:
+        if attr not in CRON_ATTRS:  # floorplan: on-demand no-go(SPIKE) → skip
+            print(f"[{attr}] cron 미지원(no-go/parked) — skip")
+            continue
+        stats = run_cron(conn, attr, now=now, limit=args.limit, max_turns=args.max_turns)
         print(
             f"[{attr}] 선택 {stats['selected']} · 추출 {stats['extracted']} · "
-            f"append {stats['appended']} · 적재 {stats['loaded']}"
+            f"staging {stats['staged']} → {staging_path(attr)}"
         )
     return 0
 

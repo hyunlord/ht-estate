@@ -19,8 +19,8 @@ export NEXT_PUBLIC_KAKAO_JS_KEY :=
 .PHONY: gate gate-api gate-web gate-e2e \
         ruff-api pyright-api pytest-api api-run \
         lint-web build-web typecheck-web e2e-web \
-        load-gym load-pet load-review auto-enrich review-cron ingest-seoul ingest-nationwide \
-        clean
+        load-gym load-pet load-review auto-enrich enrich-cron review-cron \
+        ingest-seoul ingest-nationwide clean
 
 # 데이터 적재/시드 스크립트 — apps/api에서 실행(스크립트가 _bootstrap으로 sys.path 처리 →
 # PYTHONPATH 불필요). cron은 이 타겟이나 스크립트를 직접 호출하면 된다. ARGS로 인자 전달.
@@ -80,12 +80,17 @@ load-pet:
 load-review:
 	cd $(API_DIR) && uv run python scripts/load_review_seed.py $(ARGS)
 
-# enrichment 자동 prefill(cron'd claude -p, 구독 인증). make auto-enrich ATTR=gym LIMIT=20
+# enrichment cron — gym/pet/review **staging까지만**(human commit gate: 라이브 DB write·git commit
+# 안 함). 사람이 spot-audit 후 promote(seed commit + load-<attr>). make enrich-cron ATTR=gym LIMIT=20
+enrich-cron:
+	cd $(API_DIR) && uv run python scripts/enrich_cron.py --attribute $(ATTR) --limit $(LIMIT) $(ARGS)
+
+# [DEPRECATED] auto-enrich → enrich_cron(staging-only)로 위임. 무검토 자동 DB write 안 함.
+# DB 적재는 사람이 load-<attr>로. 신규 사용은 enrich-cron 권장.
 auto-enrich:
 	cd $(API_DIR) && uv run python scripts/auto_enrich.py --attribute $(ATTR) --limit $(LIMIT) $(ARGS)
 
-# review 후기 cron — **staging까지만**(human commit gate: 라이브 DB write·git commit 안 함).
-# 사람이 spot-audit 후 promote(seed commit + load-review). make review-cron LIMIT=20
+# review 후기 cron(= enrich-cron ATTR=review) — back-compat. make review-cron LIMIT=20
 review-cron:
 	cd $(API_DIR) && uv run python scripts/review_cron.py --limit $(LIMIT) $(ARGS)
 
