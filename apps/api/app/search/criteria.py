@@ -144,6 +144,7 @@ class Criterion:
     soft_scorer: Callable[[Candidate], tuple[object, float, float | None, bool]] | None
     hard_able: bool
     hard_fields: tuple[str, ...]  # HardFilterSpec 필드명(hard_able일 때)
+    values: tuple[str, ...] = ()  # categorical 허용값(있으면 NL 카탈로그에 노출 → enum 매핑) — P5-1
 
     @property
     def soft_able(self) -> bool:
@@ -194,5 +195,10 @@ REGISTRY: dict[str, Criterion] = {
                   None, True, ("heat_type",)),
         Criterion("builder", "건설사", "complex:builder", "categorical", "match",
                   None, True, ("builder",)),
+        # 주택유형(P5-1) — hard-only categorical + enum values. NL 카탈로그에 값 노출 →
+        # "오피스텔"·"빌라" 자동 매핑(파서 무수정). 비-아파트 커버리지 검색 어휘.
+        Criterion("property_type", "주택유형", "complex:property_type", "categorical", "match",
+                  None, True, ("property_type",),
+                  ("apartment", "rowhouse", "officetel", "detached")),
     )
 }

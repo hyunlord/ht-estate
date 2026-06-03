@@ -17,6 +17,8 @@ from app.search.criteria import REGISTRY
 Preference = Literal["required", "preferred", "none"]
 # 거래유형 축(P2-2): 매매=transaction(price) / 전세·월세=rent_transaction(deposit[+monthly_rent]).
 DealType = Literal["sale", "jeonse", "monthly"]
+# 주택유형 축(P5-1): 아파트/연립다세대/오피스텔/단독. 비-아파트 커버리지. 기본=전 유형(필터 안 줌).
+PropertyType = Literal["apartment", "rowhouse", "officetel", "detached"]
 
 # Preference → 가중치(랭킹). 일반화 criteria의 weight와 동일 스케일(required=2·preferred=1).
 _PREF_WEIGHT: dict[str, float] = {"required": 2.0, "preferred": 1.0, "none": 0.0}
@@ -88,6 +90,7 @@ class HardFilterSpec(BaseModel):
     top_floor_min: int | None = None  # 최고층 하한
     heat_type: str | None = None  # 난방방식 정확 일치(예: '지역난방')
     builder: str | None = None  # 건설사 부분 일치(LIKE %..%)
+    property_type: PropertyType | None = None  # 주택유형(P5-1). None=전 유형. 정확 일치.
 
     # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
     deal_type: DealType = "sale"

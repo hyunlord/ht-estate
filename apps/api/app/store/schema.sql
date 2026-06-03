@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS complex (
   lng                 REAL,
   approval_date       DATE,               -- 사용승인일 → 신축 정도
   household_count     INTEGER,            -- 세대수
+  property_type       TEXT,               -- 주택유형 'apartment'|'rowhouse'(연립다세대)|'officetel'|'detached'(단독) — P5-1. NULL=apartment(기존 K-apt 백필)
   building_type       TEXT,               -- 건물구조
   corridor_type       TEXT,               -- 복도유형 (계단식=판상형 확률↑)
   parking_total       INTEGER,

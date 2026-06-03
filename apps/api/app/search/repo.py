@@ -105,6 +105,13 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     if spec.builder is not None:
         clauses.append("c.builder LIKE ?")
         params.append(f"%{spec.builder}%")
+    if spec.property_type is not None:  # P5-1: 주택유형 필터. 안 주면 전 유형(아파트+비아파트).
+        if spec.property_type == "apartment":
+            # 레거시 NULL(백필 전 K-apt 행)도 아파트로 취급 — 백필 유무와 무관하게 정합.
+            clauses.append("(c.property_type = 'apartment' OR c.property_type IS NULL)")
+        else:
+            clauses.append("c.property_type = ?")
+            params.append(spec.property_type)
     if spec.has_bbox:
         clauses.append("c.lat IS NOT NULL AND c.lng IS NOT NULL")
         clauses.append("c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ?")

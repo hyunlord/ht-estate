@@ -57,6 +57,7 @@ _COMPLEX_ADD_COLUMNS: tuple[tuple[str, str], ...] = (
     ("convenient_facility_raw", "TEXT"), ("education_facility_raw", "TEXT"),
     ("has_daycare", "BOOLEAN"), ("has_playground", "BOOLEAN"),
     ("has_senior_center", "BOOLEAN"), ("has_library", "BOOLEAN"),
+    ("property_type", "TEXT"),  # P5-1: 주택유형(비-아파트). 기존 K-apt 행은 init_db가 백필.
 )
 
 
@@ -79,4 +80,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     ddl = SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(ddl)
     _add_missing_columns(conn, "complex", _COMPLEX_ADD_COLUMNS)  # P4-1: 기존 DB 풀필드 컬럼 보강
+    # P5-1: 기존 complex(전부 K-apt 아파트)는 property_type NULL → apartment 백필. 멱등(NULL만).
+    # 비-아파트 행은 적재 시 명시 type으로 들어와 NULL이 아니므로 영향 없음.
+    conn.execute("UPDATE complex SET property_type = 'apartment' WHERE property_type IS NULL")
     conn.commit()

@@ -102,8 +102,9 @@ def registry_catalog() -> str:
             modes.append(f"hard 필드={'·'.join(crit.hard_fields)}")
         if crit.soft_able:
             modes.append("soft 가능")
+        suffix = f", 값={'|'.join(crit.values)}" if crit.values else ""  # enum 노출 — P5-1
         lines.append(
-            f"- `{crit.key}` ({crit.label}) — type={crit.value_type}, {', '.join(modes)}"
+            f"- `{crit.key}` ({crit.label}) — type={crit.value_type}, {', '.join(modes)}{suffix}"
         )
     return "\n".join(lines)
 

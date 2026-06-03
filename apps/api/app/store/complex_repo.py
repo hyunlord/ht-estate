@@ -30,6 +30,7 @@ KAPT_DETAIL_URL = "https://www.k-apt.go.kr/kaptinfo/kaptinfobasis.do?kaptCode={c
 _COLUMNS = (
     "complex_id",
     "name",
+    "property_type",
     "bjd_code",
     "legal_addr",
     "road_addr",
@@ -102,6 +103,7 @@ def upsert_complex(
     values = {
         "complex_id": info.kapt_code,
         "name": info.name,
+        "property_type": "apartment",  # K-apt = 아파트(P5-1). 비-아파트는 별도 도출 경로(P5-1b).
         "bjd_code": info.bjd_code,
         "legal_addr": info.legal_addr,
         "road_addr": info.road_addr,
