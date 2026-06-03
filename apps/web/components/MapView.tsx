@@ -14,7 +14,8 @@ import type { Bbox, Candidate } from "@/lib/types";
 
 const GANGNAM = { lat: 37.4979, lng: 127.0476 };
 const DEBOUNCE_MS = 280; // spec §5.1 — idle 후 250~300ms 디바운스
-const CLUSTER_LEVEL = 7; // spec §5.2 — level ≥ 7 → 클러스터
+const CLUSTER_LEVEL = 6; // spec §5.2 — 도시/광역 줌(level ≥ 6) → 클러스터(겹침 방지)
+const MARKER_CAP = 60; // 뷰포트 마커 캡 — 초과 시 줌 무관 클러스터 강제(밀집 폭주 방지)
 
 interface Cell {
   lat: number;
@@ -118,8 +119,9 @@ export function MapView({
     const list = candidatesRef.current;
     const selId = selectedIdRef.current;
     const bnd = boundaries(list);
+    const coordCount = list.filter((c) => c.lat != null && c.lng != null).length;
 
-    if (level >= CLUSTER_LEVEL) {
+    if (level >= CLUSTER_LEVEL || coordCount > MARKER_CAP) {
       for (const cell of clusterCandidates(list, level)) {
         if (cell.members.length === 1) {
           next.push(priceOverlay(maps, map, cell.members[0], selId, bnd));
