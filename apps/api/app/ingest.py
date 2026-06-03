@@ -21,17 +21,19 @@ from app.store.complex_repo import ingest_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.geo_repo import backfill_coords
 from app.store.join_repo import backfill_matches, backfill_rent_bjd
+from app.store.nonapt_repo import ingest_nonapt_rent_month
 from app.store.progress_repo import completed_months, record_month, region_has_complex
 from app.store.rent_transaction_repo import ingest_rent_month, ingest_rent_months
 from app.store.transaction_repo import ingest_month, ingest_months
 from app.throttle import Throttle
 
-STAGE_ORDER = ["complex", "transaction", "rent", "join", "geocode"]
+STAGE_ORDER = ["complex", "transaction", "rent", "nonapt_rent", "join", "geocode"]
 # `--stages all`의 기본 확장 — 전월세(rent)는 별도 활용신청 필요라 **opt-in**(명시 선택)으로 둔다.
 # (기존 ops `--stages all` 동작 불변 = 매매 회귀 0). rent는 `--stages rent` 등으로 명시 선택.
 DEFAULT_STAGES = ["complex", "transaction", "join", "geocode"]
 # 각 단계의 선행(같은 run에 함께 없으면 경고 — 이전 run에서 적재됐을 수 있어 막진 않음).
 _PREREQS = {"join": ("complex", "transaction"), "geocode": ("complex",), "rent": ("complex",)}
+# nonapt_rent는 거래에서 건물을 도출(complex 행 생성) → complex 단계 prereq 없음(self-deriving).
 GEO_SOURCE = "Kakao Local 주소검색"
 
 
@@ -47,6 +49,8 @@ class IngestSummary:
     rent_transactions: int = 0
     rent_matched: int = 0
     rent_join_total: int = 0
+    # P5-1b 비-아파트(연립·오피스텔) 전월세 — 거래에서 건물 도출
+    nonapt_rent_transactions: int = 0
 
     def __str__(self) -> str:
         join_pct = f"{self.matched}/{self.join_total}" if self.join_total else "—"
@@ -58,6 +62,8 @@ class IngestSummary:
         if self.rent_transactions or self.rent_join_total:
             rp = f"{self.rent_matched}/{self.rent_join_total}" if self.rent_join_total else "—"
             base += f" · 전월세 {self.rent_transactions}(조인 {rp})"
+        if self.nonapt_rent_transactions:
+            base += f" · 비-아파트 전월세 {self.nonapt_rent_transactions}"
         return base
 
 
@@ -184,6 +190,26 @@ def run_ingest(
         rent_stats = backfill_matches(conn, table="rent_transaction")
         summary.rent_matched = rent_stats["matched"]
         summary.rent_join_total = rent_stats["total"]
+    if "nonapt_rent" in selected:
+        assert api_key is not None
+        # 연립(RH)·오피스텔(Offi) 전월세 — 거래에서 건물 도출(complex_id 직접). kind별 원장 분리.
+        for kind in ("rowhouse", "officetel"):
+            stage = f"nonapt_rent_{kind}"
+            if resume:
+                summary.nonapt_rent_transactions += _ingest_months_resumable(
+                    conn, stage, region, months,
+                    lambda m, k=kind: ingest_nonapt_rent_month(
+                        conn, region, m, kind=k, api_key=api_key
+                    ),
+                    throttle=throttle, log=log,
+                )
+            else:
+                for month in months:
+                    if throttle is not None:
+                        throttle.wait()
+                    summary.nonapt_rent_transactions += ingest_nonapt_rent_month(
+                        conn, region, month, kind=kind, api_key=api_key
+                    )
     if "join" in selected:
         stats = backfill_matches(conn)  # 매매 — 동작 불변
         summary.matched = stats["matched"]
