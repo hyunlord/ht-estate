@@ -17,7 +17,7 @@ export NEXT_TELEMETRY_DISABLED := 1
 export NEXT_PUBLIC_KAKAO_JS_KEY :=
 
 .PHONY: gate gate-api gate-web gate-e2e \
-        ruff-api pyright-api pytest-api api-run \
+        ruff-api pyright-api pytest-api api-run dev \
         lint-web build-web typecheck-web e2e-web \
         load-gym load-pet load-review auto-enrich enrich-cron review-cron \
         ingest-seoul ingest-nationwide clean
@@ -42,6 +42,18 @@ gate-api: ruff-api pyright-api pytest-api
 
 api-run:
 	cd $(API_DIR) && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+## ───────── 로컬 개발 런처 (실지도 시각 확인 — 게이트 밖) ─────────
+# API(:8000) + web(:3000) 동시 부팅. Ctrl-C로 둘 다 종료(trap kill).
+# ⚠ 게이트용 `export NEXT_PUBLIC_KAKAO_JS_KEY :=`(빈값)이 .env.local보다 우선 → dev에선 unset해
+#    next dev가 apps/web/.env.local의 NEXT_PUBLIC_KAKAO_JS_KEY를 읽게 한다(없으면 지도 placeholder).
+# API가 서빙하는 DB = $(API_DIR)/data/ht-estate.db (이 체크아웃 기준). 실데이터는 적재된 체크아웃에서.
+dev:
+	@echo "▶ API :8000 + web :3000 — Ctrl-C로 종료 · 브라우저: http://localhost:3000"
+	@( cd $(API_DIR) && exec uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 ) & \
+	api_pid=$$!; \
+	trap 'kill $$api_pid 2>/dev/null' EXIT INT TERM; \
+	cd $(WEB_DIR) && unset NEXT_PUBLIC_KAKAO_JS_KEY && npm run dev
 
 ## ───────── WEB (Next.js · TypeScript) ─────────
 lint-web:
