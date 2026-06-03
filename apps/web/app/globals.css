@@ -427,11 +427,16 @@ body {
   margin-top: 4px;
 }
 
-/* Kakao CustomOverlay 마커 — innerHTML 주입(유틸리티 스캔 밖이라 명시 CSS). 위치는 kakao anchor. */
+/* Kakao CustomOverlay 마커 — innerHTML 주입(유틸리티 스캔 밖이라 명시 CSS). 위치는 kakao anchor.
+   ★ shrink-wrap: 오버레이 content가 block이면 컨테이너 폭만큼 늘어나 배경이 화면을 덮음 →
+   inline-block + nowrap로 텍스트 크기 pill로 줄이고, 앵커(xAnchor .5/yAnchor 1)가 점 위 중앙 정렬. */
 .mk {
+  display: inline-block;
+  white-space: nowrap;
   cursor: pointer;
 }
 .mk .body {
+  display: inline-block;
   border-radius: 10px;
   padding: 5px 10px;
   font-family: var(--font-mono);
