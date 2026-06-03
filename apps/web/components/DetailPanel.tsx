@@ -1,7 +1,8 @@
 "use client";
 
-import { hogangnonoSearchUrl, naverSearchUrl } from "@/lib/format";
+import { formatArea, hogangnonoSearchUrl, naverSearchUrl } from "@/lib/format";
 import type {
+  AreaUnit,
   Candidate,
   CriterionEval,
   FloorplanSummary,
@@ -255,9 +256,11 @@ function repText(c: Candidate): string {
 
 export function DetailPanel({
   candidate,
+  unit,
   onClose,
 }: {
   candidate: Candidate;
+  unit: AreaUnit;
   onClose: () => void;
 }) {
   const rep = candidate.representative_trade;
@@ -300,7 +303,7 @@ export function DetailPanel({
         </span>
         {rep && (
           <span className="meta">
-            {rep.net_area != null ? `전용 ${rep.net_area}㎡` : ""}
+            {rep.net_area != null ? `전용 ${formatArea(rep.net_area, unit)}` : ""}
             {rep.deal_date ? (
               <>
                 <br />

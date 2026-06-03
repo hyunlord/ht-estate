@@ -1,7 +1,7 @@
 "use client";
 
-import { markerLabel } from "@/lib/format";
-import type { Candidate, CriterionEval } from "@/lib/types";
+import { formatArea, markerLabel } from "@/lib/format";
+import type { AreaUnit, Candidate, CriterionEval } from "@/lib/types";
 
 // 좌측 랭크 리스트 — 단지 카드(순위·이름·대표가·메타·근거 뱃지). 지도와 동기(선택↔강조).
 // 사진 자리를 근거 뱃지(criteria_eval ✓/△/✗/○)가 대신한다.
@@ -13,12 +13,12 @@ const STATUS: Record<CriterionEval["status"], { icon: string; cls: string }> = {
   unknown: { icon: "○", cls: "info" },
 };
 
-function meta(c: Candidate): string {
+function meta(c: Candidate, unit: AreaUnit): string {
   const parts: string[] = [];
   if (c.approval_date) parts.push(c.approval_date.slice(0, 4));
   if (c.household_count != null) parts.push(`${c.household_count.toLocaleString()}세대`);
   const na = c.representative_trade?.net_area;
-  if (na != null) parts.push(`전용 ${na}㎡`);
+  if (na != null) parts.push(`전용 ${formatArea(na, unit)}`);
   return parts.join(" · ") || "—";
 }
 
@@ -26,11 +26,13 @@ export function ResultList({
   candidates,
   selectedId,
   loading,
+  unit,
   onSelect,
 }: {
   candidates: Candidate[];
   selectedId: string | null;
   loading: boolean;
+  unit: AreaUnit;
   onSelect: (c: Candidate) => void;
 }) {
   return (
@@ -64,7 +66,7 @@ export function ResultList({
                 <span className="nm">{c.name ?? c.complex_id}</span>
                 <span className="pr">{price ?? "—"}</span>
               </div>
-              <div className="meta">{meta(c)}</div>
+              <div className="meta">{meta(c, unit)}</div>
               {badges.length > 0 && (
                 <div className="evid">
                   {badges.map((ev) => {

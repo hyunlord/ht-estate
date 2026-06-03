@@ -26,7 +26,7 @@ from app.search.nl_parse import (
 )
 from app.search.pet import attach_pet
 from app.search.ranking import rank_candidates
-from app.search.repo import Candidate, search_complexes
+from app.search.repo import Candidate, MarkerCandidate, search_complexes, search_markers
 from app.search.review import attach_review
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
@@ -99,6 +99,18 @@ def search_complexes_endpoint(
 ) -> list[Candidate]:
     """구조화 hard filter_spec → 후보(이진 in/out) + soft 조건 부착·랭킹(P4-2a). 수동 경로."""
     return _run_search(conn, spec)
+
+
+@app.post("/complexes/markers")
+def markers_endpoint(
+    spec: HardFilterSpec, conn: Annotated[sqlite3.Connection, Depends(get_db)]
+) -> list[MarkerCandidate]:
+    """지도 마커 피드 — bbox+hard 필터 내 *전체* 단지의 최소 필드(고캡·경량, P4-3a-2).
+
+    동일 hard 필터 재사용(가격/면적/인프라/bbox 존중). 랭킹·soft·enrichment·criteria_eval 없음
+    (마커는 SET만 — 리스트가 /complexes/search로 랭킹 담당). 좌표 없는 단지 제외.
+    """
+    return search_markers(conn, spec)
 
 
 @app.post("/complexes/search/nl")

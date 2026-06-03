@@ -137,3 +137,17 @@ export interface Bbox {
   min_lng: number;
   max_lng: number;
 }
+
+// 지도 마커 전용 경량 레코드(P4-3a-2) — 뷰포트 내 전체 단지. 랭킹·criteria_eval 없음.
+// price=대표 금액(매매=price / 전월세=deposit), net_area=전용(㎡).
+export interface MarkerCandidate {
+  complex_id: string;
+  name: string | null;
+  lat: number | null;
+  lng: number | null;
+  price: number | null;
+  net_area: number | null;
+}
+
+// 면적 단위 토글 — 평/㎡. 1평 = 3.3058㎡.
+export type AreaUnit = "pyeong" | "sqm";

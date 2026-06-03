@@ -34,6 +34,7 @@ test("auto-search → list → detail panel with badge and source link", async (
   page.on("pageerror", (e) => consoleErrors.push(e.message));
 
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [CANDIDATE] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
 
   // 검색 버튼 없음 — 마운트 시 자동 조회로 리스트가 채워진다.
   await page.goto("/", { waitUntil: "networkidle" });
