@@ -1,166 +1,689 @@
 @import "tailwindcss";
 
-/* ht-estate 디자인 언어 — docs/realty-agent-architecture.html 계승.
-   다크 데이터-콘솔: 출처/근거를 영수증처럼 보여주는 정밀 도구. Sora(디스플레이)+JetBrains Mono(데이터). */
+/* ht-estate v2 — 지도-퍼스트 라이트. 호갱노노/네이버/Zillow 문법 + 아실식 근거(✓/△/✗/○).
+   레퍼런스: ht-estate-design-v2-ref.html · spec: ht-estate-design-spec.md. */
 :root {
-  --bg: #0a0e16;
-  --surface: #111826;
-  --surface2: #161f30;
-  --border: #283145;
-  --border-soft: #1d2536;
-  --ink: #e9edf5;
-  --muted: #95a1b5;
-  --faint: #6b7689;
-  --warm: #f2a64c;
-  --warm-bg: rgba(242, 166, 76, 0.08);
-  --warm-line: rgba(242, 166, 76, 0.45);
-  --cool: #46c8e0;
-  --cool-bg: rgba(70, 200, 224, 0.08);
-  --cool-line: rgba(70, 200, 224, 0.45);
-  --green: #5fd99a;
-  --green-bg: rgba(95, 217, 154, 0.09);
-  --green-line: rgba(95, 217, 154, 0.4);
-  --pink: #f47fb3;
-  --pink-bg: rgba(244, 127, 179, 0.1);
-  --pink-line: rgba(244, 127, 179, 0.45);
+  --bg: #eef0ec;
+  --paper: #ffffff;
+  --line: #e7eae5;
+  --line2: #f0f2ee;
+  --ink: #16191c;
+  --ink2: #444b52;
+  --faint: #8a929a;
+  --brand: #1466ff;
+  --brand-ink: #0b4fcf;
+  --brand-soft: #e8f0ff;
+  /* criteria_eval status */
+  --ok: #0e9f6e;
+  --ok-soft: #e3f5ed;
+  --mid: #c98a2a;
+  --mid-soft: #fbf1de;
+  --miss: #b0413a;
+  --miss-soft: #f7e7e6;
+  --info: #5b6b86;
+  --info-soft: #eef1f6;
+  /* 평당가 tier 낮음→높음 */
+  --t1: #3a86c8;
+  --t2: #4a9e8a;
+  --t3: #c49a3a;
+  --t4: #d06a3a;
+  --t5: #c4452f;
+  --sh: 0 1px 2px rgba(22, 25, 28, 0.05), 0 10px 30px -14px rgba(22, 25, 28, 0.2);
+  --sh-lg: 0 2px 8px rgba(22, 25, 28, 0.06), 0 28px 64px -26px rgba(22, 25, 28, 0.34);
 }
 
-/* Tailwind v4 — 토큰을 유틸리티로 노출(text-ink·bg-surface·border-border 등). 폰트는 layout.tsx 변수. */
+/* Tailwind v4 — 토큰을 유틸리티로 노출 + 폰트(layout.tsx 변수). */
 @theme inline {
   --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-surface2: var(--surface2);
-  --color-border: var(--border);
-  --color-border-soft: var(--border-soft);
+  --color-paper: var(--paper);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
   --color-ink: var(--ink);
-  --color-muted: var(--muted);
+  --color-ink2: var(--ink2);
   --color-faint: var(--faint);
-  --color-warm: var(--warm);
-  --color-cool: var(--cool);
-  --color-green: var(--green);
-  --color-pink: var(--pink);
-  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: var(--font-spline-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 * {
   box-sizing: border-box;
 }
-
 body {
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-sans);
-  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
-  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 23px 23px;
+  letter-spacing: -0.01em;
+}
+.mono {
+  font-family: var(--font-mono);
 }
 
-/* 분위기 — 상단 cool·하단 warm 광원(아키텍처 문서 동일). 고정·비상호작용. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(70, 200, 224, 0.06), transparent 60%),
-    radial-gradient(ellipse 70% 50% at 10% 110%, rgba(242, 166, 76, 0.05), transparent 55%);
-}
-
-/* 얇은 다크 스크롤바 — 오버레이 패널 내부 */
 *::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
 *::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--line);
   border-radius: 6px;
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--faint);
 }
 
-/* mono eyebrow — 섹션/패널 라벨 */
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+/* ── app shell ── */
+.app {
+  display: grid;
+  grid-template-rows: 60px 1fr;
+  height: 100vh;
+}
+.body {
+  display: grid;
+  grid-template-columns: 316px 1fr;
+  overflow: hidden;
+}
+
+/* ── top filter bar ── */
+.top {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  z-index: 40;
+  position: relative;
+}
+.logo {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  padding-right: 16px;
+  border-right: 1px solid var(--line);
+}
+.logo .dot {
+  color: var(--brand);
+}
+.seg {
+  display: flex;
+  background: var(--bg);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+  padding: 7px 15px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.seg button.on {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--sh);
+}
+.fdrop {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 13px;
+  cursor: pointer;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.fdrop.act {
+  border-color: var(--brand);
+  color: var(--brand-ink);
+  background: var(--brand-soft);
+}
+.fdrop .ca {
+  color: var(--faint);
+  font-size: 10px;
+}
+.chips {
+  display: flex;
+  gap: 6px;
+}
+.chip {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.chip.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.searchbox {
+  margin-left: auto;
+  width: 360px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+}
+.searchbox svg {
+  width: 15px;
+  height: 15px;
+  color: var(--faint);
+  flex: none;
+}
+.searchbox input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  width: 100%;
+  color: var(--ink);
+}
+.searchbox input::placeholder {
   color: var(--faint);
 }
 
-/* card 상승 등장 — 디테일 카드/패널 */
-@keyframes rise {
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* 드롭다운 팝오버 */
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--sh-lg);
+  padding: 14px;
+  z-index: 50;
+  min-width: 230px;
 }
-.rise {
-  opacity: 0;
-  transform: translateY(12px);
-  animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.popover label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--faint);
+  font-weight: 600;
+}
+.popover input {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+}
+.popover input:focus {
+  border-color: var(--brand);
 }
 
-/* ── Kakao CustomOverlay 마커 (innerHTML 주입 — 유틸리티 스캔 밖이라 명시 CSS) ── */
-.price-marker {
-  position: relative;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 4px 9px;
-  white-space: nowrap;
-  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.8);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    color 0.15s;
+/* ── left list ── */
+.list {
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-.price-marker::after {
+.l-head {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.l-head .t {
+  font-size: 13px;
+  font-weight: 700;
+}
+.l-head .t b {
+  color: var(--brand-ink);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.l-head .sort {
+  font-size: 12px;
+  color: var(--ink2);
+  font-weight: 600;
+}
+.l-scroll {
+  overflow-y: auto;
+  flex: 1;
+}
+.l-empty {
+  padding: 28px 18px;
+  font-size: 13px;
+  color: var(--faint);
+  text-align: center;
+}
+.card {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line2);
+  cursor: pointer;
+  transition: 0.13s;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  display: block;
+  font-family: inherit;
+}
+.card:hover {
+  background: var(--line2);
+}
+.card.on {
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.card .row1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.card .rk {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+.card .nm {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.card .pr {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.card .meta {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin: 5px 0 9px;
+}
+.card .evid {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.ev {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ev.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.ev.mid {
+  background: var(--mid-soft);
+  color: var(--mid);
+}
+.ev.miss {
+  background: var(--miss-soft);
+  color: var(--miss);
+}
+.ev.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+/* ── map ── */
+.map {
+  position: relative;
+  overflow: hidden;
+  background: #e9ece7;
+}
+.map-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: var(--ink2);
+  z-index: 2;
+}
+.loading {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink2);
+  box-shadow: var(--sh);
+  z-index: 16;
+}
+.legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--sh);
+  padding: 10px 13px;
+  z-index: 15;
+  font-size: 11px;
+  color: var(--ink2);
+}
+.legend .t {
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+.legend .bar {
+  display: flex;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 150px;
+}
+.legend .bar i {
+  flex: 1;
+}
+.legend .sc {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  margin-top: 4px;
+}
+
+/* Kakao CustomOverlay 마커 — innerHTML 주입(유틸리티 스캔 밖이라 명시 CSS). 위치는 kakao anchor. */
+.mk {
+  cursor: pointer;
+}
+.mk .body {
+  border-radius: 10px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--mk-bg, var(--ink2));
+  box-shadow: var(--sh);
+  white-space: nowrap;
+  position: relative;
+  transition: transform 0.14s;
+}
+.mk .body::after {
   content: "";
   position: absolute;
   left: 50%;
   bottom: -5px;
-  width: 8px;
-  height: 8px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  transform: translateX(-50%) rotate(45deg);
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--mk-bg, var(--ink2));
 }
-.price-marker.sel {
-  color: var(--bg);
-  background: var(--cool);
-  border-color: var(--cool);
-  z-index: 5;
+.mk:hover .body {
+  transform: scale(1.07);
 }
-.price-marker.sel::after {
-  background: var(--cool);
-  border-color: var(--cool);
+.mk.sel .body {
+  outline: 2.5px solid var(--ink);
+  outline-offset: 1px;
+  transform: scale(1.1);
 }
-.cluster-marker {
+.cluster {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--sh);
+  cursor: pointer;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+}
+.cluster .n {
   font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
+}
+.cluster .t {
+  font-size: 8.5px;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+
+/* ── detail panel (차별점 hero) ── */
+.detail {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 352px;
+  max-height: calc(100% - 32px);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--sh-lg);
+  z-index: 30;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.d-head {
+  padding: 17px 20px 14px;
+  border-bottom: 1px solid var(--line2);
+}
+.d-head .nm {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.d-head .addr {
   font-size: 12px;
+  color: var(--faint);
+  margin-top: 3px;
+}
+.d-head .close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+.d-head .tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 11px;
+  flex-wrap: wrap;
+}
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink2);
+}
+.tag.b {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+.d-price {
+  padding: 15px 20px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  border-bottom: 1px solid var(--line2);
+  background: linear-gradient(180deg, var(--line2), var(--paper));
+}
+.d-price .big {
+  font-family: var(--font-mono);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.d-price .meta {
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+.d-price .chart {
+  margin-left: auto;
+  width: 96px;
+  height: 38px;
+}
+.evhead {
+  font-size: 11px;
   font-weight: 700;
-  color: var(--cool);
-  background: var(--cool-bg);
-  border: 1px solid var(--cool-line);
-  border-radius: 999px;
-  min-width: 42px;
-  height: 42px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  text-transform: uppercase;
+  padding: 14px 20px 2px;
+}
+.rows {
+  padding: 0 20px 16px;
+  overflow-y: auto;
+}
+.r {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line2);
+}
+.r:last-child {
+  border: 0;
+}
+.r .ic {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 0 0 6px rgba(70, 200, 224, 0.06);
-  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.ic.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.ic.mid {
+  background: var(--mid-soft);
+  color: var(--mid);
+}
+.ic.miss {
+  background: var(--miss-soft);
+  color: var(--miss);
+}
+.ic.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.r .b {
+  flex: 1;
+  min-width: 0;
+}
+.r .k {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.r .v {
+  font-size: 12.5px;
+  color: var(--ink2);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.r .v b {
+  color: var(--mid);
+}
+.r .src {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--brand-ink);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--brand);
+  margin-top: 5px;
+  display: inline-block;
+}
+.r .agent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 5px;
+  display: inline-block;
+}
+.r .conf {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint);
+  margin-left: 6px;
+}
+.r .badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--mid);
+  background: var(--mid-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+.outlink {
+  margin: 4px 20px 18px;
+  display: flex;
+  gap: 8px;
+}
+.outlink a {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 0;
+  text-decoration: none;
+}
+.outlink a:hover {
+  border-color: var(--faint);
 }

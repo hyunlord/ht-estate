@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Sora } from "next/font/google";
+import { Spline_Sans_Mono } from "next/font/google";
 import "./globals.css";
 
-// 디스플레이 = Sora, 데이터/모노 = JetBrains Mono (architecture.html 디자인 언어).
-const sora = Sora({
-  variable: "--font-sora",
+// 데이터/모노 = Spline Sans Mono (가격·면적·conf·순위·범례). 본문 = Pretendard(CDN, <head> link).
+const splineMono = Spline_Sans_Mono({
+  variable: "--font-spline-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -26,8 +20,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`${sora.variable} ${jetbrainsMono.variable} h-full antialiased`}>
-      <body className="h-full overflow-hidden">{children}</body>
+    <html lang="ko" className={`${splineMono.variable} h-full antialiased`}>
+      <head>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
+        />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

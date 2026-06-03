@@ -1,57 +1,46 @@
 import { expect, test } from "@playwright/test";
 
-// soft 랭킹 토글 — pet=필수 선택 시 요청 body에 soft가 실리고, 결과 순서가 반영되며
-// 후보 수는 불변(demote-not-exclude). API mock이 soft에 따라 순서만 바꿔 반환(랭킹 계약 검증).
-
+// soft 랭킹 — 인프라 칩(어린이집)=soft 조건 → 요청 body soft.criteria 실림 + 순서 반영 + 후보 수 불변
+// (demote-not-exclude). v2: gym/pet 셀렉트 폐기 → 칩이 일반화 soft criteria로 데모트-낫-익스클루드 계약 보존.
 const base = {
-  approval_date: "2020-01-01",
-  parking_ratio: 1.5,
-  parking_underground: 100,
-  household_count: 300,
-  lat: 37.5,
-  lng: 127.04,
-  source_url: null,
-  transaction_count: 0,
-  price_min: null,
-  price_max: null,
-  representative_trade: null,
-  gym: null,
-  pet: null,
+  approval_date: "2020-01-01", parking_ratio: 1.5, parking_underground: 100, household_count: 300,
+  lat: 37.5, lng: 127.04, source_url: null, transaction_count: 0, price_min: null, price_max: null,
+  representative_trade: null, gym: null, pet: null,
 };
 const NEUTRAL = [
-  { ...base, complex_id: "C1", name: "노펫단지" },
-  { ...base, complex_id: "C2", name: "예스펫단지" },
+  { ...base, complex_id: "C1", name: "데이케어없음단지" },
+  { ...base, complex_id: "C2", name: "어린이집단지" },
 ];
-const RANKED = [NEUTRAL[1], NEUTRAL[0]]; // pet required → 예스펫이 위
+const RANKED = [NEUTRAL[1], NEUTRAL[0]]; // has_daycare soft → 어린이집단지가 위
 
-test("soft toggle sends pref and reorders results without changing count", async ({ page }) => {
+test("infra chip sends soft criterion and reorders without changing count", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
   page.on("pageerror", (e) => consoleErrors.push(e.message));
 
-  const softSeen: (string | null)[] = [];
+  const softSeen: (string[] | null)[] = [];
   await page.route("**/complexes/search", async (route) => {
-    const body = route.request().postDataJSON() as { soft?: { pet?: string } };
-    const pet = body?.soft?.pet ?? null;
-    softSeen.push(pet);
-    await route.fulfill({ json: pet === "required" ? RANKED : NEUTRAL });
+    const body = route.request().postDataJSON() as {
+      soft?: { criteria?: { key: string }[] };
+    };
+    const keys = body?.soft?.criteria?.map((c) => c.key) ?? null;
+    softSeen.push(keys);
+    const ranked = keys?.includes("has_daycare");
+    await route.fulfill({ json: ranked ? RANKED : NEUTRAL });
   });
 
-  await page.goto("/", { waitUntil: "networkidle" });
+  await page.goto("/", { waitUntil: "networkidle" }); // 마운트 = soft 없음 → 중립 순서
 
-  // 1) soft off(기본 none) → 중립 순서, soft 미전송.
-  await page.getByTestId("search-button").click();
-  await expect(page.getByTestId("result-item")).toHaveText(["노펫단지", "예스펫단지"]);
+  const items = page.getByTestId("result-item");
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toContainText("데이케어없음단지");
 
-  // 2) pet=필수 → soft 전송 + 순서 반영(예스펫 위) + 후보 수 동일.
-  await page.getByTestId("pet-pref").selectOption("required");
-  await page.getByTestId("search-button").click();
-  await expect(page.getByTestId("result-item")).toHaveText(["예스펫단지", "노펫단지"]);
-  await expect(page.getByTestId("result-item")).toHaveCount(2); // 수 불변(demote-not-exclude)
+  // 어린이집 칩 → soft 전송 + 순서 반영(어린이집단지 위) + 후보 수 동일(2).
+  await page.getByTestId("chip-has_daycare").click();
+  await expect(items.nth(0)).toContainText("어린이집단지");
+  await expect(items).toHaveCount(2); // 수 불변(demote-not-exclude)
 
-  // 토글 off 요청엔 soft 없음(null), 필수 요청엔 'required' 전달됨.
-  expect(softSeen).toEqual([null, "required"]);
-
+  expect(softSeen).toEqual([null, ["has_daycare"]]);
   await page.screenshot({ path: "test-results/soft-ranking.png", fullPage: true });
   expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
 });
