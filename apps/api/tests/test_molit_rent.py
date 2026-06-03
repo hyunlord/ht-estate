@@ -60,3 +60,31 @@ def test_fetch_rent_reuses_molit_error_envelope(load_fixture: FixtureLoader) -> 
         raise AssertionError("에러 엔벨로프인데 raise 안 됨")
     except PublicDataError:
         pass
+
+
+def test_parse_rent_real_empty_returns_empty(load_fixture: FixtureLoader) -> None:
+    # 진짜 빈 월(resultCode 000 + totalCount 0) → 빈 페이지(0건). record 대상(거래 없는 월).
+    page = parse_rent_trades(load_fixture("molit_empty.xml"))
+    assert page.items == []
+    assert page.total_count == 0
+
+
+def test_parse_rent_burst_empty_raises(load_fixture: FixtureLoader) -> None:
+    # fix/rent-empty-ledger: resultCode 000이나 totalCount 없는 빈응답(버스트) → raise.
+    # silent 0건 → ledger '완료' 박힘 방지(transient → pending 유지).
+    import pytest
+
+    from app.sources.errors import PublicDataError
+
+    with pytest.raises(PublicDataError):
+        parse_rent_trades(load_fixture("molit_burst_empty.xml"))
+
+
+def test_parse_rent_nocode_raises(load_fixture: FixtureLoader) -> None:
+    # 코드 자체가 없는 잘린 응답(transient) → raise.
+    import pytest
+
+    from app.sources.errors import PublicDataError
+
+    with pytest.raises(PublicDataError):
+        parse_rent_trades(load_fixture("molit_nocode.xml"))

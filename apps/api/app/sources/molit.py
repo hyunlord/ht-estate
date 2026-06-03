@@ -17,7 +17,7 @@ import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_text, paginate
+from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_text, paginate, resolve_total_count
 
 BASE_URL = (
     "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
@@ -100,8 +100,7 @@ def parse_trades(xml_text: str) -> TradePage:
         except (ValueError, TypeError):
             continue  # malformed row → skip, 나머지는 보존
 
-    total_text = root.findtext(".//totalCount")
-    total_count = _parse.to_int(total_text) if total_text and total_text.strip() else len(items)
+    total_count = resolve_total_count(root.findtext(".//totalCount"), len(items))
     return TradePage(items=items, total_count=total_count)
 
 

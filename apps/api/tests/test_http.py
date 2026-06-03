@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from xml.etree.ElementTree import fromstring
+
 import httpx
 import pytest
 
-from app.sources._http import fetch_text, paginate
+from app.sources._http import ensure_success, fetch_text, paginate, resolve_total_count
+from app.sources.errors import PublicDataError
 
 OK_BODY = "<response><header><resultCode>00</resultCode></header></response>"
 
@@ -165,3 +168,46 @@ def test_paginate_stops_on_empty_page() -> None:
         return ([], 100) if page == 1 else (["x"], 100)
 
     assert paginate(fetch_page, num_of_rows=10) == []
+
+
+# ───────── ensure_success: 빈응답 진위 (fix/rent-empty-ledger) ─────────
+
+
+def test_ensure_success_passes_real_success() -> None:
+    # resultCode 000 = 정상(진짜 빈 월 포함) → 통과.
+    ensure_success(fromstring("<response><header><resultCode>000</resultCode></header></response>"))
+
+
+def test_ensure_success_raises_on_error_code() -> None:
+    body = "<OpenAPI_ServiceResponse><cmmMsgHeader><returnReasonCode>22</returnReasonCode>" \
+           "<errMsg>LIMIT</errMsg></cmmMsgHeader></OpenAPI_ServiceResponse>"
+    with pytest.raises(PublicDataError):
+        ensure_success(fromstring(body))
+
+
+def test_ensure_success_raises_on_no_code_transient() -> None:
+    # 코드 없는 응답(잘린/과부하) = transient → raise. 코드 없는 빈응답을 '성공'으로
+    # 통과시켜 ledger에 '완료 0건' 박히던 버그 차단.
+    with pytest.raises(PublicDataError):
+        ensure_success(fromstring("<response><body><items></items></body></response>"))
+
+
+# ───────── resolve_total_count: 빈 응답 진위 검증 ─────────
+
+
+def test_resolve_total_count_items_present() -> None:
+    assert resolve_total_count("1389", 100) == 1389
+    assert resolve_total_count(None, 3) == 3  # totalCount 태그 없어도 items 있으면 폴백
+
+
+def test_resolve_total_count_real_empty() -> None:
+    # items 0 + totalCount 0 명시 = 진짜 빈 월(거래 없음) → 0 반환(record 유지).
+    assert resolve_total_count("0", 0) == 0
+
+
+def test_resolve_total_count_unconfirmed_empty_raises() -> None:
+    # items 0 + totalCount 태그 없음/불일치 = 미확정(transient) → raise(완료 0건 박힘 방지).
+    with pytest.raises(PublicDataError):
+        resolve_total_count(None, 0)
+    with pytest.raises(PublicDataError):
+        resolve_total_count("1389", 0)  # 총건수 있다는데 page가 빔 → transient

@@ -48,6 +48,12 @@ def test_parse_trades_empty(load_fixture: FixtureLoader) -> None:
     assert page.total_count == 0
 
 
+def test_parse_trades_burst_empty_raises(load_fixture: FixtureLoader) -> None:
+    # fix/rent-empty-ledger: totalCount 없는 빈응답(버스트) → raise(silent 0 → ledger 박힘 방지).
+    with pytest.raises(PublicDataError):
+        parse_trades(load_fixture("molit_burst_empty.xml"))
+
+
 def test_parse_trades_skips_malformed_rows(load_fixture: FixtureLoader) -> None:
     page = parse_trades(load_fixture("molit_malformed.xml"))
     # 3개 중 정상 1개만, excluUseAr 누락·dealAmount 비숫자는 skip

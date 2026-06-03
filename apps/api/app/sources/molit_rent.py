@@ -22,7 +22,7 @@ import httpx
 from pydantic import BaseModel
 
 from . import _parse
-from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_text, paginate
+from ._http import DEFAULT_TIMEOUT, ensure_success, fetch_text, paginate, resolve_total_count
 
 BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
 DEFAULT_NUM_OF_ROWS = 100
@@ -107,8 +107,7 @@ def parse_rent_trades(xml_text: str) -> RentPage:
             items.append(_parse_item(el))
         except (ValueError, TypeError):
             continue
-    total_text = root.findtext(".//totalCount")
-    total_count = _parse.to_int(total_text) if total_text and total_text.strip() else len(items)
+    total_count = resolve_total_count(root.findtext(".//totalCount"), len(items))
     return RentPage(items=items, total_count=total_count)
 
 

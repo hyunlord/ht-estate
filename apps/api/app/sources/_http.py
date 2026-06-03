@@ -131,16 +131,44 @@ def ensure_success(root: Element) -> None:
     """응답 헤더의 resultCode가 성공(00/000)이 아니면 `PublicDataError`.
 
     표준 엔벨로프(header/resultCode·resultMsg)와 시스템 에러 엔벨로프
-    (cmmMsgHeader/returnReasonCode·errMsg) 양쪽을 본다. 코드가 아예 없으면
-    (최소 응답) 성공으로 간주하고 본문 파싱에 맡긴다.
+    (cmmMsgHeader/returnReasonCode·errMsg) 양쪽을 본다. 유효한 data.go.kr 응답은
+    **반드시** 둘 중 하나의 코드를 갖는다 — 둘 다 없으면 잘린/과부하 응답(transient)으로
+    보고 raise한다. (코드 없는 빈 응답을 '성공 0건'으로 통과시키면 버스트로 비어 온 월이
+    ledger에 '완료 0건'으로 영구 박혀 데이터가 마스킹됨 — fix/rent-empty-ledger.)
     """
     code = root.findtext(".//resultCode")
     msg = root.findtext(".//resultMsg")
     if code is None:
         code = root.findtext(".//returnReasonCode")
         msg = root.findtext(".//errMsg") or root.findtext(".//returnAuthMsg")
-    if code is not None and code.strip() not in SUCCESS_CODES:
+    if code is None:
+        raise PublicDataError(None, "resultCode/returnReasonCode 없음 — transient/malformed")
+    if code.strip() not in SUCCESS_CODES:
         raise PublicDataError(code.strip(), msg.strip() if msg else None)
+
+
+def resolve_total_count(total_text: str | None, item_count: int) -> int:
+    """페이지 `totalCount` 해석 + **빈 응답 진위 검증**.
+
+    items가 있으면 totalCount(태그 없으면 item_count 폴백)를 반환한다. items==0이면
+    **totalCount가 명시적 '0'일 때만** 진짜 빈 월(거래 없음)로 보고 0을 반환하고, 그 외
+    (totalCount 태그 없음 · total>0인데 page가 빔)은 미확정 빈응답으로 보고 `PublicDataError`.
+
+    근거(fix/rent-empty-ledger): 진짜 빈 응답은 resultCode 000 + totalCount 0을 모두 갖는다
+    (molit_empty.xml). 버스트로 비어 온 transient 응답은 이 둘을 확정하지 못하므로 raise →
+    `_ingest_months_resumable`이 그 월을 ledger에 기록 못 함 → pending 유지 → 재개 재시도.
+    """
+    total: int | None = None
+    if total_text and total_text.strip():
+        try:
+            total = int(total_text.strip())
+        except ValueError:
+            total = None
+    if item_count == 0:
+        if total == 0:
+            return 0
+        raise PublicDataError(None, f"빈 응답 미확정(totalCount={total_text!r}) — transient 의심")
+    return total if total is not None else item_count
 
 
 def json_body(json_text: str) -> dict[str, Any]:

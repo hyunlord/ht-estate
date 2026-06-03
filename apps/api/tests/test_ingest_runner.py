@@ -204,6 +204,34 @@ def test_resume_rent_skips_recorded_months(conn, monkeypatch: pytest.MonkeyPatch
     assert completed_months(conn, "rent", "11680") == {"202401", "202402"}
 
 
+def test_resume_rent_transient_empty_not_recorded(
+    conn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 어드버서리얼(fix/rent-empty-ledger): 버스트 빈응답이 PublicDataError로 raise되면
+    # 그 월은 ledger에 기록되면 안 됨 → pending 유지 → 재개 재시도. "완료 0건" 영구박힘 방지.
+    from app.sources.errors import PublicDataError
+    from app.store.db import init_db
+    from app.store.progress_repo import completed_months
+
+    init_db(conn)
+    fetched: list[str] = []
+
+    def flaky_rent(c, region, month, **kw):  # type: ignore[no-untyped-def]
+        fetched.append(month)
+        if month == "202402":
+            raise PublicDataError(None, "빈 응답 미확정 — transient 의심")
+        return 5
+
+    monkeypatch.setattr(ingest_mod, "ingest_rent_month", flaky_rent)
+    with pytest.raises(PublicDataError):
+        run_ingest(
+            conn, region="11680", months=["202401", "202402", "202403"],
+            stages=["rent"], api_key="d", resume=True, log=lambda _m: None,
+        )
+    # 성공한 202401만 기록 · transient 202402와 이후 202403은 미기록(pending) → 재개 시 재시도
+    assert completed_months(conn, "rent", "11680") == {"202401"}
+
+
 def test_resume_records_each_month_so_crash_loses_at_most_one(
     conn, monkeypatch: pytest.MonkeyPatch
 ) -> None:
