@@ -33,6 +33,7 @@ from typing import Protocol
 import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에)
 
 from app.settings import get_api_key
+from app.sources.errors import PublicDataError
 from app.sources.kapt import ComplexInfo, fetch_complex_info
 from app.store.complex_repo import upsert_complex
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
@@ -51,9 +52,23 @@ class _CompletedLike(Protocol):
     returncode: int
 
 
-def all_complex_ids(conn: sqlite3.Connection) -> list[str]:
-    """전 단지 complex_id — 결정론 순서(resume+limit가 같은 prefix를 안정적으로 처리)."""
-    rows = conn.execute("SELECT complex_id FROM complex ORDER BY complex_id").fetchall()
+def all_complex_ids(
+    conn: sqlite3.Connection, sido_prefixes: list[str] | None = None
+) -> list[str]:
+    """대상 complex_id — 결정론 순서(resume+limit가 같은 prefix를 안정적으로 처리).
+
+    `sido_prefixes`(bjd_code 앞2 = 시도코드, 예 ['11','26'])가 주어지면 그 시도만, 시도코드
+    오름차순(서울11→광역시26+→…)으로 정렬해 **도심 우선** 백필. 없으면 전 단지.
+    """
+    if sido_prefixes:
+        placeholders = ",".join("?" * len(sido_prefixes))
+        rows = conn.execute(
+            f"SELECT complex_id FROM complex WHERE substr(bjd_code, 1, 2) IN ({placeholders}) "
+            "ORDER BY substr(bjd_code, 1, 2), complex_id",
+            list(sido_prefixes),
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT complex_id FROM complex ORDER BY complex_id").fetchall()
     return [r[0] for r in rows]
 
 
@@ -143,15 +158,18 @@ def run_refill(
     throttle: Throttle | None,
     batch_size: int,
     limit: int,
+    sido_prefixes: list[str] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> int:
     """미완료 단지를 배치 단위로 재적재. 처리(성공 upsert)한 단지 수 반환.
 
     배치마다 공유락을 잡고(점유 중이면 굶지 않고 양보=중단), 단지별 fetch→upsert→레저기록.
     fetch_info가 None을 주면 그 단지는 미기록(다음 패스 재시도). lat/lng는 upsert가 안 건드림.
+    `sido_prefixes`로 도심 우선 부분 백필. 일일캡 등 `PublicDataError`면 이번 run을 우아하게
+    중단(resume) — 캡 초과로 거래 cron/키를 막지 않는다.
     """
     done = refilled_ids(conn)
-    pending = [cid for cid in all_complex_ids(conn) if cid not in done]
+    pending = [cid for cid in all_complex_ids(conn, sido_prefixes) if cid not in done]
     if limit > 0:
         pending = pending[:limit]
     if log is not None:
@@ -167,7 +185,15 @@ def run_refill(
             for complex_id in batch:
                 if throttle is not None:
                     throttle.wait()
-                info = fetch_info(complex_id)
+                try:
+                    info = fetch_info(complex_id)
+                except PublicDataError as exc:
+                    if log is not None:
+                        log(
+                            f"공공API 오류 code={exc.result_code} ({exc.result_msg}) — "
+                            "일일캡/일시 추정, 이번 run 중단(레저로 다음 run 재개)"
+                        )
+                    return processed  # 캡 초과 등 — 우아하게 중단(키/거래cron 미차단)
                 if info is None:
                     continue  # 실패/없음 — 미기록(다음 패스 재시도)
                 upsert_complex(conn, info)  # K-apt 컬럼만 갱신 — lat/lng·geo_* 불변
@@ -196,7 +222,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--max-spin", type=float, default=60.0, help="배치 락 spin 최대 대기(초·초과시 양보)"
     )
+    parser.add_argument(
+        "--sido",
+        default="",
+        help="bjd_code 앞2(시도코드) 콤마목록 — 도심 우선 부분 백필(예: 11,26,27). 빈값=전 단지",
+    )
     args = parser.parse_args(argv)
+    sido_prefixes = [s.strip() for s in args.sido.split(",") if s.strip()] or None
 
     conn = get_connection(args.db)
     init_db(conn)
@@ -212,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         throttle=throttle,
         batch_size=args.batch_size,
         limit=args.limit,
+        sido_prefixes=sido_prefixes,
         log=print,
     )
     return 0

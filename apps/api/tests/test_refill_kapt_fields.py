@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from app.sources.errors import PublicDataError
 from app.sources.kapt import ComplexInfo, parse_complex_info
 from app.store.db import get_connection, init_db
 
@@ -283,3 +284,60 @@ def test_main_keyless_runs_with_injected_fetch(
     ).fetchone()
     assert row["lat"] == 37.5  # 보존
     assert row["elevator_count"] == info.elevator_count  # 채움
+
+
+def _seed_with_bjd(conn, complex_id: str, bjd_code: str) -> None:
+    conn.execute(
+        "INSERT INTO complex (complex_id, bjd_code, lat, lng) VALUES (?, ?, 1.0, 1.0)",
+        (complex_id, bjd_code),
+    )
+    conn.commit()
+
+
+def test_all_complex_ids_sido_filter_and_order() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    _seed_with_bjd(conn, "S2", "1168010100")  # 서울 11
+    _seed_with_bjd(conn, "B1", "2611010100")  # 부산 26
+    _seed_with_bjd(conn, "S1", "1111010100")  # 서울 11
+    _seed_with_bjd(conn, "G1", "4113510300")  # 경기 41 (도심 아님)
+    # 도심(11,26)만, 시도 오름차순(서울11→부산26) + 시도 내 complex_id 정렬
+    assert all_complex_ids(conn, ["11", "26"]) == ["S1", "S2", "B1"]
+    assert all_complex_ids(conn) == ["B1", "G1", "S1", "S2"]  # 무필터=전체
+
+
+def test_refill_sido_prefix_only_processes_urban(load_fixture: FixtureLoader) -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    _seed_with_bjd(conn, "S1", "1111010100")  # 서울
+    _seed_with_bjd(conn, "G1", "4113510300")  # 경기(보류)
+    info = _full_info(load_fixture)
+    fetched: list[str] = []
+
+    def fake(cid: str) -> ComplexInfo:
+        fetched.append(cid)
+        return info.model_copy(update={"kapt_code": cid})
+
+    processed = run_refill(conn, fetch_info=fake, lock=_acquire_factory, throttle=None,
+                           batch_size=10, limit=0, sido_prefixes=["11"])
+    assert processed == 1
+    assert fetched == ["S1"]  # 경기(41)는 도심 필터에서 제외
+
+
+def test_refill_stops_gracefully_on_public_data_error(load_fixture: FixtureLoader) -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    for i in range(4):
+        _seed_complex(conn, f"C{i}", lat=float(i), lng=float(i))
+    info = _full_info(load_fixture)
+
+    def fake(cid: str) -> ComplexInfo:
+        if cid == "C2":  # 3번째에서 일일캡 초과 모사
+            raise PublicDataError("22", "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR")
+        return info.model_copy(update={"kapt_code": cid})
+
+    processed = run_refill(conn, fetch_info=fake, lock=_acquire_factory, throttle=None,
+                           batch_size=10, limit=0)
+    # 캡 전 2건만 처리·기록, 크래시 없이 중단(레저로 다음 run 재개)
+    assert processed == 2
+    assert refilled_ids(conn) == {"C0", "C1"}
