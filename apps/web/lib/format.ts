@@ -1,6 +1,8 @@
-// 가격 포맷 — 만원 단위 → 한국식 축약(지도 마커·카드 공용). 결정론(테스트 가능).
+// 가격·면적 포맷 — 만원/㎡ → 한국식 표기(마커·카드 공용). 결정론(테스트 가능).
 
-import type { Candidate } from "./types";
+import type { AreaUnit, Candidate } from "./types";
+
+export const SQM_PER_PYEONG = 3.3058; // 1평 = 3.3058㎡
 
 /** 만원 → "14.2억" / "9,000만" 축약. 1억 이상이면 억 단위(불필요한 .0 제거). */
 export function wonToShort(manwon: number): string {
@@ -30,16 +32,44 @@ export function markerLabel(c: Candidate): string | null {
   return null;
 }
 
-// ── 평당가 tier (마커/클러스터 색) ──────────────────────────────────────────
-const PYEONG = 3.3058; // 1평 = 3.3058㎡
+// ── 면적 단위 (평/㎡ 토글) ───────────────────────────────────────────────
+/** ㎡ → 표기 문자열(단위 항상 명시). 평=소수1, ㎡=원값. null이면 "—". */
+export function formatArea(sqm: number | null | undefined, unit: AreaUnit): string {
+  if (sqm == null) return "—";
+  if (unit === "pyeong") return `${(sqm / SQM_PER_PYEONG).toFixed(1)}평`;
+  return `${sqm}㎡`;
+}
 
-/** 평당가(만원/평) — 대표 거래의 헤드라인 금액(매매=price, 전월세=deposit) / 전용평. 없으면 null. */
+/** 현 단위 입력값 → ㎡(spec 전송 canonical). */
+export function toSqm(value: number, unit: AreaUnit): number {
+  return unit === "pyeong" ? value * SQM_PER_PYEONG : value;
+}
+
+/** ㎡ ↔ 현 단위 값 변환(단위 토글 시 입력값 보존용). */
+export function convertArea(value: number, from: AreaUnit, to: AreaUnit): number {
+  if (from === to) return value;
+  return to === "pyeong" ? value / SQM_PER_PYEONG : value * SQM_PER_PYEONG;
+}
+
+// ── 평당가 tier (마커/클러스터 색) ──────────────────────────────────────────
+/** 평당가(만원/평) 원시 — 금액/전용평. 마커·후보 공용. 없으면 null. */
+export function ppp(
+  amount: number | null | undefined,
+  netAreaSqm: number | null | undefined,
+): number | null {
+  if (amount == null || netAreaSqm == null || netAreaSqm <= 0) return null;
+  return amount / (netAreaSqm / SQM_PER_PYEONG);
+}
+
+/** 후보 평당가 — 대표 거래 헤드라인 금액(매매=price, 전월세=deposit) / 전용평. */
 export function pricePerPyeong(c: Candidate): number | null {
   const rep = c.representative_trade;
-  if (!rep || rep.net_area == null || rep.net_area <= 0) return null;
-  const amount = rep.price ?? rep.deposit; // 매매 price 우선, 없으면 전월세 보증금
-  if (amount == null) return null;
-  return amount / (rep.net_area / PYEONG);
+  return ppp(rep?.price ?? rep?.deposit ?? null, rep?.net_area ?? null);
+}
+
+/** 마커 금액 → 라벨(억/만). 없으면 null. */
+export function markerLabelAmount(price: number | null): string | null {
+  return price != null ? wonToShort(price) : null;
 }
 
 /** 뷰포트 결과 평당가의 분위수(20/40/60/80%) 경계 4개 → 적응적 5-tier. 비면 빈 배열. */

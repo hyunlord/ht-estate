@@ -28,6 +28,7 @@ test("infra chip sends soft criterion and reorders without changing count", asyn
     const ranked = keys?.includes("has_daycare");
     await route.fulfill({ json: ranked ? RANKED : NEUTRAL });
   });
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/", { waitUntil: "networkidle" }); // 마운트 = soft 없음 → 중립 순서
 

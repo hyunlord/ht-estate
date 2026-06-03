@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { markerLabel, pricePerPyeong, tierBoundaries, tierColor, tierOf } from "@/lib/format";
+import { markerLabelAmount, ppp, tierBoundaries, tierColor, tierOf } from "@/lib/format";
 import {
   KAKAO_JS_KEY,
   loadKakaoMaps,
@@ -10,32 +10,32 @@ import {
   type KakaoMap,
   type KakaoMaps,
 } from "@/lib/kakao";
-import type { Bbox, Candidate } from "@/lib/types";
+import type { Bbox, MarkerCandidate } from "@/lib/types";
 
 const GANGNAM = { lat: 37.4979, lng: 127.0476 };
 const DEBOUNCE_MS = 280; // spec §5.1 — idle 후 250~300ms 디바운스
-const CLUSTER_LEVEL = 6; // spec §5.2 — 도시/광역 줌(level ≥ 6) → 클러스터(겹침 방지)
-const MARKER_CAP = 60; // 뷰포트 마커 캡 — 초과 시 줌 무관 클러스터 강제(밀집 폭주 방지)
+const CLUSTER_LEVEL = 6; // 도시/광역 줌 → 클러스터
+const MARKER_CAP = 60; // 뷰포트 마커 캡 초과 시 줌 무관 클러스터 강제(폭주 방지)
 
 interface Cell {
   lat: number;
   lng: number;
-  members: Candidate[];
+  members: MarkerCandidate[];
 }
 
 function cellSize(level: number): number {
   return 0.0025 * Math.pow(2, Math.max(0, level - 3));
 }
 
-function clusterCandidates(candidates: Candidate[], level: number): Cell[] {
+function clusterMarkers(markers: MarkerCandidate[], level: number): Cell[] {
   const size = cellSize(level);
-  const cells = new Map<string, Candidate[]>();
-  for (const c of candidates) {
-    if (c.lat == null || c.lng == null) continue;
-    const key = `${Math.floor(c.lat / size)}:${Math.floor(c.lng / size)}`;
+  const cells = new Map<string, MarkerCandidate[]>();
+  for (const m of markers) {
+    if (m.lat == null || m.lng == null) continue;
+    const key = `${Math.floor(m.lat / size)}:${Math.floor(m.lng / size)}`;
     const bucket = cells.get(key);
-    if (bucket) bucket.push(c);
-    else cells.set(key, [c]);
+    if (bucket) bucket.push(m);
+    else cells.set(key, [m]);
   }
   return Array.from(cells.values()).map((members) => ({
     lat: members.reduce((s, m) => s + (m.lat ?? 0), 0) / members.length,
@@ -45,67 +45,66 @@ function clusterCandidates(candidates: Candidate[], level: number): Cell[] {
 }
 
 export function MapView({
-  candidates,
+  markers,
   selectedId,
   loading,
   onBoundsChange,
-  onSelect,
+  onSelectId,
 }: {
-  candidates: Candidate[];
+  markers: MarkerCandidate[];
   selectedId: string | null;
   loading: boolean;
   onBoundsChange: (bbox: Bbox) => void;
-  onSelect: (candidate: Candidate) => void;
+  onSelectId: (complexId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const mapsRef = useRef<KakaoMaps | null>(null);
   const overlaysRef = useRef<KakaoCustomOverlay[]>([]);
-  const candidatesRef = useRef(candidates);
+  const markersRef = useRef(markers);
   const selectedIdRef = useRef(selectedId);
   const boundsCb = useRef(onBoundsChange);
-  const selectCb = useRef(onSelect);
+  const selectCb = useRef(onSelectId);
 
   const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    candidatesRef.current = candidates;
+    markersRef.current = markers;
     selectedIdRef.current = selectedId;
     boundsCb.current = onBoundsChange;
-    selectCb.current = onSelect;
+    selectCb.current = onSelectId;
   });
 
-  // 평당가 tier 경계(뷰포트 적응) — 마커/클러스터 색.
-  function boundaries(list: Candidate[]): number[] {
+  function boundaries(list: MarkerCandidate[]): number[] {
     return tierBoundaries(
-      list.map(pricePerPyeong).filter((v): v is number => v != null),
+      list.map((m) => ppp(m.price, m.net_area)).filter((v): v is number => v != null),
     );
   }
 
   function priceOverlay(
     maps: KakaoMaps,
     map: KakaoMap,
-    c: Candidate,
+    m: MarkerCandidate,
     selId: string | null,
     bnd: number[],
   ): KakaoCustomOverlay {
     const wrap = document.createElement("div");
-    wrap.className = c.complex_id === selId ? "mk sel" : "mk";
+    wrap.className = m.complex_id === selId ? "mk sel" : "mk";
     const body = document.createElement("div");
     body.className = "body";
-    body.style.setProperty("--mk-bg", tierColor(tierOf(pricePerPyeong(c), bnd)));
-    body.textContent = markerLabel(c) ?? c.name ?? c.complex_id;
+    body.style.setProperty("--mk-bg", tierColor(tierOf(ppp(m.price, m.net_area), bnd)));
+    body.textContent = markerLabelAmount(m.price) ?? m.name ?? m.complex_id;
     wrap.appendChild(body);
-    wrap.addEventListener("click", () => selectCb.current(c));
+    wrap.addEventListener("click", () => selectCb.current(m.complex_id));
     return new maps.CustomOverlay({
-      position: new maps.LatLng(c.lat as number, c.lng as number),
+      position: new maps.LatLng(m.lat as number, m.lng as number),
       content: wrap,
       map,
       xAnchor: 0.5,
       yAnchor: 1,
       clickable: true,
-      zIndex: c.complex_id === selId ? 9 : 5,
+      zIndex: m.complex_id === selId ? 9 : 5,
     });
   }
 
@@ -116,19 +115,19 @@ export function MapView({
     overlaysRef.current.forEach((o) => o.setMap(null));
     const next: KakaoCustomOverlay[] = [];
     const level = map.getLevel();
-    const list = candidatesRef.current;
+    const list = markersRef.current;
     const selId = selectedIdRef.current;
     const bnd = boundaries(list);
-    const coordCount = list.filter((c) => c.lat != null && c.lng != null).length;
+    const coordCount = list.filter((m) => m.lat != null && m.lng != null).length;
 
     if (level >= CLUSTER_LEVEL || coordCount > MARKER_CAP) {
-      for (const cell of clusterCandidates(list, level)) {
+      for (const cell of clusterMarkers(list, level)) {
         if (cell.members.length === 1) {
           next.push(priceOverlay(maps, map, cell.members[0], selId, bnd));
           continue;
         }
         const avgTier = Math.round(
-          cell.members.reduce((s, m) => s + tierOf(pricePerPyeong(m), bnd), 0) /
+          cell.members.reduce((s, m) => s + tierOf(ppp(m.price, m.net_area), bnd), 0) /
             cell.members.length,
         );
         const el = document.createElement("div");
@@ -151,15 +150,14 @@ export function MapView({
         );
       }
     } else {
-      for (const c of list) {
-        if (c.lat == null || c.lng == null) continue;
-        next.push(priceOverlay(maps, map, c, selId, bnd));
+      for (const m of list) {
+        if (m.lat == null || m.lng == null) continue;
+        next.push(priceOverlay(maps, map, m, selId, bnd));
       }
     }
     overlaysRef.current = next;
   }
 
-  // SDK 로드 + 맵 초기화 (1회). 키 부재/실패면 placeholder. idle → auto-viewport 검색(디바운스).
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -202,7 +200,7 @@ export function MapView({
   useEffect(() => {
     renderMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, selectedId, ready]);
+  }, [markers, selectedId, ready]);
 
   return (
     <div data-testid="map-container" style={{ position: "absolute", inset: 0 }}>

@@ -65,6 +65,24 @@ class Candidate(BaseModel):
     criteria_eval: list[CriterionEval] | None = None
 
 
+class MarkerCandidate(BaseModel):
+    """지도 마커 전용 경량 레코드 — 뷰포트 내 *전체* 단지(랭킹·criteria_eval·enrichment 없음).
+
+    라벨/평당가 계산에 필요한 최소 필드만. price=대표 금액(매매=price / 전월세=deposit). P4-3a-2.
+    """
+
+    complex_id: str
+    name: str | None
+    lat: float | None
+    lng: float | None
+    price: int | None  # 만원 — 대표 거래 금액(거래유형별)
+    net_area: float | None  # 전용(㎡)
+
+
+# 마커 피드 서버 캡 — 저줌 광역 폭주 흡수(클라 클러스터와 함께). bbox 바운드라 보통 훨씬 적음.
+MARKER_CAP = 2500
+
+
 def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     clauses: list[str] = []
     params: list[object] = []
@@ -261,3 +279,48 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
         reverse=True,
     )
     return candidates[: spec.limit]
+
+
+def search_markers(
+    conn: sqlite3.Connection, spec: HardFilterSpec, *, cap: int = MARKER_CAP
+) -> list[MarkerCandidate]:
+    """지도 마커 피드 — bbox+hard 필터 통과 단지 *전체*(좌표 보유)의 최소 필드. 고캡(cap), 경량.
+
+    search_complexes와 **동일 hard 필터**(가격/면적/인프라/bbox 존중)를 재사용하되, 랭킹·soft·
+    enrichment·criteria_eval은 없다(마커는 SET만 — 리스트가 랭킹 담당). 좌표 없는 단지는 제외.
+    """
+    cwhere, cparams = _complex_where(spec)
+    twhere, tparams = _txn_where(spec)
+    trade_table = _TRADE_TABLE[spec.deal_type]
+    amount_col = "price" if spec.deal_type == "sale" else "deposit"
+
+    parts = list(cwhere)
+    params = list(cparams)
+    parts.append("c.lat IS NOT NULL AND c.lng IS NOT NULL")  # 마커는 좌표 필수
+    if spec.has_txn_filters:
+        parts.append(
+            f'EXISTS (SELECT 1 FROM "{trade_table}" t '
+            f"WHERE t.complex_id = c.complex_id AND {' AND '.join(twhere)})"
+        )
+        params += tparams
+
+    sql = "SELECT c.complex_id, c.name, c.lat, c.lng FROM complex c"
+    sql += " WHERE " + " AND ".join(parts)
+    sql += " ORDER BY c.complex_id LIMIT ?"  # 결정론 + 캡
+    params.append(cap)
+
+    markers: list[MarkerCandidate] = []
+    for row in conn.execute(sql, params).fetchall():
+        trades = _matching_trades(conn, spec, row["complex_id"], twhere, tparams)
+        rep = trades[0] if trades else None
+        markers.append(
+            MarkerCandidate(
+                complex_id=row["complex_id"],
+                name=row["name"],
+                lat=row["lat"],
+                lng=row["lng"],
+                price=(rep[amount_col] if rep is not None else None),
+                net_area=(rep["net_area"] if rep is not None else None),
+            )
+        )
+    return markers

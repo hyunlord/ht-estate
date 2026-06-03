@@ -31,6 +31,7 @@ const CANDIDATES = [
 
 async function search(page: import("@playwright/test").Page) {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
   await page.goto("/", { waitUntil: "networkidle" }); // 마운트 auto-search가 리스트 채움
 }
 
