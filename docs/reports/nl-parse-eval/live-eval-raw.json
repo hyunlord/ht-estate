@@ -1,0 +1,245 @@
+{
+  "generated": "2026-06-03",
+  "results": [
+    {
+      "query": "강남 역세권 신축 어린이집 있는 큰 단지, 강아지 되면 좋고",
+      "hard": {
+        "has_daycare": true
+      },
+      "soft": {
+        "gym": "none",
+        "pet": "preferred",
+        "criteria": [
+          {
+            "key": "subway_time",
+            "weight": 1.0
+          },
+          {
+            "key": "approval_year",
+            "weight": 1.0
+          },
+          {
+            "key": "household_count",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "어린이집 있는",
+          "key": "has_daycare",
+          "mode": "hard"
+        },
+        {
+          "phrase": "강아지 되면 좋고",
+          "key": "pet",
+          "mode": "soft"
+        },
+        {
+          "phrase": "역세권",
+          "key": "subway_time",
+          "mode": "soft"
+        },
+        {
+          "phrase": "신축",
+          "key": "approval_year",
+          "mode": "soft"
+        },
+        {
+          "phrase": "큰 단지",
+          "key": "household_count",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": [
+        "강남"
+      ]
+    },
+    {
+      "query": "전용 84 이상, 주차 넉넉하고 세대수 많은 단지",
+      "hard": {
+        "net_area_min": 84.0
+      },
+      "soft": {
+        "gym": "none",
+        "pet": "none",
+        "criteria": [
+          {
+            "key": "parking_ratio",
+            "weight": 1.0
+          },
+          {
+            "key": "household_count",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "전용 84 이상",
+          "key": "net_area",
+          "mode": "hard"
+        },
+        {
+          "phrase": "주차 넉넉하고",
+          "key": "parking_ratio",
+          "mode": "soft"
+        },
+        {
+          "phrase": "세대수 많은",
+          "key": "household_count",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "query": "지역난방에 CCTV 많고 승강기 충분한 곳만",
+      "hard": {
+        "heat_type": "지역난방"
+      },
+      "soft": {
+        "gym": "none",
+        "pet": "none",
+        "criteria": [
+          {
+            "key": "cctv_count",
+            "weight": 1.0
+          },
+          {
+            "key": "elevator_count",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "지역난방",
+          "key": "heat_type",
+          "mode": "hard"
+        },
+        {
+          "phrase": "CCTV 많고",
+          "key": "cctv_count",
+          "mode": "soft"
+        },
+        {
+          "phrase": "승강기 충분한",
+          "key": "elevator_count",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "query": "전세 5억 이하 역세권 가까우면 좋고",
+      "hard": {
+        "deposit_max": 50000
+      },
+      "soft": {
+        "gym": "none",
+        "pet": "none",
+        "criteria": [
+          {
+            "key": "subway_time",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "5억 이하",
+          "key": "deposit",
+          "mode": "hard"
+        },
+        {
+          "phrase": "전세",
+          "key": "deal_type",
+          "mode": "hard"
+        },
+        {
+          "phrase": "역세권 가까우면 좋고",
+          "key": "subway_time",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "query": "조용하고 바다 전망 좋은 신축",
+      "hard": {},
+      "soft": {
+        "gym": "none",
+        "pet": "none",
+        "criteria": [
+          {
+            "key": "approval_year",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "신축",
+          "key": "approval_year",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": [
+        "조용하고",
+        "바다 전망 좋은"
+      ]
+    },
+    {
+      "query": "어린이집 있는 곳만, 헬스장 되면 좋고",
+      "hard": {
+        "has_daycare": true
+      },
+      "soft": {
+        "gym": "preferred",
+        "pet": "none",
+        "criteria": []
+      },
+      "detected": [
+        {
+          "phrase": "어린이집 있는 곳만",
+          "key": "has_daycare",
+          "mode": "hard"
+        },
+        {
+          "phrase": "헬스장 되면 좋고",
+          "key": "gym",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "query": "반려동물 가능한 큰 단지 선호",
+      "hard": {},
+      "soft": {
+        "gym": "none",
+        "pet": "preferred",
+        "criteria": [
+          {
+            "key": "household_count",
+            "weight": 1.0
+          }
+        ]
+      },
+      "detected": [
+        {
+          "phrase": "반려동물 가능한",
+          "key": "pet",
+          "mode": "soft"
+        },
+        {
+          "phrase": "큰 단지",
+          "key": "household_count",
+          "mode": "soft"
+        }
+      ],
+      "unsupported": []
+    }
+  ]
+}
