@@ -69,6 +69,14 @@ def test_permanent_error_stops() -> None:
         )
 
 
+def test_classify_coded_vs_codeless_public_data_error() -> None:
+    # fix/rent-empty-ledger: 코드 있는 PublicDataError(인가/일일캡)=영구,
+    # 코드 없는 것(transient 빈응답)=일시 → 백오프 재시도. result_code로 구분.
+    assert default_is_permanent(PublicDataError("22", "일일캡")) is True
+    assert default_is_permanent(PublicDataError("30", "키 미등록")) is True
+    assert default_is_permanent(PublicDataError(None, "빈 응답 미확정 — transient 의심")) is False
+
+
 def test_max_runs_guard_returns_false() -> None:
     # remaining이 계속 >0이면 max_runs에서 멈추고 False(미완).
     ok = loop_until_done(

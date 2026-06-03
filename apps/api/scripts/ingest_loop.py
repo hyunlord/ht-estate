@@ -34,7 +34,9 @@ from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 def default_is_permanent(exc: Exception) -> bool:
     """영구 오류 판정 — 인가/일일캡(PublicDataError)·영구 4xx. 일시(전송·5xx·429)는 False."""
     if isinstance(exc, PublicDataError):
-        return True  # 인가('30')·일일캡('22') 등 — 루프로 못 푼다(다음 날/cron)
+        # 코드 있는 PublicDataError(인가'30'·일일캡'22')는 영구 — 루프로 못 푼다(다음 날/cron).
+        # 코드 없는 것(result_code=None)은 transient 빈응답(fix/rent-empty-ledger) → 백오프 재시도.
+        return exc.result_code is not None
     if isinstance(exc, httpx.HTTPStatusError):
         return _is_permanent_status(exc.response.status_code)
     return False  # TransportError·5xx·429·기타 → 일시로 보고 백오프 재시도
