@@ -2,10 +2,18 @@
 
 export type Preference = "required" | "preferred" | "none";
 
+// 일반화 soft 조건(P4-2a) — 레지스트리 key + 가중치. 인프라 칩이 등록 soft-able key를 weight로 켠다.
+export interface SoftCriterion {
+  key: string;
+  weight: number;
+}
+
 // soft 선호 — 랭킹(ORDER)만 바꾸고 후보 SET은 안 바꾼다(설계 §7 demote-not-exclude).
+// 레거시 gym/pet(Preference) + 일반화 criteria(P4-2a) 둘 다 지원.
 export interface SoftSpec {
   gym: Preference;
   pet: Preference;
+  criteria?: SoftCriterion[];
 }
 
 // 거래유형 축(P2-2): 매매/전세/월세. 기본 sale → 기존 매매 동작.
@@ -91,6 +99,17 @@ export interface FloorplanSummary {
   sources: GymSource[];
 }
 
+// 조건 평가(P4-2a) — 후보×활성 soft 조건. status: match(✓)·partial(△)·miss(✗)·unknown(○).
+// value=원값(표시), score=[0,1]. demote-not-exclude라 점수는 낮아질 뿐 후보를 빼지 않는다.
+export interface CriterionEval {
+  key: string;
+  label: string;
+  value: unknown;
+  score: number;
+  confidence: number | null;
+  status: "match" | "partial" | "miss" | "unknown";
+}
+
 export interface Candidate {
   complex_id: string;
   name: string | null;
@@ -109,6 +128,7 @@ export interface Candidate {
   pet?: PetSummary | null;
   review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.
   floorplan?: FloorplanSummary | null; // 평면도 feature(표시 전용). optional: 구버전 mock 호환.
+  criteria_eval?: CriterionEval[] | null; // soft 조건 평가(랭킹 근거). optional: 구버전 mock 호환.
 }
 
 export interface Bbox {

@@ -12,11 +12,20 @@ export interface KakaoBounds {
 
 export interface KakaoMap {
   getBounds(): KakaoBounds;
+  getLevel(): number; // 줌 레벨(작을수록 확대) — 클러스터/개별 마커 전환 기준
+  setLevel(level: number): void;
   setCenter(latlng: KakaoLatLng): void;
+  panTo(latlng: KakaoLatLng): void;
 }
 
 export interface KakaoMarker {
   setMap(map: KakaoMap | null): void;
+}
+
+// 가격 라벨·클러스터 배지는 기본 마커가 아니라 CustomOverlay(HTML)로 그린다(호갱노노식).
+export interface KakaoCustomOverlay {
+  setMap(map: KakaoMap | null): void;
+  getContent(): HTMLElement;
 }
 
 export interface KakaoMaps {
@@ -26,6 +35,15 @@ export interface KakaoMaps {
   ) => KakaoMap;
   LatLng: new (lat: number, lng: number) => KakaoLatLng;
   Marker: new (options: { position: KakaoLatLng; map?: KakaoMap }) => KakaoMarker;
+  CustomOverlay: new (options: {
+    position: KakaoLatLng;
+    content: HTMLElement;
+    map?: KakaoMap;
+    yAnchor?: number;
+    xAnchor?: number;
+    clickable?: boolean;
+    zIndex?: number;
+  }) => KakaoCustomOverlay;
   load: (callback: () => void) => void;
   event: {
     addListener: (target: object, type: string, handler: () => void) => void;

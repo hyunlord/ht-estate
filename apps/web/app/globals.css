@@ -1,26 +1,166 @@
 @import "tailwindcss";
 
+/* ht-estate 디자인 언어 — docs/realty-agent-architecture.html 계승.
+   다크 데이터-콘솔: 출처/근거를 영수증처럼 보여주는 정밀 도구. Sora(디스플레이)+JetBrains Mono(데이터). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0a0e16;
+  --surface: #111826;
+  --surface2: #161f30;
+  --border: #283145;
+  --border-soft: #1d2536;
+  --ink: #e9edf5;
+  --muted: #95a1b5;
+  --faint: #6b7689;
+  --warm: #f2a64c;
+  --warm-bg: rgba(242, 166, 76, 0.08);
+  --warm-line: rgba(242, 166, 76, 0.45);
+  --cool: #46c8e0;
+  --cool-bg: rgba(70, 200, 224, 0.08);
+  --cool-line: rgba(70, 200, 224, 0.45);
+  --green: #5fd99a;
+  --green-bg: rgba(95, 217, 154, 0.09);
+  --green-line: rgba(95, 217, 154, 0.4);
+  --pink: #f47fb3;
+  --pink-bg: rgba(244, 127, 179, 0.1);
+  --pink-line: rgba(244, 127, 179, 0.45);
 }
 
+/* Tailwind v4 — 토큰을 유틸리티로 노출(text-ink·bg-surface·border-border 등). 폰트는 layout.tsx 변수. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-warm: var(--warm);
+  --color-cool: var(--cool);
+  --color-green: var(--green);
+  --color-pink: var(--pink);
+  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 23px 23px;
+}
+
+/* 분위기 — 상단 cool·하단 warm 광원(아키텍처 문서 동일). 고정·비상호작용. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(70, 200, 224, 0.06), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 10% 110%, rgba(242, 166, 76, 0.05), transparent 55%);
+}
+
+/* 얇은 다크 스크롤바 — 오버레이 패널 내부 */
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+}
+
+/* mono eyebrow — 섹션/패널 라벨 */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* card 상승 등장 — 디테일 카드/패널 */
+@keyframes rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Kakao CustomOverlay 마커 (innerHTML 주입 — 유틸리티 스캔 밖이라 명시 CSS) ── */
+.price-marker {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 9px;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+.price-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateX(-50%) rotate(45deg);
+}
+.price-marker.sel {
+  color: var(--bg);
+  background: var(--cool);
+  border-color: var(--cool);
+  z-index: 5;
+}
+.price-marker.sel::after {
+  background: var(--cool);
+  border-color: var(--cool);
+}
+.cluster-marker {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cool);
+  background: var(--cool-bg);
+  border: 1px solid var(--cool-line);
+  border-radius: 999px;
+  min-width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 0 6px rgba(70, 200, 224, 0.06);
+  cursor: pointer;
 }

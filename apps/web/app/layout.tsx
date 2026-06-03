@@ -1,20 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { JetBrains_Mono, Sora } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// 디스플레이 = Sora, 데이터/모노 = JetBrains Mono (architecture.html 디자인 언어).
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "ht-estate",
-  description: "조건 검색이 안 되는 단지 정보를 출처와 함께 보여주는 단지 탐색 에이전트",
+  title: "ht-estate — 단지 탐색",
+  description: "조건 검색이 안 되는 단지 정보를 출처와 함께 보여주는 지도-퍼스트 단지 탐색 에이전트",
 };
 
 export default function RootLayout({
@@ -23,11 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="ko" className={`${sora.variable} ${jetbrainsMono.variable} h-full antialiased`}>
+      <body className="h-full overflow-hidden">{children}</body>
     </html>
   );
 }
