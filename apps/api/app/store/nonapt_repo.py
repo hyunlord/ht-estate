@@ -25,6 +25,7 @@ import httpx
 from app.match.jibun import from_molit, to_canonical
 from app.match.normalize import normalize_name
 from app.sources.molit_nonapt import NonAptKind, NonAptRentTrade, fetch_nonapt_rent
+from app.store.regions import sigungu_label
 from app.throttle import Throttle
 
 
@@ -37,8 +38,14 @@ def building_key(trade: NonAptRentTrade) -> str:
 
 
 def _geocodable_addr(trade: NonAptRentTrade) -> str:
-    """geocode용 지번 주소 — 시군구명(Offi)+법정동+지번. backfill_coords가 road_addr로 처리."""
-    parts = [trade.sgg_nm or "", trade.legal_dong, trade.jibun or ""]
+    """geocode용 지번 주소 — '시도 시군구 법정동 지번'. backfill_coords가 road_addr로 처리.
+
+    roadNm이 없어 '법정동 지번'만이면 동/구명 전국 중복 시 Kakao가 타도시로 오지오코딩한다
+    (부산 중구 영주동 → 경북 영주시). 시군구코드로 '시도 시군구'를 앞에 붙여 해소(RH는 sggNm이
+    없어 코드 룩업 필수). 미매핑 시 sggNm(Offi)→공백 순 fallback(기존 동작 보존).
+    """
+    label = sigungu_label(trade.sgg_cd) or trade.sgg_nm or ""
+    parts = [label, trade.legal_dong, trade.jibun or ""]
     return " ".join(p for p in parts if p).strip()
 
 

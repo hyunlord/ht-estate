@@ -15,6 +15,7 @@ from app.search.spec import HardFilterSpec
 from app.sources.molit_nonapt import fetch_nonapt_rent, parse_nonapt_rent
 from app.store.db import get_connection, init_db
 from app.store.nonapt_repo import (
+    _geocodable_addr,
     building_key,
     ingest_nonapt_rent_month,
     upsert_nonapt_building,
@@ -115,6 +116,32 @@ def test_building_derive_thin_and_idempotent() -> None:
     assert row["household_count"] is None and row["has_gym"] is None  # K-apt 전용 = NULL(없음)
     assert row["approval_date"] == "2010-01-01"  # 연식 근사
     assert conn.execute("SELECT COUNT(*) FROM complex").fetchone()[0] == 1
+
+
+def test_geocodable_addr_prepends_sido_sigungu_for_rh() -> None:
+    # 회귀(geocode 동명중복): RH는 sggNm이 없어도 sggCd→'시도 시군구'로 프리픽스해야 한다.
+    # (안 그러면 '역삼동 678-1'만 → 동명 중복 시 타도시 오지오코딩.)
+    t = parse_nonapt_rent(_xml("mhouseNm", _RH), "rowhouse").items[0]
+    assert t.sgg_nm is None  # RH는 sggNm 미제공
+    assert _geocodable_addr(t) == "서울특별시 강남구 역삼동 678-1"
+
+
+def test_geocodable_addr_uses_code_label_over_sggnm_for_offi() -> None:
+    # Offi는 sggNm('강남구')이 있어도, 시도까지 붙는 코드 라벨('서울특별시 강남구')을 우선.
+    t = parse_nonapt_rent(_xml("offiNm", _OFFI, "<sggNm>강남구</sggNm>"), "officetel").items[0]
+    assert _geocodable_addr(t) == "서울특별시 강남구 역삼동 999"
+
+
+def test_building_road_addr_has_sido_sigungu_prefix() -> None:
+    conn = _conn()
+    t = parse_nonapt_rent(_xml("mhouseNm", _RH), "rowhouse").items[0]
+    key = upsert_nonapt_building(conn, t)
+    conn.commit()
+    row = conn.execute(
+        "SELECT road_addr, legal_addr FROM complex WHERE complex_id=?", (key,)
+    ).fetchone()
+    assert row["road_addr"] == "서울특별시 강남구 역삼동 678-1"
+    assert row["legal_addr"] == "서울특별시 강남구 역삼동 678-1"
 
 
 def test_rent_linked_to_derived_building() -> None:
