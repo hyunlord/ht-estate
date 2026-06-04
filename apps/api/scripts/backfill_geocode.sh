@@ -47,9 +47,16 @@ while true; do
 
   remaining="$(printf '%s' "$out" | sed -n 's/.*remaining=\([0-9]*\).*/\1/p')"
   stopped="$(printf '%s' "$out" | sed -n 's/.*stopped=\([0-9]*\).*/\1/p')"
+  geocoded="$(printf '%s' "$out" | sed -n 's/.*geocoded=\([0-9]*\).*/\1/p')"
 
   if [ "$remaining" = "0" ]; then
     echo "$(date '+%F %T') [geocode-done] 잔여 0 — 완료" >> "$LOG"
+    break
+  fi
+  # 진척 0(geocoded=0) + 한도 아님(stopped=0) = 큐 앞단이 전부 Kakao 무결과(영구 미해결)
+  # → 결정론 도심우선 정렬이라 매 청크 같은 미해결분 재시도 = 무한루프. 중단(잔여=미해결).
+  if [ "$geocoded" = "0" ] && [ "$stopped" != "1" ]; then
+    echo "$(date '+%F %T') [geocode-done] 진척 0 — 잔여 ${remaining}건은 geocode 무결과(미해결), 중단" >> "$LOG"
     break
   fi
   if [ "$stopped" = "1" ]; then
