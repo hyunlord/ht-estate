@@ -28,15 +28,20 @@ const num = (v: string | undefined): number | undefined =>
 export function TopBar({
   onChange,
   onUnitChange,
+  onNlSearch,
+  nlLoading,
 }: {
   onChange: (spec: HardFilterSpec) => void;
   onUnitChange: (unit: AreaUnit) => void;
+  onNlSearch: (query: string) => void; // #3b NL 질의 제출(Enter)
+  nlLoading?: boolean;
 }) {
   const [dealType, setDealType] = useState<DealType>("sale");
   const [chips, setChips] = useState<Record<string, boolean>>({});
   const [ranges, setRanges] = useState<Ranges>({});
   const [open, setOpen] = useState<string | null>(null);
   const [unit, setUnit] = useState<AreaUnit>("pyeong");
+  const [query, setQuery] = useState(""); // #3b NL 검색 입력
 
   // 면적 슬라이더 bounds(현 단위). pyeong 0–60 / sqm 0–200.
   const areaMax = unit === "pyeong" ? 60 : 200;
@@ -251,12 +256,23 @@ export function TopBar({
         ))}
       </div>
 
-      <div className="searchbox">
+      <div className={`searchbox${nlLoading ? " busy" : ""}`}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="7" />
           <path d="m21 21-4.3-4.3" />
         </svg>
-        <input data-testid="nl-search" disabled placeholder="강남 역세권 신축 큰 단지, 강아지 되면 좋고 (#3b)" />
+        <input
+          data-testid="nl-search"
+          value={query}
+          placeholder="강남 역세권 신축 큰 단지, 강아지 되면 좋고"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const q = query.trim();
+              if (q) onNlSearch(q);
+            }
+          }}
+        />
       </div>
     </div>
   );

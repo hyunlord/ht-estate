@@ -19,6 +19,10 @@ export interface SoftSpec {
 // 거래유형 축(P2-2): 매매/전세/월세. 기본 sale → 기존 매매 동작.
 export type DealType = "sale" | "jeonse" | "monthly";
 
+// 주택유형 축(P5-1): 아파트/연립다세대/오피스텔/단독. 생략=전 유형.
+export type PropertyType = "apartment" | "rowhouse" | "officetel" | "detached";
+
+// backend HardFilterSpec(spec.py)와 동형. 모든 hard 필드 optional — 준 것만 AND.
 export interface HardFilterSpec {
   deal_type?: DealType; // 생략=sale
   approval_year_min?: number | null;
@@ -27,6 +31,15 @@ export interface HardFilterSpec {
   parking_underground?: boolean | null;
   household_count_min?: number | null;
   household_count_max?: number | null;
+  // P4-2a: 구조화 hard 필드(in/out). NL이 hard 분류 시 set. 칩 강/약/제외가 여기를 조정.
+  subway_walkable?: boolean | null; // True=역세권(5~10분이내) 요구
+  has_daycare?: boolean | null; // True=단지 내 어린이집 보유 요구
+  elevator_count_min?: number | null;
+  cctv_count_min?: number | null;
+  top_floor_min?: number | null;
+  heat_type?: string | null; // 난방방식 정확 일치
+  builder?: string | null; // 건설사 부분 일치
+  property_type?: PropertyType | null; // 주택유형(P5-1)
   net_area_min?: number | null;
   net_area_max?: number | null;
   price_min?: number | null; // 만원 (매매)
@@ -151,3 +164,21 @@ export interface MarkerCandidate {
 
 // 면적 단위 토글 — 평/㎡. 1평 = 3.3058㎡.
 export type AreaUnit = "pyeong" | "sqm";
+
+// NL 파싱 감지·반영 한 건(#3b) — 어떤 NL 구절을 어떤 조건으로 hard/soft 반영했나.
+// backend ParsedQuery.Detected와 동형(criterion_key·label·mode·phrase). spec과 항상 정합.
+export interface Detected {
+  criterion_key: string;
+  label: string;
+  mode: "hard" | "soft";
+  phrase?: string | null;
+}
+
+// NL 검색 응답(#3b) — backend NlSearchResponse와 동형.
+// spec=확정 filter_spec(투명성·칩 재료) · detected=감지칩 · unsupported=매핑 불가 · candidates=랭크.
+export interface NlSearchResponse {
+  spec: HardFilterSpec;
+  detected: Detected[];
+  unsupported: string[];
+  candidates: Candidate[];
+}

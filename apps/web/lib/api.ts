@@ -1,8 +1,21 @@
-// 검색 API 클라이언트 — POST {API_BASE}/complexes/{search,markers}.
+// 검색 API 클라이언트 — POST {API_BASE}/complexes/{search,markers,search/nl}.
 
-import type { Bbox, Candidate, HardFilterSpec, MarkerCandidate } from "./types";
+import type { Bbox, Candidate, HardFilterSpec, MarkerCandidate, NlSearchResponse } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+/** 자연어 질의 → 레지스트리-grounded spec + 감지칩 + 매핑불가 + 랭크 후보(#3b).
+ * 백엔드가 LLM 파싱·grounding을 수행(프론트는 무수정 호출). 파싱 불가는 422 → throw. */
+export async function searchNl(query: string, signal?: AbortSignal): Promise<NlSearchResponse> {
+  const res = await fetch(`${API_BASE}/complexes/search/nl`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`nl search failed: ${res.status}`);
+  return (await res.json()) as NlSearchResponse;
+}
 
 /** 랭크 리스트 + 상세용 — top-N 후보(criteria_eval 포함). */
 export async function searchComplexes(
