@@ -22,6 +22,7 @@ from app.store.db import get_connection, init_db
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import refill_kapt_fields  # noqa: E402
 from refill_kapt_fields import (  # noqa: E402
+    DEFAULT_INTER_BATCH_SLEEP,
     ShlockBatch,
     all_complex_ids,
     main,
@@ -29,6 +30,17 @@ from refill_kapt_fields import (  # noqa: E402
     refilled_ids,
     run_refill,
 )
+
+
+class _OkResult:
+    """shlock 결과 stub — `.returncode`만 노출(_CompletedLike 충족)."""
+
+    returncode = 0
+
+
+def _ok_runner(argv: list[str], **kwargs: object) -> _OkResult:
+    """shlock 대체 — 항상 획득(단일 프로세스 main 테스트용·실 바이너리 불필요로 hermetic)."""
+    return _OkResult()
 
 FixtureLoader = Callable[[str], str]
 
@@ -275,7 +287,10 @@ def test_main_keyless_runs_with_injected_fetch(
     monkeypatch.setattr(
         refill_kapt_fields, "fetch_complex_info", lambda cid, **kw: info
     )
-    rc = main(["--db", str(db), "--lock", str(tmp_path / ".ingest.lock"), "--interval", "0"])
+    rc = main(
+        ["--db", str(db), "--lock", str(tmp_path / ".ingest.lock"), "--interval", "0"],
+        runner=_ok_runner,  # 실 /usr/bin/shlock 불필요 — hermetic(샌드박스/CI 이식)
+    )
     assert rc == 0
 
     conn = get_connection(str(db))
@@ -341,3 +356,101 @@ def test_refill_stops_gracefully_on_public_data_error(load_fixture: FixtureLoade
     # 캡 전 2건만 처리·기록, 크래시 없이 중단(레저로 다음 run 재개)
     assert processed == 2
     assert refilled_ids(conn) == {"C0", "C1"}
+
+
+def test_refill_inter_batch_sleep_yields_lock_between_batches(load_fixture: FixtureLoader) -> None:
+    """양보 검증 — 배치 release 후·재acquire 전 양보 창에 경합 acquirer(가짜 cron)가 락 획득.
+
+    starve 회귀 방어: release 직후 즉시 재acquire(microsecond 창)면 단발 cron이 락을 못 잡는다.
+    이 테스트는 inter_batch_sleep이 *락을 놓은 뒤* 호출되어 그 사이 락이 비고(=경합자 획득 가능),
+    마지막 배치 뒤엔 양보하지 않음을 결정론으로 단언한다.
+    """
+    conn = get_connection(":memory:")
+    init_db(conn)
+    for i in range(4):
+        _seed_complex(conn, f"C{i}", lat=float(i), lng=float(i))
+    info = _full_info(load_fixture)
+
+    holder: dict[str, str | None] = {"who": None}  # shlock 파일과 동형: 한 번에 한 보유자
+
+    @contextmanager
+    def refill_lock():
+        assert holder["who"] is None  # release 후 재진입이라 항상 비어있어야
+        holder["who"] = "refill"
+        try:
+            yield True
+        finally:
+            holder["who"] = None
+
+    cron_wins: list[float] = []
+
+    def fake_cron_tick(seconds: float) -> None:
+        # 양보 창에 단발 cron이 끼어든다. refill이 *정말* 락을 놓고 sleep했다면 holder는 비어
+        # 획득 성공. 보유 중 sleep이면 holder=="refill"이라 이 단언이 깨져 회귀를 잡는다.
+        assert holder["who"] is None
+        holder["who"] = "cron"
+        cron_wins.append(seconds)
+        holder["who"] = None  # cron tick 종료 → release
+
+    run_refill(
+        conn,
+        fetch_info=lambda cid: info.model_copy(update={"kapt_code": cid}),
+        lock=lambda: refill_lock(),
+        throttle=None,
+        batch_size=2,
+        limit=0,
+        inter_batch_sleep=2.0,
+        sleep=fake_cron_tick,
+    )
+    # 4단지/batch=2 → 배치 2개 → 사이 양보 1회(마지막 뒤엔 없음) → cron 1회 획득
+    assert cron_wins == [2.0]
+
+
+def test_refill_inter_batch_sleep_zero_disables_yield(load_fixture: FixtureLoader) -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    for i in range(4):
+        _seed_complex(conn, f"C{i}", lat=float(i), lng=float(i))
+    info = _full_info(load_fixture)
+    sleeps: list[float] = []
+
+    run_refill(
+        conn,
+        fetch_info=lambda cid: info.model_copy(update={"kapt_code": cid}),
+        lock=_acquire_factory,
+        throttle=None,
+        batch_size=2,
+        limit=0,
+        inter_batch_sleep=0.0,
+        sleep=sleeps.append,
+    )
+    assert sleeps == []  # 0=무양보(known-idle 전용)
+
+
+def test_main_forwards_inter_batch_sleep_default_and_override(
+    tmp_path: Path, load_fixture: FixtureLoader, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI 기본값(활성-cron 안전 양수)이 run_refill로 전달되고, --inter-batch-sleep로 덮인다."""
+    db = tmp_path / "t.db"
+    conn = get_connection(str(db))
+    init_db(conn)
+    info = _full_info(load_fixture)
+    _seed_complex(conn, info.kapt_code, lat=37.5, lng=127.04)
+    conn.close()
+
+    captured: list[float] = []
+
+    def spy_run_refill(*_a, inter_batch_sleep: float, **_kw):  # type: ignore[no-untyped-def]
+        captured.append(inter_batch_sleep)
+        return 0
+
+    monkeypatch.setattr(refill_kapt_fields, "get_api_key", lambda: "dummy")
+    monkeypatch.setattr(refill_kapt_fields, "fetch_complex_info", lambda cid, **kw: info)
+    monkeypatch.setattr(refill_kapt_fields, "run_refill", spy_run_refill)
+
+    base = ["--db", str(db), "--lock", str(tmp_path / ".ingest.lock"), "--interval", "0"]
+    assert main(base, runner=_ok_runner) == 0
+    assert main([*base, "--inter-batch-sleep", "0"], runner=_ok_runner) == 0
+
+    assert captured == [DEFAULT_INTER_BATCH_SLEEP, 0.0]
+    assert DEFAULT_INTER_BATCH_SLEEP > 0  # 기본은 활성-cron 안전 양수

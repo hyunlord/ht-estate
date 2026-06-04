@@ -159,6 +159,8 @@ def run_refill(
     batch_size: int,
     limit: int,
     sido_prefixes: list[str] | None = None,
+    inter_batch_sleep: float = 0.0,
+    sleep: Callable[[float], None] = time.sleep,
     log: Callable[[str], None] | None = None,
 ) -> int:
     """미완료 단지를 배치 단위로 재적재. 처리(성공 upsert)한 단지 수 반환.
@@ -167,6 +169,12 @@ def run_refill(
     fetch_info가 None을 주면 그 단지는 미기록(다음 패스 재시도). lat/lng는 upsert가 안 건드림.
     `sido_prefixes`로 도심 우선 부분 백필. 일일캡 등 `PublicDataError`면 이번 run을 우아하게
     중단(resume) — 캡 초과로 거래 cron/키를 막지 않는다.
+
+    `inter_batch_sleep`>0이면 **배치 락을 놓은 뒤 다음 배치 acquire 전**에 그만큼 양보한다.
+    배치 release 직후 즉시 재acquire(microsecond 창)면 *단발성* cron tick(cron_ingest.sh는
+    tick당 shlock 1회 시도·재시도 없음)이 그 창을 거의 못 잡아 [skip]된다 → 실측 starve.
+    양보 창은 락 파일이 비는 *실제* 구간이라 그 사이 cron이 shlock으로 락을 만들어 획득한다
+    (0=무양보, known-idle 전용). sleep은 **락을 놓은 뒤에만** 호출 — 보유 중 sleep 금지.
     """
     done = refilled_ids(conn)
     pending = [cid for cid in all_complex_ids(conn, sido_prefixes) if cid not in done]
@@ -175,8 +183,9 @@ def run_refill(
     if log is not None:
         log(f"재적재 대상 {len(pending)}단지 (완료 {len(done)} skip, batch={batch_size})")
 
+    batches = list(_chunks(pending, batch_size))
     processed = 0
-    for batch in _chunks(pending, batch_size):
+    for batch_index, batch in enumerate(batches):
         with lock() as acquired:  # type: ignore[attr-defined]
             if not acquired:
                 if log is not None:
@@ -199,6 +208,9 @@ def run_refill(
                 upsert_complex(conn, info)  # K-apt 컬럼만 갱신 — lat/lng·geo_* 불변
                 mark_refilled(conn, complex_id, 1)
                 processed += 1
+        # ── 락 release 완료 지점 ── 마지막 배치가 아니면 cron에 양보 창을 연다.
+        if inter_batch_sleep > 0 and batch_index < len(batches) - 1:
+            sleep(inter_batch_sleep)
         if log is not None and processed and processed % 200 == 0:
             log(f"  …재적재 {processed}단지 진행")
     if log is not None:
@@ -206,7 +218,19 @@ def run_refill(
     return processed
 
 
-def main(argv: list[str] | None = None) -> int:
+# 활성-cron 안전 기본 양보(초). cron_ingest.sh는 tick당 shlock 1회만 시도(재시도 없음)이라
+# "재시도 간격"이라는 상수가 없다 → 기준은 락 release/재acquire 지연(sub-second)과 배치 보유
+# 시간(batch_size×interval≈30×0.6=18s). 2초면 microsecond 창을 *수 초의 실제* 빈-락 창으로 키워
+# 단발 cron이 그 사이 shlock으로 락을 만들 수 있고, 배치당 비용은 ~10%(시골/P5-1b 헤비 적재 안전).
+# 0=무양보(이미 끝난 도심 백필처럼 known-idle 전용).
+DEFAULT_INTER_BATCH_SLEEP = 2.0
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    runner: Callable[..., _CompletedLike] = subprocess.run,
+) -> int:
     parser = argparse.ArgumentParser(
         prog="refill_kapt_fields", description="K-apt 풀필드 재적재(P0 · resume·멱등·cron-safe)"
     )
@@ -223,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
         "--max-spin", type=float, default=60.0, help="배치 락 spin 최대 대기(초·초과시 양보)"
     )
     parser.add_argument(
+        "--inter-batch-sleep",
+        type=float,
+        default=DEFAULT_INTER_BATCH_SLEEP,
+        help="배치 release 후 다음 acquire 전 cron 양보(초). 0=무양보(known-idle 전용)",
+    )
+    parser.add_argument(
         "--sido",
         default="",
         help="bjd_code 앞2(시도코드) 콤마목록 — 도심 우선 부분 백필(예: 11,26,27). 빈값=전 단지",
@@ -235,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
     lock_path = args.lock or str(Path(args.db).resolve().parent / ".ingest.lock")
     api_key = get_api_key()
     throttle = Throttle(args.interval) if args.interval > 0 else None
-    lock = ShlockBatch(lock_path, max_spin=args.max_spin)
+    lock = ShlockBatch(lock_path, runner=runner, max_spin=args.max_spin)
 
     run_refill(
         conn,
@@ -245,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         limit=args.limit,
         sido_prefixes=sido_prefixes,
+        inter_batch_sleep=args.inter_batch_sleep,
         log=print,
     )
     return 0
