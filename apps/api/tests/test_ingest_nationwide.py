@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.ingest import IngestSummary
+from app.ingest import API_KEY_STAGES, IngestSummary
 from app.sources.kapt import ComplexRef
 from app.store.db import get_connection, init_db
 
@@ -127,6 +127,32 @@ def test_resume_works_for_transaction_stage_without_complex(
     assert rc == 0  # 에러 없음(가드 제거)
     assert captured["regions"] == ["41135"]  # 미적재 → pending → run_batch에 전달
     assert captured["resume"] is True  # run_batch로 resume 전달
+
+
+@pytest.mark.parametrize("stage", sorted(API_KEY_STAGES))
+def test_nationwide_main_supplies_api_key_for_every_key_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    """클래스 갭 차단(P5-1b-run 실측 지점): 전국 러너 main이 키-필요 *모든* stage에 키 공급.
+
+    #48 버그가 실제로 터진 곳 — `--stages nonapt_rent`로 main을 돌리면 api_key=None이 run_batch→
+    run_ingest로 흘러 assert 크래시였다. API_KEY_STAGES 전수로 run_batch에 전달된 키를 캡처·단언.
+    """
+    codes_csv = tmp_path / "codes.csv"
+    save_codes(codes_csv, [("11680", "서울", "강남구")])
+    monkeypatch.setattr(ingest_nationwide, "get_api_key", lambda: "SENTINEL")
+    monkeypatch.setattr(ingest_nationwide, "get_kakao_key", lambda: "K")
+    captured: dict[str, object] = {}
+
+    def fake_batch(conn, regions, **kw):  # type: ignore[no-untyped-def]
+        captured["api_key"] = kw.get("api_key")
+        return []
+
+    monkeypatch.setattr(ingest_nationwide, "run_batch", fake_batch)
+    rc = main(["--stages", stage, "--regions", "11680", "--months", "202504",
+               "--codes-file", str(codes_csv), "--db", ":memory:"])
+    assert rc == 0
+    assert captured["api_key"] == "SENTINEL"  # nonapt_rent 포함 — None이면 #48 회귀
 
 
 def test_pending_regions_filters_by_completed_months(tmp_path: Path) -> None:

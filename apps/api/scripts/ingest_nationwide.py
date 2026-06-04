@@ -23,7 +23,7 @@ import _bootstrap  # noqa: F401  (side-effect: apps/api를 sys.path에 — PYTHO
 import httpx
 from ingest_seoul import RegionResult, coverage_table, recent_months, run_batch
 
-from app.ingest import DEFAULT_STAGES, STAGE_ORDER, parse_months
+from app.ingest import API_KEY_STAGES, DEFAULT_STAGES, STAGE_ORDER, parse_months
 from app.settings import get_api_key, get_kakao_key
 from app.sources.kapt import list_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         log("적재할 시군구 없음(전부 완료 또는 필터 0).")
         return 0
 
-    api_key = get_api_key() if ({"complex", "transaction", "rent"} & set(stages)) else None
+    api_key = get_api_key() if (API_KEY_STAGES & set(stages)) else None
     kakao_key = get_kakao_key() if "geocode" in stages else None
     results = run_batch(
         conn, regions, months=months, stages=stages,

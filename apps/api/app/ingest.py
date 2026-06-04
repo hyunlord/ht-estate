@@ -34,6 +34,10 @@ DEFAULT_STAGES = ["complex", "transaction", "join", "geocode"]
 # 각 단계의 선행(같은 run에 함께 없으면 경고 — 이전 run에서 적재됐을 수 있어 막진 않음).
 _PREREQS = {"join": ("complex", "transaction"), "geocode": ("complex",), "rent": ("complex",)}
 # nonapt_rent는 거래에서 건물을 도출(complex 행 생성) → complex 단계 prereq 없음(self-deriving).
+# data.go.kr(MOLIT·K-apt) 키가 필요한 stage — main()들이 이 중 하나라도 선택되면 키를 공급한다.
+# ⚠ 키 필요한 새 stage 추가 시 **반드시 등록**(누락 시 run_ingest의 assert + 키게이팅 테스트 실패).
+# 단일 출처: app.ingest.main·scripts/ingest_nationwide.main이 함께 import해 게이팅 드리프트 차단.
+API_KEY_STAGES = frozenset({"complex", "transaction", "rent", "nonapt_rent"})
 GEO_SOURCE = "Kakao Local 주소검색"
 
 
@@ -262,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = get_connection(args.db)
     init_db(conn)
-    api_key = get_api_key() if ({"complex", "transaction", "rent"} & set(stages)) else None
+    api_key = get_api_key() if (API_KEY_STAGES & set(stages)) else None
     kakao_key = get_kakao_key() if "geocode" in stages else None
 
     run_ingest(

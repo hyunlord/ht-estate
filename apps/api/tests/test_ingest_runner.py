@@ -7,7 +7,14 @@ import sqlite3
 import pytest
 
 import app.ingest as ingest_mod
-from app.ingest import DEFAULT_STAGES, STAGE_ORDER, main, parse_months, run_ingest
+from app.ingest import (
+    API_KEY_STAGES,
+    DEFAULT_STAGES,
+    STAGE_ORDER,
+    main,
+    parse_months,
+    run_ingest,
+)
 from app.store.db import get_connection
 
 
@@ -159,6 +166,34 @@ def test_main_join_only_is_keyless(stage_calls: list[str]) -> None:
     rc = main(["--region", "11680", "--stages", "join", "--db", ":memory:"])
     assert rc == 0
     assert stage_calls == ["join"]
+
+
+def test_nonapt_rent_in_api_key_stages() -> None:
+    # 회귀 마커(P5-1b-run): #48이 nonapt_rent를 키게이팅에서 누락 → api_key=None → assert 크래시.
+    assert "nonapt_rent" in API_KEY_STAGES
+
+
+@pytest.mark.parametrize("stage", sorted(API_KEY_STAGES))
+def test_main_supplies_api_key_for_every_key_stage(
+    stage: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """클래스 갭 차단: main은 data.go.kr 키 필요한 *모든* stage(nonapt_rent 포함)에 키 공급.
+
+    #48은 run_ingest를 키와 함께 직접 테스트했을 뿐 main()의 stage→키 게이팅을 안 봐서 누락이 샜다.
+    여기서 API_KEY_STAGES 전수를 돌려, 어느 키-필요 stage든 main이 None 아닌 키를 넘기는지 단언한다.
+    """
+    monkeypatch.setattr(ingest_mod, "get_api_key", lambda: "SENTINEL")
+    monkeypatch.setattr(ingest_mod, "get_kakao_key", lambda: "K")
+    captured: dict[str, object] = {}
+
+    def fake_run_ingest(conn, **kw):  # type: ignore[no-untyped-def]
+        captured["api_key"] = kw.get("api_key")
+        return ingest_mod.IngestSummary()
+
+    monkeypatch.setattr(ingest_mod, "run_ingest", fake_run_ingest)
+    rc = main(["--region", "11680", "--stages", stage, "--db", ":memory:", "--months", "202504"])
+    assert rc == 0
+    assert captured["api_key"] == "SENTINEL"  # None이면 run_ingest assert로 런타임 크래시(회귀)
 
 
 def test_main_rejects_unknown_stage() -> None:
