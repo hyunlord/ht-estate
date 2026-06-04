@@ -1,13 +1,19 @@
-"""SPIKE — 평면도 PoC (LH 15037046 → VLM feature → K-apt 조인). HARNESS R2: 학습용·throwaway.
+"""평면도 PoC + 실-LH producer (LH 15037046 → VLM feature → K-apt 조인). P3-2-live.
 
-세 미지수를 작은 표본으로 답하기 위한 *하네스*. 라이브 의존(데이터 키·네트워크·claude -p 비전)이라
-키리스 샌드박스에선 parse+join 로직만 self-test로 검증, vision+download는 사용자(ops)가 실행.
+세 미지수를 작은 표본으로 답하는 *하네스*이자, `--out`으로 실 LH 평면도를 **검증 가능하게**
+채우는 경량 producer. 라이브 의존(데이터 키·네트워크·claude -p 비전)이라 키리스 샌드박스에선
+parse+join+producer 로직만 self-test/유닛으로 검증, vision+download는 사용자(ops)가 실행.
 
   uv run python scripts/spikes/floorplan_poc.py --selftest    # 키리스 parse+join 검증
   DATA_GO_KR_API_KEY=... uv run python scripts/spikes/floorplan_poc.py --run --limit 5  # 라이브
+  ... --run --limit 10 --out docs/reports/floorplan-real/   # 라이브 + 이미지·seed 산출(producer)
 
 라이브 --run: ① LH 평면도 인벤토리 N개 fetch → ② base64 이미지 디코드 → ③ claude -p 비전으로
-feature 추출(객관만) → ④ K-apt complex 조인 시도 → ⑤ 표본 리포트(이미지↔추출 대조·조인 커버리지).
+feature 추출(객관만) → ④ K-apt complex 조인 시도 → ⑤ 표본 리포트(조인 커버리지·LH-접두 효과).
+`--out` 추가 시: 각 표본 디코드 이미지를 `<dir>/lh_<id>.png`로 저장(Web 육안 대조) + 매칭된
+표본을 **floorplan seed JSONL**(`<dir>/floorplan_seed.jsonl`)로 기록 — 검증은 auto_enrich의
+`parse_floorplan_output`(§11 feature-only·null·환각 거부)을 그대로 태워 `load_floorplan_seed`
+호환을 보장. 실 적재(auto_enrich --attribute floorplan)는 Web 검증 후 사용자 ops.
 """
 
 from __future__ import annotations
@@ -32,11 +38,15 @@ from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 FLOORPLAN_PROMPT = PROMPTS_DIR / "enrich_floorplan.md"
 
-# data.go.kr 15037046 "LH 주택 평면도 현황" — JSON 이미지 레코드 필드(주문서 명세).
-# 필드명은 데이터셋마다 흔들려 방어적으로 후보 키를 훑는다(라이브 확정 전 가정).
-_IMG_DATA_KEYS = ("data", "image", "imageData", "img", "base64")
-_NAME_KEYS = ("complexName", "단지명", "aptName", "bldgName", "name", "hsmpNm")
-_ADDR_KEYS = ("address", "주소", "addr", "legalAddr", "rnAddr", "lotnoAddr")
+# data.go.kr 15037046 "LH 주택 평면도 현황". ⚠ 라이브 확정(P3-2-live-run, docs/reports/
+# floorplan-real/SCHEMA-FINDING.md): 이 데이터셋은 **오픈API가 아니라 1회성(2021-08-26) 파일
+# 다운로드**(로그인 게이트·serviceKey 비인가)다. JSON 평면도 레코드 스키마는 정확히
+# {image, mime, data, width, height} — **단지명/주소 없음**(data=base64 이미지). 단지명·주소·
+# 공급면적은 **별도 CSV(평면도 파일별 현황)** 에 있고 JSON과는 `image`(파일명)로 조인한다.
+# → 아래 _NAME/_ADDR 키는 JSON 레코드엔 매칭되지 않는다(CSV-조인 필요). _http 라이브 fetch는 불가.
+_IMG_DATA_KEYS = ("data", "image", "imageData", "img", "base64")  # 확정: data(=base64)
+_NAME_KEYS = ("complexName", "단지명", "aptName", "bldgName", "name", "hsmpNm")  # JSON엔 없음→CSV
+_ADDR_KEYS = ("address", "주소", "addr", "legalAddr", "rnAddr", "lotnoAddr")  # JSON엔 없음→CSV
 
 
 def _first(d: dict, keys: tuple[str, ...]) -> str | None:
@@ -45,6 +55,92 @@ def _first(d: dict, keys: tuple[str, ...]) -> str | None:
         if isinstance(v, str) and v.strip():
             return v.strip()
     return None
+
+
+# ───────────────────────── producer (--out: 이미지·seed 산출, 키리스 검증 가능) ──────────
+LH_DATASET = "15037046"  # data.go.kr LH 평면도 데이터셋 — source_url urn 폴백에 사용.
+LH_SOURCE_TYPE = "official"  # LH 정부 공개데이터 — 평면도 이미지 자체가 공식 출처(provenance).
+LH_CONFIDENCE = 0.6  # 공식 이미지 + VLM 판독 신뢰(주관 점수 아님 §11 — 도메인 검증은 파서가).
+# 레코드 식별자/출처 URL 후보 키(데이터셋 흔들림 방어 — _IMG/_NAME/_ADDR와 동형).
+_ID_KEYS = ("id", "seq", "no", "mgmNo", "hsmpSn", "bldgSn")
+_URL_KEYS = ("imageUrl", "url", "detailUrl", "fileUrl", "downloadUrl", "imgUrl")
+
+
+def record_id(rec: dict, idx: int) -> str:
+    """LH 레코드 안정 식별자(이미지 파일명·urn용). 후보 id 키 없으면 1-based 순번 폴백."""
+    return _first(rec, _ID_KEYS) or str(idx)
+
+
+def record_source_url(rec: dict, rid: str) -> str:
+    """레코드 출처 URL. http(s)/urn URL 있으면 그대로, 없으면 LH 데이터셋 urn 폴백.
+
+    parse_floorplan_output은 http/urn만 통과시키므로 urn 폴백이 provenance 누락을 막는다.
+    """
+    url = _first(rec, _URL_KEYS)
+    if url and (url.startswith("http") or url.startswith("urn:")):
+        return url
+    return f"urn:lh:{LH_DATASET}:{rid}"
+
+
+def save_image(out_dir: Path, rid: str, image_bytes: bytes) -> Path:
+    """디코드 이미지를 `<out_dir>/lh_<rid>.png`로 저장(Web 육안 대조용). 저장 경로 반환.
+
+    파일명 규약은 `.png` 고정(주문서 DoD·Web 검증 경로 안정) — 원본 mime와 무관히 바이트 그대로.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"lh_{rid}.png"
+    path.write_bytes(image_bytes)
+    return path
+
+
+def to_seed_record(
+    complex_id: str, name: str, source_url: str, features: dict | None
+) -> dict[str, object]:
+    """매칭된 표본 → seed 후보 레코드(parse_floorplan_output 입력 = load_floorplan_seed 형식).
+
+    feature 검증·null-tolerance·도메인 강제·환각 거부는 파서에 위임(여기선 형식만 맞춘다).
+    """
+    feats = features or {}
+    return {
+        "complex_id": complex_id,
+        "name": name,
+        "bay": feats.get("bay"),
+        "orientation": feats.get("orientation"),
+        "structure": feats.get("structure"),
+        "evidence": feats.get("evidence", ""),
+        "confidence": LH_CONFIDENCE,
+        "source_type": LH_SOURCE_TYPE,
+        "source_url": source_url,
+    }
+
+
+def is_lh_prefixed(name: str) -> bool:
+    """단지명이 선행 'LH' 운영사 접두를 가지는지 — normalize_name(^lh 제거) 수혜 그룹 식별."""
+    return name.strip().lower().startswith("lh")
+
+
+def join_coverage(samples: list[dict]) -> dict[str, object]:
+    """표본 [{lh_prefixed, matched}] → 커버리지 통계: matched/total·율 + LH-접두 정규화 효과."""
+    total = len(samples)
+    matched = sum(1 for s in samples if s["matched"])
+    lh = [s for s in samples if s["lh_prefixed"]]
+    lh_matched = sum(1 for s in lh if s["matched"])
+    return {
+        "total": total,
+        "matched": matched,
+        "rate": (matched / total) if total else 0.0,
+        "lh_prefixed": len(lh),
+        "lh_prefixed_matched": lh_matched,
+    }
+
+
+def format_coverage(cov: dict[str, object]) -> str:
+    """커버리지 통계 → 사람용 요약(조인율 + LH-접두 정규화 수혜 그룹 매칭)."""
+    return (
+        f"조인 커버리지: {cov['matched']}/{cov['total']} ({float(cov['rate']):.0%})\n"
+        f"LH-접두 표본 {cov['lh_prefixed']}건 중 {cov['lh_prefixed_matched']}건 매칭"
+        f" — 선행 'LH' 정규화(normalize_name ^lh 제거) 수혜 그룹"
+    )
 
 
 # ───────────────────────── A. parse (키리스 검증 가능) ─────────────────────────
@@ -131,10 +227,18 @@ def match_to_complex(
 
 
 def fetch_inventory(api_key: str, limit: int) -> list[dict]:
-    """15037046 JSON 인벤토리 N개 fetch(라이브). 스키마 라이브 확정 전 — _http 재사용·방어 파싱."""
+    """⚠ 라이브 확정 결과 막힘(P3-2-live-run): 15037046은 오픈API가 아니라 **로그인 게이트 파일
+    다운로드**다 — 아래 추정 odcloud 엔드포인트는 `{"code":-3,"등록되지 않은 서비스"}`(400)를 반환.
+    fetch_text는 영구 4xx를 raise하므로 이 함수는 `HTTPStatusError`를 던진다(main이 잡아 진단 출력).
+
+    실 적재는 (a) CSV+JSON 두 파일을 포털 로그인으로 받아 `image`(파일명)로 CSV↔JSON 조인하는
+    파일기반 producer 재설계, 또는 (b) 설계 §3 원칙대로 후보-온디맨드 `auto_enrich --attribute
+    floorplan`(claude -p WebSearch, 이미 구현·키리스) 경로 사용이 필요. docs/reports/floorplan-real/
+    SCHEMA-FINDING.md 참고. 추정 endpoint·방어 파싱은 진단 재현용으로 남겨 둔다.
+    """
     from app.sources._http import fetch_text  # 지연 import — 키리스 selftest 경로 비의존
 
-    BASE = "https://api.odcloud.kr/api/15037046/v1/uddi"  # 라이브에서 정확한 엔드포인트 확정 필요
+    BASE = "https://api.odcloud.kr/api/15037046/v1/uddi"  # 확정: 등록 안 된 서비스(파일 데이터셋)
     body = fetch_text(BASE, {"serviceKey": api_key, "page": 1, "perPage": limit})
     payload = json.loads(body)
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -191,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--selftest", action="store_true", help="키리스 parse+join 로직 검증")
     p.add_argument("--run", action="store_true", help="라이브 PoC(키+네트워크+claude -p 필요)")
     p.add_argument("--limit", type=int, default=5, help="표본 평면도 수")
+    p.add_argument("--out", default=None, help="producer: 이미지·seed 산출 디렉터리")
     p.add_argument("--db", default=str(DEFAULT_DB_PATH))
     args = p.parse_args(argv)
 
@@ -206,24 +311,61 @@ def main(argv: list[str] | None = None) -> int:
     except MissingApiKeyError as exc:
         print(f"{exc} — 라이브 --run 불가(키리스는 --selftest).")
         return 2
+    out_dir = Path(args.out) if args.out else None
+    if out_dir is not None:
+        # producer: 검증 파서·seed appender 재사용(scripts/ 평면 모듈 — selftest 경로엔 미로드).
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from auto_enrich import append_seed, parse_floorplan_output
+
     conn = get_connection(args.db)
     init_db(conn)
-    records = fetch_inventory(key, args.limit)
+    try:
+        records = fetch_inventory(key, args.limit)
+    except Exception as exc:  # noqa: BLE001 — 확정-사망 엔드포인트는 traceback 대신 진단 출력
+        import re
+
+        # 예외 메시지에 박힌 serviceKey 노출 차단(출력 리다이렉트 시 키 유출 방지).
+        safe = re.sub(r"serviceKey=[^&\s'\"]+", "serviceKey=<REDACTED>", str(exc))
+        print(
+            f"LH 인벤토리 fetch 실패: {safe}\n"
+            "→ 15037046은 오픈API가 아니라 **로그인 게이트 1회성 파일 데이터셋**입니다"
+            "(serviceKey 비인가). 라이브 --run 경로 막힘 — "
+            "docs/reports/floorplan-real/SCHEMA-FINDING.md 참고."
+        )
+        return 3
     print(f"=== LH 평면도 표본 {len(records)}건 ===")
-    matched = 0
+    samples: list[dict] = []
+    raw_seed: list[dict[str, object]] = []
     for i, rec in enumerate(records, 1):
         parsed = parse_floorplan_record(rec)
         if parsed is None:
             print(f"[{i}] parse 실패(이미지/디코드)")
             continue
+        rid = record_id(rec, i)
+        saved = save_image(out_dir, rid, parsed["image_bytes"]) if out_dir is not None else None
         feats = extract_features(parsed["image_bytes"], parsed["mime"])
         join = match_to_complex(conn, parsed["name"], parsed["address"])
-        if join:
-            matched += 1
+        samples.append({"lh_prefixed": is_lh_prefixed(parsed["name"]), "matched": join is not None})
+        if join and out_dir is not None:
+            raw_seed.append(
+                to_seed_record(join[0], parsed["name"], record_source_url(rec, rid), feats)
+            )
         print(f"[{i}] {parsed['name']} [{parsed['address']}]")
         print(f"     VLM: {feats}")
         print(f"     조인: {join}")
-    print(f"\n조인 커버리지: {matched}/{len(records)}  (육안 대조로 feature 타당성 확인)")
+        if saved is not None:
+            print(f"     이미지: {saved}")
+
+    if out_dir is not None:
+        # 매칭 표본만 seed 후보 → 파서로 검증(§11 규율·load_floorplan_seed 호환) → append.
+        valid_ids = {str(r["complex_id"]) for r in raw_seed}
+        text = "\n".join(json.dumps(r, ensure_ascii=False) for r in raw_seed)
+        validated = parse_floorplan_output(text, valid_ids)
+        seed_path = out_dir / "floorplan_seed.jsonl"
+        written = append_seed(seed_path, validated)
+        print(f"\nseed 기록: {written} facts → {seed_path}")
+
+    print("\n" + format_coverage(join_coverage(samples)))
     return 0
 
 
