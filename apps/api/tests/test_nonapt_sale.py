@@ -108,6 +108,28 @@ def test_cancelled_deal_excluded() -> None:
     assert [t.name for t in page.items] == ["정상빌라"]  # 취소건 제외
 
 
+def test_all_cancelled_page_not_transient_raise() -> None:
+    # 회귀(실측 46860 보성군 202602): 한 월 거래가 전부 취소 → 필터 후 0건·totalCount>0.
+    # 원시 item이 있으니 transient 아님 → raise 금지, 빈 페이지 반환(그 region 적재 차단 X).
+    rows = [{"name": "취소빌라", "dong": "벌교읍", "jibun": "1-1", "area": "40",
+             "amount": "50000", "cancel": "O"}]
+    page = parse_nonapt_sale(_xml_sale("mhouseNm", rows), "rowhouse")  # totalCount=1, 비취소 0
+    assert page.items == [] and page.total_count == 1  # raise 없이 빈 페이지
+
+
+def test_genuine_empty_burst_still_raises() -> None:
+    # transient 가드 보존: 원시 item 0인데 totalCount>0(burst 빈응답)은 여전히 raise.
+    from app.sources.errors import PublicDataError
+    xml = (
+        "<response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header>"
+        "<body><items></items><totalCount>5</totalCount>"
+        "<numOfRows>100</numOfRows><pageNo>1</pageNo></body></response>"
+    )
+    import pytest
+    with pytest.raises(PublicDataError):
+        parse_nonapt_sale(xml, "rowhouse")
+
+
 def test_fetch_sale_paginates_via_mock() -> None:
     trades = fetch_nonapt_sale("11680", "202504", kind="rowhouse", api_key="k",
                                client=_mock(_xml_sale("mhouseNm", _RH_SALE)))

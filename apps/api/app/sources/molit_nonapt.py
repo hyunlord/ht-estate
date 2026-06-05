@@ -210,18 +210,27 @@ def _parse_sale_item(item: Element, kind: NonAptKind) -> NonAptSaleTrade:
 
 
 def parse_nonapt_sale(xml_text: str, kind: NonAptKind) -> NonAptSalePage:
-    """비-아파트 매매 XML → 페이지. 에러코드 raise, 취소(cdealType='O')·malformed item은 제외."""
+    """비-아파트 매매 XML → 페이지. 에러코드 raise, 취소(cdealType='O')·malformed item은 제외.
+
+    ⚠ transient 빈응답 가드(`resolve_total_count`)는 **원시 `<item>` 존재 여부**로 판정한다(취소
+    필터 *전*). 거래 적은 군지역에서 한 월의 거래가 전부 취소면 필터 후 0건이라, 필터 후 카운트로
+    가드하면 totalCount>0·items=0 → transient 오판 raise → 그 region이 영원히 미적재된다(실측:
+    46860 보성군 202602 RH totalCount=1·전부취소). 원시 item이 하나라도 있으면 API가 응답한
+    것이므로 비-transient → 취소 걸러 빈 페이지 반환. 진짜 burst 빈응답(원시 item 0)만 raise.
+    """
     root = fromstring(xml_text)
     ensure_success(root)
+    raw_items = root.findall(".//item")
     items: list[NonAptSaleTrade] = []
-    for el in root.findall(".//item"):
+    for el in raw_items:
         if _is_cancelled(el):
             continue  # 취소거래 제외(적재 금지)
         try:
             items.append(_parse_sale_item(el, kind))
         except (ValueError, TypeError):
             continue
-    total_count = resolve_total_count(root.findtext(".//totalCount"), len(items))
+    # 가드는 원시 item 수로 — 취소/malformed로 0이 돼도 transient 아님(API가 데이터를 줌).
+    total_count = resolve_total_count(root.findtext(".//totalCount"), len(raw_items))
     return NonAptSalePage(items=items, total_count=total_count)
 
 
