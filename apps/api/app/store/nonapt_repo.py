@@ -24,12 +24,19 @@ import httpx
 
 from app.match.jibun import from_molit, to_canonical
 from app.match.normalize import normalize_name
-from app.sources.molit_nonapt import NonAptKind, NonAptRentTrade, fetch_nonapt_rent
+from app.sources.molit_nonapt import (
+    NonAptKind,
+    NonAptRentTrade,
+    NonAptSaleTrade,
+    NonAptTradeBase,
+    fetch_nonapt_rent,
+    fetch_nonapt_sale,
+)
 from app.store.regions import sigungu_label
 from app.throttle import Throttle
 
 
-def building_key(trade: NonAptRentTrade) -> str:
+def building_key(trade: NonAptTradeBase) -> str:
     """거래 → 결정론 PNU식 건물 키(complex_id). 같은 건물의 여러 거래는 같은 키(멱등)."""
     jibun_c = to_canonical(from_molit(None, None, trade.jibun)) or "?"
     name_n = normalize_name(trade.name) or "?"
@@ -37,7 +44,7 @@ def building_key(trade: NonAptRentTrade) -> str:
     return ":".join(parts)
 
 
-def _geocodable_addr(trade: NonAptRentTrade) -> str:
+def _geocodable_addr(trade: NonAptTradeBase) -> str:
     """geocode용 지번 주소 — '시도 시군구 법정동 지번'. backfill_coords가 road_addr로 처리.
 
     roadNm이 없어 '법정동 지번'만이면 동/구명 전국 중복 시 Kakao가 타도시로 오지오코딩한다
@@ -56,7 +63,7 @@ _BUILDING_COLS = (
 
 
 def upsert_nonapt_building(
-    conn: sqlite3.Connection, trade: NonAptRentTrade, *, updated_at: datetime | None = None
+    conn: sqlite3.Connection, trade: NonAptTradeBase, *, updated_at: datetime | None = None
 ) -> str:
     """도출 건물 → complex 행 upsert(멱등). building_key 반환. lat/lng/geo는 보존(미갱신)."""
     when = (updated_at or datetime.now(UTC)).isoformat()
@@ -175,6 +182,104 @@ def ingest_nonapt_rent_months(
         if throttle is not None:
             throttle.wait()
         total += ingest_nonapt_rent_month(
+            conn, lawd_cd, deal_ym, kind=kind, api_key=api_key, client=client, updated_at=updated_at
+        )
+    return total
+
+
+# ─────────────────────────── 매매(P5-1b-3) ───────────────────────────
+# 전월세와 같은 building_key로 같은 건물에 합류(좌표 재사용). 매매축은 transaction 테이블에
+# 적재 — complex_id=도출 건물(확정·match_confidence 1.0). 아파트 매매와 동일 테이블/스키마.
+
+
+def make_nonapt_sale_txn_id(trade: NonAptSaleTrade) -> str:
+    """비-아파트 매매 결정론 해시(건물키 + 면적·층·일자·금액). 멱등 키."""
+    parts = [
+        building_key(trade),
+        f"{trade.net_area:.2f}",
+        str(trade.floor),
+        trade.deal_date.isoformat(),
+        str(trade.price),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+# transaction 컬럼 — nonapt는 bjd_code/road_addr 없음(NULL). complex_id·match_confidence는
+# 도출이 확정이라 INSERT/UPDATE 모두 채운다(아파트 매매는 T0-4 조인이라 NULL 두는 것과 다름).
+_SALE_COLS = (
+    "txn_id", "complex_id", "match_confidence", "apt_name_raw", "legal_dong",
+    "jibun", "build_year", "net_area", "price", "floor", "deal_date", "updated_at",
+)
+
+
+def upsert_nonapt_sale(
+    conn: sqlite3.Connection, trade: NonAptSaleTrade, *, updated_at: datetime | None = None
+) -> str:
+    """비-아파트 매매 → transaction upsert(멱등). complex_id=도출 건물(확정, 퍼지조인 불필요)."""
+    when = (updated_at or datetime.now(UTC)).isoformat()
+    txn_id = make_nonapt_sale_txn_id(trade)
+    values = {
+        "txn_id": txn_id,
+        "complex_id": building_key(trade),  # 같은 레코드 도출 → 확정 연결
+        "match_confidence": 1.0,
+        "apt_name_raw": trade.name,
+        "legal_dong": trade.legal_dong,
+        "jibun": to_canonical(from_molit(None, None, trade.jibun)),
+        "build_year": trade.build_year,
+        "net_area": trade.net_area,
+        "price": trade.price,
+        "floor": trade.floor,
+        "deal_date": trade.deal_date.isoformat(),
+        "updated_at": when,
+    }
+    cols = ", ".join(_SALE_COLS)
+    ph = ", ".join(f":{c}" for c in _SALE_COLS)
+    upd = ", ".join(f"{c} = excluded.{c}" for c in _SALE_COLS if c != "txn_id")
+    conn.execute(
+        f'INSERT INTO "transaction" ({cols}) VALUES ({ph}) '
+        f"ON CONFLICT(txn_id) DO UPDATE SET {upd}",
+        values,
+    )
+    return txn_id
+
+
+def ingest_nonapt_sale_month(
+    conn: sqlite3.Connection,
+    lawd_cd: str,
+    deal_ym: str,
+    *,
+    kind: NonAptKind,
+    api_key: str,
+    client: httpx.Client | None = None,
+    updated_at: datetime | None = None,
+) -> int:
+    """한 지역×월×kind 비-아파트 매매 적재 — 건물 도출 + transaction 연결. 행수(멱등·취소 제외)."""
+    when = updated_at or datetime.now(UTC)
+    trades = fetch_nonapt_sale(lawd_cd, deal_ym, kind=kind, api_key=api_key, client=client)
+    for trade in trades:
+        upsert_nonapt_building(conn, trade, updated_at=when)
+        upsert_nonapt_sale(conn, trade, updated_at=when)
+    conn.commit()
+    return len(trades)
+
+
+def ingest_nonapt_sale_months(
+    conn: sqlite3.Connection,
+    lawd_cd: str,
+    deal_yms: Iterable[str],
+    *,
+    kind: NonAptKind,
+    api_key: str,
+    throttle: Throttle | None = None,
+    client: httpx.Client | None = None,
+    updated_at: datetime | None = None,
+) -> int:
+    """여러 월을 throttle 끼워 순차 적재. 총 행수 반환(전월세 동형)."""
+    total = 0
+    for deal_ym in deal_yms:
+        if throttle is not None:
+            throttle.wait()
+        total += ingest_nonapt_sale_month(
             conn, lawd_cd, deal_ym, kind=kind, api_key=api_key, client=client, updated_at=updated_at
         )
     return total

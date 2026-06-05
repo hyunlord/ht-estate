@@ -61,6 +61,11 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         calls.append("nonapt_rent")
         return 6
 
+    def fake_nonapt_sale(conn, region, month, **kw):  # type: ignore[no-untyped-def]
+        # P5-1b-3: 비-아파트 매매 stage(kind별 — rowhouse·officetel). 같은 건물에 매매축 합류.
+        calls.append("nonapt_sale")
+        return 4
+
     monkeypatch.setattr(ingest_mod, "ingest_complexes", fake_complexes)
     monkeypatch.setattr(ingest_mod, "ingest_months", fake_months)
     monkeypatch.setattr(ingest_mod, "ingest_rent_months", fake_rent)
@@ -68,6 +73,7 @@ def stage_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(ingest_mod, "backfill_matches", fake_join)
     monkeypatch.setattr(ingest_mod, "backfill_coords", fake_geo)
     monkeypatch.setattr(ingest_mod, "ingest_nonapt_rent_month", fake_nonapt)
+    monkeypatch.setattr(ingest_mod, "ingest_nonapt_sale_month", fake_nonapt_sale)
     return calls
 
 
@@ -76,11 +82,12 @@ def test_runs_all_stages_in_canonical_order(conn, stage_calls: list[str]) -> Non
         conn, region="11680", months=["202504"], stages=list(STAGE_ORDER),
         api_key="d", kakao_key="d", log=lambda _m: None,
     )
-    # rent: 적재→bjd룩업→자체조인. nonapt_rent: 연립·오피스텔 2 kind. 매매 "join"은 그대로 별도.
+    # rent: 적재→bjd룩업→자체조인. nonapt_rent/sale: 연립·오피스텔 2 kind씩. 매매 "join" 별도.
     assert stage_calls == [
         "complex", "transaction", "rent", "rent_bjd", "rent_join",
-        "nonapt_rent", "nonapt_rent", "join", "geocode",
+        "nonapt_rent", "nonapt_rent", "nonapt_sale", "nonapt_sale", "join", "geocode",
     ]
+    assert summary.nonapt_sale_transactions == 8  # 4 × 2 kind
     # 매매 필드 불변(회귀 0)
     assert summary.complexes == 5
     assert summary.transactions == 113

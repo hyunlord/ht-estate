@@ -21,13 +21,13 @@ from app.store.complex_repo import ingest_complexes
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.geo_repo import backfill_coords
 from app.store.join_repo import backfill_matches, backfill_rent_bjd
-from app.store.nonapt_repo import ingest_nonapt_rent_month
+from app.store.nonapt_repo import ingest_nonapt_rent_month, ingest_nonapt_sale_month
 from app.store.progress_repo import completed_months, record_month, region_has_complex
 from app.store.rent_transaction_repo import ingest_rent_month, ingest_rent_months
 from app.store.transaction_repo import ingest_month, ingest_months
 from app.throttle import Throttle
 
-STAGE_ORDER = ["complex", "transaction", "rent", "nonapt_rent", "join", "geocode"]
+STAGE_ORDER = ["complex", "transaction", "rent", "nonapt_rent", "nonapt_sale", "join", "geocode"]
 # `--stages all`의 기본 확장 — 전월세(rent)는 별도 활용신청 필요라 **opt-in**(명시 선택)으로 둔다.
 # (기존 ops `--stages all` 동작 불변 = 매매 회귀 0). rent는 `--stages rent` 등으로 명시 선택.
 DEFAULT_STAGES = ["complex", "transaction", "join", "geocode"]
@@ -37,7 +37,7 @@ _PREREQS = {"join": ("complex", "transaction"), "geocode": ("complex",), "rent":
 # data.go.kr(MOLIT·K-apt) 키가 필요한 stage — main()들이 이 중 하나라도 선택되면 키를 공급한다.
 # ⚠ 키 필요한 새 stage 추가 시 **반드시 등록**(누락 시 run_ingest의 assert + 키게이팅 테스트 실패).
 # 단일 출처: app.ingest.main·scripts/ingest_nationwide.main이 함께 import해 게이팅 드리프트 차단.
-API_KEY_STAGES = frozenset({"complex", "transaction", "rent", "nonapt_rent"})
+API_KEY_STAGES = frozenset({"complex", "transaction", "rent", "nonapt_rent", "nonapt_sale"})
 GEO_SOURCE = "Kakao Local 주소검색"
 
 
@@ -55,6 +55,8 @@ class IngestSummary:
     rent_join_total: int = 0
     # P5-1b 비-아파트(연립·오피스텔) 전월세 — 거래에서 건물 도출
     nonapt_rent_transactions: int = 0
+    # P5-1b-3 비-아파트 매매 — 같은 건물에 매매축 합류(transaction 테이블)
+    nonapt_sale_transactions: int = 0
 
     def __str__(self) -> str:
         join_pct = f"{self.matched}/{self.join_total}" if self.join_total else "—"
@@ -68,6 +70,8 @@ class IngestSummary:
             base += f" · 전월세 {self.rent_transactions}(조인 {rp})"
         if self.nonapt_rent_transactions:
             base += f" · 비-아파트 전월세 {self.nonapt_rent_transactions}"
+        if self.nonapt_sale_transactions:
+            base += f" · 비-아파트 매매 {self.nonapt_sale_transactions}"
         return base
 
 
@@ -212,6 +216,26 @@ def run_ingest(
                     if throttle is not None:
                         throttle.wait()
                     summary.nonapt_rent_transactions += ingest_nonapt_rent_month(
+                        conn, region, month, kind=kind, api_key=api_key
+                    )
+    if "nonapt_sale" in selected:
+        assert api_key is not None
+        # 연립(RH)·오피스텔(Offi) 매매 — 같은 building_key로 전월세 건물에 합류. kind별 원장 분리.
+        for kind in ("rowhouse", "officetel"):
+            stage = f"nonapt_sale_{kind}"
+            if resume:
+                summary.nonapt_sale_transactions += _ingest_months_resumable(
+                    conn, stage, region, months,
+                    lambda m, k=kind: ingest_nonapt_sale_month(
+                        conn, region, m, kind=k, api_key=api_key
+                    ),
+                    throttle=throttle, log=log,
+                )
+            else:
+                for month in months:
+                    if throttle is not None:
+                        throttle.wait()
+                    summary.nonapt_sale_transactions += ingest_nonapt_sale_month(
                         conn, region, month, kind=kind, api_key=api_key
                     )
     if "join" in selected:
