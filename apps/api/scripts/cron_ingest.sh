@@ -19,18 +19,16 @@ STAGES="${1:-transaction,rent,join}"
 LIMIT="${2:-8}"
 INTERVAL="${3:-0.6}"
 TTL_MIN="${4:-180}"
+# coexist-1: 락 대기 상한(초). 거래 cron이 동시 enrich의 배치-해제창을 *기다려* 확실히 잡는다.
+# 15분 tick 간격보다 짧게(기본 300s) → pile-up 방지. enrich 미가동 시 첫 시도 즉시 획득(무대기).
+WAIT_SEC="${5:-300}"
 
 cd "$APP_DIR"
 
-# stale 락 가드(SIGKILL 등 trap 우회분만): TTL이 충분히 길어 살아있는 작업 락은 건드리지 않음.
-if [ -f "$LOCK" ] && [ -n "$(find "$LOCK" -mmin "+$TTL_MIN" 2>/dev/null)" ]; then
-  echo "$(date '+%F %T') [stale] ${TTL_MIN}분 초과 락 제거" >> "$LOG"
-  rm -f "$LOCK"
-fi
-
-# shlock: 살아있는 PID가 보유하면 이 tick은 조용히 skip(직렬화). 죽은 PID면 자동 탈취.
-if ! /usr/bin/shlock -f "$LOCK" -p "$$"; then
-  echo "$(date '+%F %T') [skip ] $STAGES — 다른 적재 실행 중" >> "$LOG"
+# 공유 락 acquire — 바운드 대기-재시도(coexist-1). stale 가드 포함(매 재시도). source 필수($$ 보존).
+. "$APP_DIR/scripts/lib_lock.sh"
+if ! acquire_shared_lock "$LOCK" "$TTL_MIN" "$WAIT_SEC" 3 "$LOG"; then
+  echo "$(date '+%F %T') [skip ] $STAGES — 락 대기 ${WAIT_SEC}s 초과(다른 적재 장기 점유)" >> "$LOG"
   exit 0
 fi
 trap 'rm -f "$LOCK"' EXIT INT TERM
