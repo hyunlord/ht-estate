@@ -161,6 +161,17 @@ def run_enrich(
                         )
                     conn.commit()
                     return counts
+                except httpx.HTTPError as exc:
+                    # 건축HUB 일일쿼터/레이트리밋은 **HTTP 429**로 온다(resultCode 아님). _http가
+                    # 8회 백오프 재시도 후에도 남으면 여기로 전파 → 크래시 대신 우아하게 중단(레저로
+                    # 재개·완료분 보존). 네트워크 전송오류(재시도 소진)도 동일 — 멱등 이어받음.
+                    if log is not None:
+                        log(
+                            f"HTTP 오류({type(exc).__name__}) — 레이트리밋/쿼터/네트워크 추정, "
+                            "이번 run 중단(레저로 재개·완료분 보존)"
+                        )
+                    conn.commit()
+                    return counts
                 record_month(conn, ENRICH_STAGE, complex_id, _ENRICH_MONTH, 1)  # 정의적 → 기록
                 counts[outcome] += 1
             conn.commit()
