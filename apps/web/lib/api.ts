@@ -2,7 +2,9 @@
 
 import type { Bbox, Candidate, HardFilterSpec, MarkerCandidate, NlSearchResponse } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// 기본은 **같은-오리진 프록시**(`/api` → next.config rewrites → 127.0.0.1:8000). 공개 URL 1개·CORS 불요.
+// 별도 오리진 직접호출이 필요하면 NEXT_PUBLIC_API_BASE_URL로 절대 URL 주입(빌드타임 인라인).
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 /** 자연어 질의 → 레지스트리-grounded spec + 감지칩 + 매핑불가 + 랭크 후보(#3b).
  * 백엔드가 LLM 파싱·grounding을 수행(프론트는 무수정 호출). 파싱 불가는 422 → throw. */
