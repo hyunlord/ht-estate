@@ -69,9 +69,24 @@ CREATE TABLE IF NOT EXISTS complex (
   has_playground          BOOLEAN,        -- 파생: 놀이터
   has_senior_center       BOOLEAN,        -- 파생: 노인정/경로당
   has_library             BOOLEAN,        -- 파생: 문고/도서관
+  -- 건축물대장(enrich-1, BldRgstHubService 표제부/총괄표제부) — 비-아파트 빈 속성 벌크채움. additive.
+  -- enrich-only(주소매칭된 기존 건물 속성만)·좌표 무접촉. 기존 컬럼(building_type·household_count·
+  -- top_floor·dong_count·elevator_count·parking_total·approval_date)은 NULL일 때 대장으로 채움.
+  main_purpose            TEXT,           -- 주용도 (mainPurpsCdNm) — 신규
+  total_floor_area        REAL,           -- 연면적 ㎡ (totArea) — 신규
+  ground_floor_count      INTEGER,        -- 지상 층수 (grndFlrCnt) — 신규
+  basement_floor_count    INTEGER,        -- 지하 층수 (ugrndFlrCnt) — 신규
+  building_coverage_ratio REAL,           -- 건폐율 % (bcRat) — 신규
+  floor_area_ratio        REAL,           -- 용적률 % (vlRat) — 신규
+  building_height         REAL,           -- 높이 m (heit) — 신규
+  ho_count                INTEGER,        -- 호수 (hoCnt) — 신규
   -- provenance --
   updated_at          TIMESTAMP,
   source_url          TEXT,               -- K-apt 단지 페이지 (출처 이동)
+  ledger_source_url   TEXT,               -- 건축물대장 출처(API 요청 식별) — enrich-1 provenance
+  ledger_fetched_at   TIMESTAMP,          -- 대장 획득시각 — enrich-1 provenance
+  ledger_pk           TEXT,               -- 대장 관리번호 (mgmBldrgstPk) — enrich-1 provenance
+  ledger_bld_nm       TEXT,               -- 매칭된 대장 건물명 (bldNm) — 다중동 매칭 추적
   geo_source          TEXT,               -- 좌표 출처(DB명+기준일) — T0-5
   geo_updated_at      TIMESTAMP           -- 좌표 획득시각 — T0-5
 );

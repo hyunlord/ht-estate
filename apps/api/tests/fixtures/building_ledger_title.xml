@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header><resultCode>00</resultCode><resultMsg>NORMAL SERVICE</resultMsg></header>
+  <body>
+    <items>
+      <item>
+        <platPlc>서울특별시 강남구 대치동 316번지</platPlc>
+        <sigunguCd>11680</sigunguCd>
+        <bjdongCd>10600</bjdongCd>
+        <bun>0316</bun>
+        <ji>0000</ji>
+        <mgmBldrgstPk>102411698</mgmBldrgstPk>
+        <regstrKindCdNm>표제부</regstrKindCdNm>
+        <bldNm>대치현대빌라가동</bldNm>
+        <dongNm>가</dongNm>
+        <strctCdNm>철근콘크리트구조</strctCdNm>
+        <mainPurpsCdNm>공동주택</mainPurpsCdNm>
+        <hhldCnt>12</hhldCnt>
+        <hoCnt>0</hoCnt>
+        <grndFlrCnt>4</grndFlrCnt>
+        <ugrndFlrCnt>1</ugrndFlrCnt>
+        <rideUseElvtCnt>1</rideUseElvtCnt>
+        <emgenUseElvtCnt>0</emgenUseElvtCnt>
+        <totArea>1332.57</totArea>
+        <bcRat>59.9</bcRat>
+        <vlRat>199.5</vlRat>
+        <heit>13.5</heit>
+        <useAprDay>20030830</useAprDay>
+      </item>
+      <item>
+        <platPlc>서울특별시 강남구 대치동 316번지</platPlc>
+        <bldNm>대치현대빌라나동</bldNm>
+        <dongNm>나</dongNm>
+        <strctCdNm>철근콘크리트구조</strctCdNm>
+        <mainPurpsCdNm>공동주택</mainPurpsCdNm>
+        <hhldCnt>8</hhldCnt>
+        <hoCnt>0</hoCnt>
+        <grndFlrCnt>5</grndFlrCnt>
+        <ugrndFlrCnt>0</ugrndFlrCnt>
+        <rideUseElvtCnt>0</rideUseElvtCnt>
+        <emgenUseElvtCnt>0</emgenUseElvtCnt>
+        <totArea>0</totArea>
+        <bcRat>0</bcRat>
+        <vlRat>0</vlRat>
+        <heit>0</heit>
+        <useAprDay>20030830</useAprDay>
+        <mgmBldrgstPk>102411699</mgmBldrgstPk>
+      </item>
+    </items>
+    <numOfRows>100</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>2</totalCount>
+  </body>
+</response>

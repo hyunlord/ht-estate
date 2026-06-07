@@ -14,6 +14,9 @@ from pathlib import Path
 
 # app/store/regions.py → parents[2] = apps/api (db.py의 DEFAULT_DB_PATH과 동일 기준)
 _REGIONS_CSV = Path(__file__).resolve().parents[2] / "data" / "regions" / "sigungu_kr.csv"
+# enrich-1: (sgg_cd, 법정동명) → bjdongCd(5자리) — 건축물대장 조회 키. Kakao b_code로 일회 생성
+# (scripts/gen_bjdong_ref.py)된 정적 참조. 런타임 키 불필요(키리스 게이트 안전).
+_BJDONG_CSV = Path(__file__).resolve().parents[2] / "data" / "regions" / "bjdong_kr.csv"
 
 
 @lru_cache(maxsize=1)
@@ -38,3 +41,26 @@ def sigungu_label(sgg_cd: str | None) -> str | None:
     if not sgg_cd:
         return None
     return _sgg_map().get(sgg_cd.strip())
+
+
+@lru_cache(maxsize=1)
+def _bjdong_map() -> dict[tuple[str, str], str]:
+    """(sgg_cd, 법정동명) → bjdongCd(5자리)(1회 로드·캐시). CSV 없으면 빈 맵(미enrich)."""
+    out: dict[tuple[str, str], str] = {}
+    if not _BJDONG_CSV.exists():
+        return out
+    with _BJDONG_CSV.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            sgg = (row.get("sgg_cd") or "").strip()
+            dong = (row.get("legal_dong") or "").strip()
+            bjd = (row.get("bjdong_cd") or "").strip()
+            if sgg and dong and bjd:
+                out[(sgg, dong)] = bjd
+    return out
+
+
+def bjdong_code(sgg_cd: str | None, legal_dong: str | None) -> str | None:
+    """(시군구코드, 법정동명) → bjdongCd(5자리). 건축물대장 조회 키. 미매핑/None이면 None."""
+    if not sgg_cd or not legal_dong:
+        return None
+    return _bjdong_map().get((sgg_cd.strip(), legal_dong.strip()))

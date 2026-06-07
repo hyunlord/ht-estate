@@ -58,6 +58,13 @@ _COMPLEX_ADD_COLUMNS: tuple[tuple[str, str], ...] = (
     ("has_daycare", "BOOLEAN"), ("has_playground", "BOOLEAN"),
     ("has_senior_center", "BOOLEAN"), ("has_library", "BOOLEAN"),
     ("property_type", "TEXT"),  # P5-1: 주택유형(비-아파트). 기존 K-apt 행은 init_db가 백필.
+    # enrich-1: 건축물대장 풀필드 — 비-아파트 빈 속성 벌크채움(additive·nullable).
+    ("main_purpose", "TEXT"), ("total_floor_area", "REAL"),
+    ("ground_floor_count", "INTEGER"), ("basement_floor_count", "INTEGER"),
+    ("building_coverage_ratio", "REAL"), ("floor_area_ratio", "REAL"),
+    ("building_height", "REAL"), ("ho_count", "INTEGER"),
+    ("ledger_source_url", "TEXT"), ("ledger_fetched_at", "TIMESTAMP"),
+    ("ledger_pk", "TEXT"), ("ledger_bld_nm", "TEXT"),
 )
 
 
