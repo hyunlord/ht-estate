@@ -685,6 +685,41 @@ body {
   width: 96px;
   height: 38px;
 }
+/* 평형별 실거래 브레이크다운(detail-1) — 다평형 건물 평형마다 한 줄. */
+.abreak {
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid var(--line2);
+}
+.abreak-h {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.abreak-r {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.abreak-r .ab-a {
+  flex: 0 0 auto;
+  font-weight: 600;
+  min-width: 74px;
+}
+.abreak-r .ab-p {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  color: var(--ink2);
+}
+.abreak-r .ab-n {
+  flex: 0 0 auto;
+  color: var(--faint);
+}
 .evhead {
   font-size: 11px;
   font-weight: 700;

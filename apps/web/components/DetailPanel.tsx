@@ -1,7 +1,8 @@
 "use client";
 
-import { formatArea, hogangnonoSearchUrl, naverSearchUrl } from "@/lib/format";
+import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/lib/format";
 import type {
+  AreaBucket,
   AreaUnit,
   Candidate,
   CriterionEval,
@@ -254,6 +255,46 @@ function repText(c: Candidate): string {
   return "—";
 }
 
+// ── 평형별 실거래 브레이크다운 (detail-1) ──
+// 다평형 건물 = 평형마다 한 줄(대표 전용·최근가+월·거래수). 단일평형이면 한 줄(과분할 없음).
+// 금액축은 deal_type별: 매매=억축약 / 전세=보증금 / 월세=보증금/월세. 가격대는 min≠max일 때만.
+function bucketAmount(b: AreaBucket): string {
+  if (b.recent_amount == null) return "—";
+  if (b.recent_rent_type === "monthly") {
+    return `${wonToShort(b.recent_amount)}/${(b.recent_monthly_rent ?? 0).toLocaleString()}`;
+  }
+  return wonToShort(b.recent_amount);
+}
+function AreaBuckets({ buckets, unit }: { buckets: AreaBucket[]; unit: AreaUnit }) {
+  if (buckets.length === 0) return null;
+  return (
+    <div className="abreak" data-testid="area-buckets">
+      <div className="abreak-h">평형별 실거래</div>
+      {buckets.map((b, i) => {
+        const range =
+          b.amount_min != null && b.amount_max != null && b.amount_min !== b.amount_max
+            ? ` (${wonToShort(b.amount_min)}~${wonToShort(b.amount_max)})`
+            : "";
+        return (
+          <div className="abreak-r" data-testid="area-bucket-row" key={i}>
+            <span className="ab-a" data-testid="area-bucket-area">
+              전용 {formatArea(b.net_area, unit)}
+            </span>
+            <span className="ab-p" data-testid="area-bucket-amount">
+              {bucketAmount(b)}
+              {b.recent_deal_date ? ` (${b.recent_deal_date.slice(0, 7)})` : ""}
+              {range}
+            </span>
+            <span className="ab-n" data-testid="area-bucket-count">
+              {b.transaction_count}건
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DetailPanel({
   candidate,
   unit,
@@ -313,6 +354,10 @@ export function DetailPanel({
           </span>
         )}
       </div>
+
+      {candidate.area_buckets && candidate.area_buckets.length > 0 && (
+        <AreaBuckets buckets={candidate.area_buckets} unit={unit} />
+      )}
 
       <div className="evhead">근거 · 출처</div>
       <div className="rows">

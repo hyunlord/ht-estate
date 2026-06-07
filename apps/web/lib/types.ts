@@ -68,6 +68,19 @@ export interface RepresentativeTrade {
   match_confidence: number | null;
 }
 
+// 평형(전용면적 버킷) 집계(detail-1) — 다평형 건물 카드 브레이크다운. backend AreaBucket과 동형.
+// net_area=대표 전용(㎡, 프론트가 단위 포맷). recent_amount=금액축(매매=price/전월세=deposit).
+export interface AreaBucket {
+  net_area: number | null;
+  transaction_count: number;
+  recent_amount: number | null; // 만원 — 최근 거래 가격축
+  recent_monthly_rent: number | null; // 만원 — 월세만
+  recent_rent_type: "jeonse" | "monthly" | null;
+  recent_deal_date: string | null; // ISO
+  amount_min: number | null; // 가격대
+  amount_max: number | null;
+}
+
 // Tier-2 gym(soft, R1: hard filter 아님). 후보 산출 후 부착. http=클릭 / urn sentinel=비링크.
 export interface GymSource {
   source_type: string;
@@ -137,6 +150,7 @@ export interface Candidate {
   price_min: number | null;
   price_max: number | null;
   representative_trade: RepresentativeTrade | null;
+  area_buckets?: AreaBucket[] | null; // 평형별 집계(detail-1). optional: 구버전 mock 호환.
   gym?: GymSummary | null; // API는 항상 채움(미시드→none). optional: 구버전 mock 호환.
   pet?: PetSummary | null;
   review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.

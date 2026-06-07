@@ -32,6 +32,24 @@ class RepresentativeTrade(BaseModel):
     match_confidence: float | None  # 추정매칭 배지용 (저신뢰면 낮음 / NULL=직접확인불가)
 
 
+class AreaBucket(BaseModel):
+    """한 단지의 평형(전용면적 버킷) 집계 — 디테일 카드 다평형 브레이크다운(detail-1).
+
+    범위 내 실거래를 net_area로 single-linkage 클러스터(decimal 노이즈 흡수, 과분할 금지)한
+    버킷별 요약. 대표 net_area=버킷 최다거래 면적(tie→최근). 금액축은 deal_type별
+    (매매=price / 전월세=deposit, 만원). **읽기전용 집계** — 거래를 만들지 않는다(있는 만큼 정직).
+    """
+
+    net_area: float | None  # 대표 전용(㎡) — 프론트가 단위(평/㎡)로 포맷
+    transaction_count: int
+    recent_amount: int | None  # 만원 — 최근 거래의 가격축(매매=price / 전월세=deposit)
+    recent_monthly_rent: int | None = None  # 만원 — 월세 최근 거래만
+    recent_rent_type: str | None = None  # 'jeonse' | 'monthly' (전월세)
+    recent_deal_date: str | None  # ISO — 버킷 내 최근 거래일
+    amount_min: int | None  # 버킷 가격대(금액축 min~max)
+    amount_max: int | None
+
+
 class Candidate(BaseModel):
     """후보 단지 — 필터된 complex 속성 + 거래 요약. 카드 ✓ 렌더용."""
 
@@ -48,6 +66,8 @@ class Candidate(BaseModel):
     price_min: int | None
     price_max: int | None
     representative_trade: RepresentativeTrade | None
+    # detail-1: 평형(전용면적)별 집계 — 다평형 건물 카드 브레이크다운. 단일평형이면 길이 1.
+    area_buckets: list[AreaBucket] | None = None
     # P4-2a: 구조화 soft/hard 조건 평가용 필드(P4-1 적재분). repo가 SELECT해 채운다.
     subway_time: str | None = None
     has_daycare: bool | None = None
@@ -217,6 +237,68 @@ def _build_rep(spec: HardFilterSpec, row: sqlite3.Row) -> RepresentativeTrade:
     )
 
 
+def _area_threshold(area: float) -> float:
+    """평형 버킷 경계(㎡) — clamp(5%·면적, 1.5, 4.0).
+
+    net_area 분포가 강한 bimodal(decimal 노이즈<0.5㎡ vs 실평형 경계≥3㎡, valley 희소)이라
+    scale-aware: 소형(officetel)은 타이트해 구분 보존, 대형은 4.0㎡로 캡해 같은 타입의 A/B 변형
+    (예: 84.6/86.6㎡)을 흡수. valley가 넓어 임계는 결과에 둔감(데이터 근거 §detail-1 선행검증).
+    """
+    return min(4.0, max(1.5, 0.05 * area))
+
+
+def _cluster_area_buckets(spec: HardFilterSpec, trades: list[sqlite3.Row]) -> list[AreaBucket]:
+    """범위 내 거래를 net_area로 single-linkage 클러스터 → 평형별 집계(평형순 정렬).
+
+    인접 거래의 면적차가 _area_threshold를 넘으면 새 버킷. 대표 net_area=버킷 최다거래 면적
+    (tie→최근). 금액축은 deal_type별(매매=price / 전월세=deposit). net_area 없는 거래는 제외.
+    **읽기전용** — 있는 거래만 묶는다(과분할·조작 금지). 단일평형이면 버킷 1개.
+    """
+    amount_col = "price" if spec.deal_type == "sale" else "deposit"
+    rows = sorted(
+        (t for t in trades if t["net_area"] is not None), key=lambda t: t["net_area"]
+    )
+    groups: list[list[sqlite3.Row]] = []
+    current: list[sqlite3.Row] = []
+    for row in rows:
+        if current and (row["net_area"] - current[-1]["net_area"]) > _area_threshold(
+            current[-1]["net_area"]
+        ):
+            groups.append(current)
+            current = []
+        current.append(row)
+    if current:
+        groups.append(current)
+
+    buckets: list[AreaBucket] = []
+    for group in groups:
+        # 대표 net_area = 버킷 내 최다거래 면적(tie → 최근 거래일이 있는 면적)
+        counts: dict[float, int] = {}
+        for t in group:
+            counts[t["net_area"]] = counts.get(t["net_area"], 0) + 1
+        top = max(counts.values())
+        rep_area = max(
+            (a for a, c in counts.items() if c == top),
+            key=lambda a: max((t["deal_date"] or "") for t in group if t["net_area"] == a),
+        )
+        recent = max(group, key=lambda t: t["deal_date"] or "")
+        amounts = [t[amount_col] for t in group if t[amount_col] is not None]
+        is_rent = spec.deal_type != "sale"
+        buckets.append(
+            AreaBucket(
+                net_area=rep_area,
+                transaction_count=len(group),
+                recent_amount=recent[amount_col],
+                recent_monthly_rent=recent["monthly_rent"] if is_rent else None,
+                recent_rent_type=recent["rent_type"] if is_rent else None,
+                recent_deal_date=recent["deal_date"],
+                amount_min=min(amounts) if amounts else None,
+                amount_max=max(amounts) if amounts else None,
+            )
+        )
+    return buckets
+
+
 def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
     """complex 속성+bbox 필터 → (txn 필터시) 매칭거래 EXISTS → 후보. 이진 in/out, limit."""
     cwhere, cparams = _complex_where(spec)
@@ -263,6 +345,7 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
                 price_min=min(amounts) if amounts else None,
                 price_max=max(amounts) if amounts else None,
                 representative_trade=_build_rep(spec, rep) if rep is not None else None,
+                area_buckets=_cluster_area_buckets(spec, trades),
                 subway_time=row["subway_time"],
                 has_daycare=None if row["has_daycare"] is None else bool(row["has_daycare"]),
                 elevator_count=row["elevator_count"],
