@@ -32,6 +32,11 @@ class LLMProvider(Protocol):
 BASE_URL_ENV = "ENRICH_LLM_BASE_URL"  # 예: Spark의 OpenAI-호환 엔드포인트 / 다른 API
 MODEL_ENV = "ENRICH_LLM_MODEL"
 API_KEY_ENV = "ENRICH_LLM_API_KEY"
+TIMEOUT_ENV = "ENRICH_LLM_TIMEOUT"  # 초. 로컬 Gemma 경합(~6.5 tok/s) 대비 상향(E1-live).
+MAX_TOKENS_ENV = "ENRICH_LLM_MAX_TOKENS"  # 출력 토큰 캡(throughput). 미설정이면 미전송.
+
+# 로컬 Gemma는 GPU 경합 시 2소스 ~22s → 30s 빠듯. env 기본 60s 상향(타임아웃도 graceful defer).
+DEFAULT_TIMEOUT = 60.0
 
 
 @dataclass
@@ -46,6 +51,7 @@ class OpenAICompatibleProvider:
     api_key: str = ""
     timeout: float = 30.0
     temperature: float = 0.0
+    max_tokens: int | None = None  # 출력 토큰 캡(throughput) — None이면 body에 미포함
     client: httpx.Client | None = None
 
     def complete(self, system: str, user: str, /) -> str:
@@ -53,7 +59,7 @@ class OpenAICompatibleProvider:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        body = {
+        body: dict = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
@@ -61,6 +67,8 @@ class OpenAICompatibleProvider:
             ],
             "temperature": self.temperature,
         }
+        if self.max_tokens is not None:
+            body["max_tokens"] = self.max_tokens
         own = self.client is None
         cl = self.client or httpx.Client(timeout=self.timeout)
         try:
@@ -85,6 +93,16 @@ def provider_from_env() -> LLMProvider | None:
     model = os.environ.get(MODEL_ENV, "").strip()
     if not base_url or not model:
         return None
+    try:
+        timeout = float(os.environ.get(TIMEOUT_ENV, "").strip() or DEFAULT_TIMEOUT)
+    except ValueError:
+        timeout = DEFAULT_TIMEOUT
+    mt_raw = os.environ.get(MAX_TOKENS_ENV, "").strip()
+    max_tokens = int(mt_raw) if mt_raw.isdigit() else None
     return OpenAICompatibleProvider(
-        base_url=base_url, model=model, api_key=os.environ.get(API_KEY_ENV, "").strip()
+        base_url=base_url,
+        model=model,
+        api_key=os.environ.get(API_KEY_ENV, "").strip(),
+        timeout=timeout,
+        max_tokens=max_tokens,
     )

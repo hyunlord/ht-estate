@@ -62,6 +62,36 @@ def test_provider_from_env_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     # Spark vs API = config(코드 불변): base_url+model만 다르면 됨
     monkeypatch.setenv("ENRICH_LLM_BASE_URL", "http://spark/v1")
     monkeypatch.setenv("ENRICH_LLM_MODEL", "spark-1")
+    monkeypatch.delenv("ENRICH_LLM_TIMEOUT", raising=False)
+    monkeypatch.delenv("ENRICH_LLM_MAX_TOKENS", raising=False)
     p = provider_from_env()
     assert isinstance(p, OpenAICompatibleProvider)
     assert p.base_url == "http://spark/v1" and p.model == "spark-1"
+    assert p.timeout == 60.0 and p.max_tokens is None  # 기본 상향 60s, 캡 미설정
+
+
+def test_provider_from_env_timeout_and_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    # PART3 throughput 튜닝 — 타임아웃·출력 토큰 캡 config(env)
+    monkeypatch.setenv("ENRICH_LLM_BASE_URL", "http://spark/v1")
+    monkeypatch.setenv("ENRICH_LLM_MODEL", "spark-1")
+    monkeypatch.setenv("ENRICH_LLM_TIMEOUT", "90")
+    monkeypatch.setenv("ENRICH_LLM_MAX_TOKENS", "512")
+    p = provider_from_env()
+    assert isinstance(p, OpenAICompatibleProvider)
+    assert p.timeout == 90.0 and p.max_tokens == 512
+
+
+def test_max_tokens_included_in_request_body() -> None:
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        seen.update(_json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    p = OpenAICompatibleProvider(
+        "http://spark/v1", "m", max_tokens=256, client=_client(handler)
+    )
+    p.complete("s", "u")
+    assert seen.get("max_tokens") == 256

@@ -72,10 +72,28 @@ def run_extraction(
     return parse(raw, by_url)
 
 
+def _strip_code_fence(raw: str) -> str:
+    """LLM이 흔히 두르는 마크다운 코드펜스 제거 → 순수 JSON만 남긴다.
+
+    로컬 Gemma는 JSON 배열을 ```json … ``` (또는 ```)로 감싸 반환한다(E1-live 실측). parse
+    규율층이 선행 ```json/``` + 후행 ```를 벗겨야 json.loads가 성공한다. 펜스가 없으면 원문 그대로
+    (무해). **펜스 제거는 파싱 가능성만 복구할 뿐 환각출처 검증을 우회하지 않는다** — drop은
+    parse_items가 by_url 대조로 그대로 수행.
+    """
+    s = raw.strip()
+    if not s.startswith("```"):
+        return s
+    nl = s.find("\n")  # 선행 ```lang\n (또는 ```\n) 제거
+    s = s[nl + 1 :] if nl != -1 else s[3:]
+    if s.rstrip().endswith("```"):  # 후행 ``` 제거
+        s = s.rstrip()[:-3]
+    return s.strip()
+
+
 def parse_items(raw: str, by_url: dict[str, SourceDoc]) -> list[dict]:
     """LLM 응답(JSON 배열/객체) → 항목 리스트 + **환각 출처 drop**. malformed면 []."""
     try:
-        data = json.loads(raw)
+        data = json.loads(_strip_code_fence(raw))
     except (json.JSONDecodeError, TypeError):
         return []
     items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []

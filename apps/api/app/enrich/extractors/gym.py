@@ -20,9 +20,11 @@ ATTRIBUTE = "gym"
 _STATES = {"yes", "no", "unknown"}
 
 SYSTEM = (
-    "너는 부동산 단지 부대시설 조사원이다. 주어진 소스들로 이 단지(건물)에 헬스장/피트니스가 "
-    "있는지 판정한다. 소스에 근거 없으면 추측하지 말고 unknown. 각 소스별로 JSON 배열의 한 "
-    '객체로 답하라: {"source_url": <소스 url 그대로>, "has_gym": "yes"|"no"|"unknown", '
+    "너는 부동산 단지 부대시설 조사원이다. 주어진 소스들로 이 단지(건물)에 "
+    "헬스장/피트니스가 있는지 판정한다. 소스에 근거 없으면 추측하지 말고 unknown. "
+    "**소스가 이 단지와 무관하면(다른 건물·호텔 등) 'no'가 아니라 unknown** "
+    "('no'는 헬스장 없음의 명시 근거가 있을 때만). 각 소스별로 JSON 배열의 한 객체로 답하라: "
+    '{"source_url": <소스 url 그대로>, "has_gym": "yes"|"no"|"unknown", '
     '"evidence": <한 줄 근거>, "confidence": 0..1}. JSON 배열만 출력.'
 )
 

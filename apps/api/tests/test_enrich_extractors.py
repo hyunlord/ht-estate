@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.enrich.extractors._common import _strip_code_fence, parse_items
 from app.enrich.extractors.gym import make_gym_extractor
 from app.enrich.extractors.pet import make_pet_extractor
 from app.enrich.fetcher import NullFetcher, SourceDoc
@@ -193,3 +194,38 @@ def test_live_extractors_none_when_unconfigured(
 def test_live_extractors_built_with_provider(db: sqlite3.Connection) -> None:
     ext = live_extractors(db, ["C1"], provider=FakeProvider("[]"), fetcher=NullFetcher())
     assert ext is not None and set(ext) == {"gym", "pet"}
+
+
+# ── PART2: 펜스 스트립 (로컬 Gemma가 ```json … ```로 감싸는 케이스 — 환각출처 drop 유지) ──
+def test_strip_code_fence_variants() -> None:
+    assert _strip_code_fence('```json\n[1,2]\n```') == "[1,2]"
+    assert _strip_code_fence('```\n[1,2]\n```') == "[1,2]"
+    assert _strip_code_fence("[1,2]") == "[1,2]"  # 펜스 없으면 원문(무해)
+    assert _strip_code_fence("not json") == "not json"  # 비JSON도 그대로(이후 loads가 거름)
+
+
+def test_parse_items_fenced_and_plain_equivalent() -> None:
+    by_url = {"http://a": SourceDoc(source_type="web", source_url="http://a", text="x")}
+    item = {"source_url": "http://a", "has_gym": "yes"}
+    plain = json.dumps([item])
+    fenced = f"```json\n{plain}\n```"
+    assert parse_items(plain, by_url) == parse_items(fenced, by_url) == [item]
+
+
+def test_parse_items_fenced_still_drops_hallucinated_source() -> None:
+    # 펜스 제거가 환각출처 검증을 우회하지 않음 — by_url에 없는 url은 여전히 drop
+    by_url = {"http://real": SourceDoc(source_type="web", source_url="http://real", text="x")}
+    fenced = '```json\n[{"source_url": "http://HALLUCINATED", "has_gym": "yes"}]\n```'
+    assert parse_items(fenced, by_url) == []
+
+
+def test_parse_items_fenced_malformed_defers() -> None:
+    by_url = {"http://a": SourceDoc(source_type="web", source_url="http://a", text="x")}
+    assert parse_items("```json\nnot json\n```", by_url) == []  # 펜스 안이 깨져도 [](defer)
+
+
+def test_gym_extractor_through_fence_end_to_end() -> None:
+    # 추출기 파이프라인 전체가 펜스 응답을 파싱(로컬 Gemma 실응답 형태)
+    raw = '```json\n[{"source_url": "http://a", "has_gym": "yes", "confidence": 0.9}]\n```'
+    facts = make_gym_extractor(FakeProvider(raw), FakeFetcher([_DOCS[0]]), _name)("C1", "gym")
+    assert len(facts) == 1 and json.loads(facts[0].value)["has_gym"] == "yes"
