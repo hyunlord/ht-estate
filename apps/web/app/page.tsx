@@ -238,7 +238,12 @@ export default function Home() {
             </div>
           )}
           {selected && (
-            <DetailPanel candidate={selected} unit={unit} onClose={() => setSelected(null)} />
+            <DetailPanel
+              key={selected.complex_id}
+              candidate={selected}
+              unit={unit}
+              onClose={() => setSelected(null)}
+            />
           )}
         </div>
       </div>

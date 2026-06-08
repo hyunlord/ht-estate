@@ -16,8 +16,12 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import app.settings  # noqa: F401  (루트 .env 로딩 — provider/fetcher env 활성화: 온디맨드 라이브)
+from app.enrich.fetcher import NullFetcher, naver_fetcher_from_env
+from app.enrich.ondemand import READY, OnDemandEnricher
+from app.enrich.provider import provider_from_env
 from app.search.floorplan import attach_floorplan
-from app.search.gym import attach_gym
+from app.search.gym import GymSummary, attach_gym, synthesize_gym
 from app.search.nl_parse import (
     ClaudeRunner,
     Detected,
@@ -25,7 +29,7 @@ from app.search.nl_parse import (
     _default_runner,
     parse_query,
 )
-from app.search.pet import attach_pet
+from app.search.pet import ALIAS_ATTRIBUTES, PetSummary, attach_pet, synthesize_pet
 from app.search.ranking import rank_candidates
 from app.search.repo import Candidate, MarkerCandidate, search_complexes, search_markers
 from app.search.review import attach_review
@@ -64,6 +68,19 @@ def get_query_runner() -> ClaudeRunner:
     return _default_runner
 
 
+# 온디맨드 추출기 싱글톤 — inflight 디덥/음성 쿨다운 상태를 요청 간 공유해야 하므로 모듈 1회 구성.
+# provider/fetcher는 env(.env). 미구성이면 provider=None → 엔드포인트 unavailable(검색·게이트 불변).
+_default_enricher = OnDemandEnricher(
+    provider=provider_from_env(),
+    fetcher=naver_fetcher_from_env() or NullFetcher(),
+)
+
+
+def get_enricher() -> OnDemandEnricher:
+    """온디맨드 추출기. 테스트는 dependency_overrides로 mock 주입(키리스)."""
+    return _default_enricher
+
+
 class NlQuery(BaseModel):
     """NL 검색 요청 — 자유 텍스트 질의."""
 
@@ -77,6 +94,28 @@ class NlSearchResponse(BaseModel):
     detected: list[Detected]
     unsupported: list[str]
     candidates: list[Candidate]
+
+
+class GymSection(BaseModel):
+    """온디맨드 gym 섹션 — status(ready/pending/unavailable) + 합성(ready일 때만)."""
+
+    status: str
+    summary: GymSummary | None
+
+
+class PetSection(BaseModel):
+    """온디맨드 pet 섹션 — status + 합성(advisory: confirm/caveats는 summary에 보존)."""
+
+    status: str
+    summary: PetSummary | None
+
+
+class EnrichmentResponse(BaseModel):
+    """단지 상세용 온디맨드 enrichment — gym/pet 섹션별 status + 캐시 합성."""
+
+    complex_id: str
+    gym: GymSection
+    pet: PetSection
 
 
 def _run_search(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
@@ -143,4 +182,39 @@ def search_complexes_nl_endpoint(
         detected=parsed.detected,
         unsupported=parsed.unsupported,
         candidates=candidates,
+    )
+
+
+@app.get("/complexes/{complex_id}/enrichment")
+def complex_enrichment_endpoint(
+    complex_id: str,
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+    enricher: Annotated[OnDemandEnricher, Depends(get_enricher)],
+) -> EnrichmentResponse:
+    """단지 상세 온디맨드 gym/pet (ux-1) — 캐시 즉답·miss는 백그라운드 추출+pending.
+
+    **검색·마커와 별개**(`_run_search` 무접촉). 카드가 22–60s 블록하지 않도록 miss는 즉시 pending
+    반환하고 단건만 백그라운드 추출(디덥·후보한정·graceful). pet은 레거시 `pet_allowed` 별칭 폴백.
+    enrichment 테이블만 write → 지문·건물/거래 수 불변.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM complex WHERE complex_id = ? LIMIT 1", (complex_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="단지를 찾을 수 없습니다")
+    now = datetime.now(UTC)
+    gym_state, gym_facts = enricher.status(conn, complex_id, "gym", now=now)
+    pet_state, pet_facts = enricher.status(
+        conn, complex_id, "pet", alias=ALIAS_ATTRIBUTES, now=now
+    )
+    return EnrichmentResponse(
+        complex_id=complex_id,
+        gym=GymSection(
+            status=gym_state,
+            summary=synthesize_gym(gym_facts) if gym_state == READY else None,
+        ),
+        pet=PetSection(
+            status=pet_state,
+            summary=synthesize_pet(pet_facts) if pet_state == READY else None,
+        ),
     )

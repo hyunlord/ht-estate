@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.enrich.runner import Extractor, enrich, stub_extractor
-from app.enrich.store import EnrichmentFact
+from app.enrich.store import EnrichmentFact, read_facts
 
 
 class EnrichSource(BaseModel):
@@ -46,3 +46,37 @@ def read_through_synth[T](
         return {}
     facts_by_id = enrich(conn, ids, attribute, extractor, ttl=ttl, now=now)
     return {cid: synthesize(facts_by_id.get(cid, [])) for cid in ids}
+
+
+def read_through_synth_aliased[T](
+    conn: sqlite3.Connection,
+    ids: Sequence[str],
+    attribute: str,
+    alias_attributes: Sequence[str],
+    synthesize: Callable[[list[EnrichmentFact]], T],
+    *,
+    now: datetime,
+    ttl: timedelta,
+    extractor: Extractor = stub_extractor,
+) -> dict[str, T]:
+    """정식 `attribute` read-through 후, 무사실 id만 레거시 `alias_attributes`로 **읽기-타임 폴백**.
+
+    이전(C50 시드)은 pet을 `pet_allowed`로 적재했고 라이브 추출(E1-live)은 정식 `pet`으로 쓴다.
+    **데이터 마이그레이션 없이** 읽기에서 통일: 신선한 정식 사실이 있으면 그걸 쓰고, 없으면 별칭에서
+    찾아 합성한다(신선 우선). 별칭 폴백은 **읽기 전용**(read_facts) — 추출/write 없음. extractor는
+    정식 attribute에만 적용(live는 정식으로 write → 다음 읽기부터 정식이 우선).
+    """
+    if not ids:
+        return {}
+    primary = enrich(conn, ids, attribute, extractor, ttl=ttl, now=now)
+    result: dict[str, T] = {}
+    for cid in ids:
+        facts = primary.get(cid) or []
+        if not facts:
+            for alias in alias_attributes:
+                alias_facts = read_facts(conn, cid, alias, now=now)
+                if alias_facts:
+                    facts = alias_facts
+                    break
+        result[cid] = synthesize(facts)
+    return result

@@ -105,6 +105,23 @@ export interface PetSummary {
   sources: GymSource[];
 }
 
+// 온디맨드 enrichment(ux-1) — 디테일뷰 진입 시 단건 gym/pet 추출 상태.
+// ready=summary 채움(캐시/추출완료) · pending=백그라운드 추출 중(폴링) · unavailable=라이브 미구성.
+export type EnrichStatus = "ready" | "pending" | "unavailable";
+export interface GymSection {
+  status: EnrichStatus;
+  summary: GymSummary | null;
+}
+export interface PetSection {
+  status: EnrichStatus;
+  summary: PetSummary | null;
+}
+export interface EnrichmentResponse {
+  complex_id: string;
+  gym: GymSection;
+  pet: PetSection;
+}
+
 // Tier-2 review(후기, P3-1). **표시 전용 — 랭킹 신호 아님**(주관적·SoftSpec에 없음).
 // summary=짧은 자기표현 요약(없으면 null=미조사). 다출처는 sources 딥링크로 노출.
 export interface ReviewSummary {

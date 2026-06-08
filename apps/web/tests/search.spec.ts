@@ -35,6 +35,15 @@ test("auto-search → list → detail panel with badge and source link", async (
 
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [CANDIDATE] }));
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
 
   // 검색 버튼 없음 — 마운트 시 자동 조회로 리스트가 채워진다.
   await page.goto("/", { waitUntil: "networkidle" });

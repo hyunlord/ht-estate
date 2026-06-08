@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+import { fetchEnrichment } from "@/lib/api";
 import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/lib/format";
 import type {
   AreaBucket,
@@ -7,10 +10,26 @@ import type {
   Candidate,
   CriterionEval,
   FloorplanSummary,
+  GymSection,
   GymSummary,
+  PetSection,
   PetSummary,
   ReviewSummary,
 } from "@/lib/types";
+
+// 온디맨드 폴링 — 라이브 추출 ~22–60s(로컬 Gemma 경합). 3s 간격·최대 25회(≈75s) 후 멈춤.
+const POLL_MS = 3000;
+const MAX_POLLS = 25;
+
+const NONE_GYM: GymSummary = { has_gym: "none", confidence: null, evidence: null, sources: [] };
+const NONE_PET: PetSummary = {
+  pet_allowed: "none",
+  confidence: null,
+  evidence: null,
+  caveats: [],
+  confirm_with_office: true,
+  sources: [],
+};
 
 // 상세 패널 = 차별점 hero. 근거·출처(criteria_eval ✓/△/✗/○ + 출처 딥링크) + 대표거래 + Tier-2
 // 행(gym/pet/후기/평면도, 출처 보존) + 네이버/호갱노노 아웃링크. 실거래 추이 차트는 history 없어 OUT(spec §6).
@@ -175,6 +194,40 @@ function PetRow({ pet }: { pet: PetSummary }) {
   );
 }
 
+// ── 온디맨드 pending 스피너 행 (무한 스피너 금지 — MAX_POLLS 후 none으로 귀결) ──
+function PendingRow({ label, prefix }: { label: string; prefix: string }) {
+  return (
+    <div className="r" data-testid={`${prefix}-row`}>
+      <div className="b">
+        <div className="k">
+          {label} <span className="conf" data-testid={`${prefix}-pending`}>확인 중…</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// section(온디맨드)이 도착 전이면 fallback(검색 캐시)로 즉시 렌더 → pending이면 스피너 →
+// ready/unavailable이면 summary(없으면 none = '정보 없음'). 무한 스피너 없음.
+function GymBlock({ section, fallback }: { section: GymSection | null; fallback?: GymSummary | null }) {
+  if (section?.status === "pending") return <PendingRow label="헬스장" prefix="gym" />;
+  // ready=추출/캐시 결과(없으면 none) · unavailable/미도착=검색 캐시 fallback(있으면 그걸, 없으면 none).
+  const gym =
+    section?.status === "ready"
+      ? (section.summary ?? NONE_GYM)
+      : (fallback ?? (section ? NONE_GYM : null));
+  return gym ? <GymRow gym={gym} /> : null;
+}
+
+function PetBlock({ section, fallback }: { section: PetSection | null; fallback?: PetSummary | null }) {
+  if (section?.status === "pending") return <PendingRow label="강아지" prefix="pet" />;
+  const pet =
+    section?.status === "ready"
+      ? (section.summary ?? NONE_PET)
+      : (fallback ?? (section ? NONE_PET : null));
+  return pet ? <PetRow pet={pet} /> : null;
+}
+
 function ReviewRow({ review }: { review: ReviewSummary }) {
   if (review.summary == null) {
     return (
@@ -304,6 +357,36 @@ export function DetailPanel({
   unit: AreaUnit;
   onClose: () => void;
 }) {
+  // 온디맨드 gym/pet — 상세 진입 시 fetch(캐시 즉답·miss는 백그라운드+pending) 후 폴링으로 완료 픽업.
+  // 검색 경로는 무관(_run_search 캐시 그대로) — 이 패널만 단건 온디맨드. graceful: 실패 시 캐시 유지.
+  const cid = candidate.complex_id;
+  const [gymSec, setGymSec] = useState<GymSection | null>(null);
+  const [petSec, setPetSec] = useState<PetSection | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ctrl = new AbortController();
+    // 상태 리셋은 page.tsx의 key={complex_id} 리마운트로(이펙트 내 동기 setState 회피).
+    const poll = async (attempt: number) => {
+      try {
+        const r = await fetchEnrichment(cid, ctrl.signal);
+        if (cancelled) return;
+        setGymSec(r.gym);
+        setPetSec(r.pet);
+        const pending = r.gym.status === "pending" || r.pet.status === "pending";
+        if (pending && attempt < MAX_POLLS) timer = setTimeout(() => poll(attempt + 1), POLL_MS);
+      } catch {
+        /* graceful: 네트워크/엔드포인트 실패 → 검색 캐시(fallback) 유지, 스피너 안 검 */
+      }
+    };
+    poll(0);
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [cid]);
+
   const rep = candidate.representative_trade;
   const low = rep?.match_confidence != null && rep.match_confidence < 0.7;
   const tags: { text: string; brand?: boolean }[] = [];
@@ -364,8 +447,8 @@ export function DetailPanel({
         {candidate.criteria_eval && candidate.criteria_eval.length > 0 && (
           <CriteriaEval evals={candidate.criteria_eval} sourceUrl={candidate.source_url} />
         )}
-        {candidate.gym && <GymRow gym={candidate.gym} />}
-        {candidate.pet && <PetRow pet={candidate.pet} />}
+        <GymBlock section={gymSec} fallback={candidate.gym} />
+        <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}
         {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
         {candidate.source_url && (

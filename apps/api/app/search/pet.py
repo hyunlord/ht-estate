@@ -21,9 +21,12 @@ from pydantic import BaseModel
 
 from app.enrich.runner import Extractor, stub_extractor
 from app.enrich.store import EnrichmentFact
-from app.search.enrichment import EnrichSource, read_through_synth
+from app.search.enrichment import EnrichSource, read_through_synth_aliased
 
-ATTRIBUTE = "pet_allowed"
+# 정식 attribute = 'pet'(라이브 추출 write·E1-live). 레거시 시드(load_pet_seed)는 'pet_allowed'.
+# **읽기-타임 별칭**으로 통일(신선 'pet' 우선·없으면 'pet_allowed' 폴백). 데이터 마이그레이션 0.
+ATTRIBUTE = "pet"
+ALIAS_ATTRIBUTES = ("pet_allowed",)
 # enrichment 신선도 — 로더(load_pet_seed)와 동일한 분기 기본값.
 PET_TTL = timedelta(days=90)
 
@@ -98,9 +101,9 @@ def attach_pet(
     ttl: timedelta = PET_TTL,
     extractor: Extractor = stub_extractor,
 ) -> None:
-    """후보들에 pet 합성을 in-place 부착(공유 read-through 위임). enrich(stub) 읽기 전용."""
-    summaries = read_through_synth(
-        conn, [c.complex_id for c in candidates], ATTRIBUTE, synthesize_pet,
+    """후보들에 pet 합성을 in-place 부착(공유 read-through·별칭 위임). enrich(stub) 읽기 전용."""
+    summaries = read_through_synth_aliased(
+        conn, [c.complex_id for c in candidates], ATTRIBUTE, ALIAS_ATTRIBUTES, synthesize_pet,
         now=now, ttl=ttl, extractor=extractor,
     )
     for cand in candidates:

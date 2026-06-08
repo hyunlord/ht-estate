@@ -19,6 +19,15 @@ test("range slider ↔ number input sync", async ({ page }) => {
   page.on("pageerror", (e) => consoleErrors.push(e.message));
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [CAND] }));
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
 
   await page.goto("/", { waitUntil: "networkidle" });
 
@@ -38,6 +47,15 @@ test("평/㎡ toggle switches area display in list and detail", async ({ page })
   page.on("pageerror", (e) => consoleErrors.push(e.message));
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [CAND] }));
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
 
   await page.goto("/", { waitUntil: "networkidle" });
 

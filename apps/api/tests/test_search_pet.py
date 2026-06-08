@@ -138,6 +138,39 @@ def test_attach_pet_empty_candidates_noop(search_db: sqlite3.Connection) -> None
     attach_pet(search_db, [], now=NOW, ttl=TTL)  # 후보 0 → no-op
 
 
+# ──────────────── 읽기-타임 별칭(pet 정식 우선·pet_allowed 폴백, ux-1) ────────────────
+
+
+def test_attach_pet_reads_legacy_alias(search_db: sqlite3.Connection) -> None:
+    # 레거시 'pet_allowed'만 있어도 정식 'pet' 읽기가 별칭 폴백으로 본다(마이그레이션 0).
+    write_facts(search_db, "C3", "pet_allowed", [
+        _pet_fact("conditional", confidence=0.55, source_type="news", source_url="https://mk/x",
+                  caveats=["소형견만"]),
+    ], ttl=TTL, now=NOW)
+    candidates = search_complexes(search_db, HardFilterSpec())
+    attach_pet(search_db, candidates, now=NOW, ttl=TTL)
+    by_id = {c.complex_id: c for c in candidates}
+    assert by_id["C3"].pet is not None and by_id["C3"].pet.pet_allowed == "conditional"
+    assert by_id["C3"].pet.caveats == ["소형견만"]
+
+
+def test_attach_pet_prefers_fresh_canonical_over_legacy(search_db: sqlite3.Connection) -> None:
+    # 정식 'pet'(라이브)과 레거시 'pet_allowed'가 둘 다 있으면 **정식이 우선**.
+    write_facts(search_db, "C3", "pet_allowed", [
+        _pet_fact("no", confidence=0.9, source_type="blog", source_url="https://old/x"),
+    ], ttl=TTL, now=NOW)
+    write_facts(search_db, "C3", "pet", [
+        _pet_fact("conditional", confidence=0.6, source_type="cafe", source_url="https://new/x",
+                  caveats=["무게 제한"]),
+    ], ttl=TTL, now=NOW)
+    candidates = search_complexes(search_db, HardFilterSpec())
+    attach_pet(search_db, candidates, now=NOW, ttl=TTL)
+    by_id = {c.complex_id: c for c in candidates}
+    assert by_id["C3"].pet is not None
+    assert by_id["C3"].pet.pet_allowed == "conditional"  # 정식 'pet' 우선(레거시 'no' 무시)
+    assert {s.source_url for s in by_id["C3"].pet.sources} == {"https://new/x"}  # 정식 출처만
+
+
 # ───────────────────────── 라우트 통합 (gym 공존) ─────────────────────────
 
 

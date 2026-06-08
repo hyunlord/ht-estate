@@ -33,6 +33,15 @@ test("auto-viewport: mount auto-search by bbox (no button) + chip→spec + crite
     await route.fulfill({ json: [CAND, CAND2] });
   });
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [CAND, CAND2] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
 
   await page.goto("/", { waitUntil: "networkidle" });
 

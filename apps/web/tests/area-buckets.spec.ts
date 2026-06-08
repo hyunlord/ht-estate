@@ -86,6 +86,15 @@ test("multi-area building shows per-평형 breakdown rows", async ({ page }) => 
 
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [MULTI] }));
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
   await page.goto("/", { waitUntil: "networkidle" });
 
   await page.getByTestId("result-item").first().click();
@@ -107,6 +116,15 @@ test("multi-area building shows per-평형 breakdown rows", async ({ page }) => 
 test("single-area building shows one breakdown row (no over-split)", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [SINGLE] }));
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: {
+        complex_id: "x",
+        gym: { status: "unavailable", summary: null },
+        pet: { status: "unavailable", summary: null },
+      },
+    }),
+  );
   await page.goto("/", { waitUntil: "networkidle" });
 
   await page.getByTestId("result-item").first().click();
