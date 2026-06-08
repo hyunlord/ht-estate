@@ -1,0 +1,14 @@
+# 거래(transaction/rent/join) 적재 tick — cron_ingest.sh 래퍼 (migrate-1-spark PART4).
+# 공유 .ingest.lock(C47, Spark-로컬) acquire_shared_lock 대기-재시도로 enrich와 공존.
+# data.go.kr 키는 루트 .env(app/settings.py 자동 로딩). uv는 PATH의 ~/.local/bin에서 해소.
+[Unit]
+Description=ht-estate ingest tick (transaction/rent/join)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh /home/hyunlord/github/ht-estate/apps/api/scripts/cron_ingest.sh transaction,rent,join

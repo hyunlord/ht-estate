@@ -1,0 +1,21 @@
+# ht-estate API (FastAPI/uvicorn) 상시 서비스 — Spark 주호스트 (migrate-1-spark PART4).
+# Tailscale로 macOS 클라이언트 도달: http://100.70.109.50:8000. 실패/리부트 auto-restart.
+# .env(루트)는 app/settings.py가 find_dotenv(usecwd)로 자동 로딩(WorkingDirectory에서 상향 탐색).
+[Unit]
+Description=ht-estate FastAPI (uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/hyunlord/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

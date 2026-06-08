@@ -1,0 +1,10 @@
+# enrich 일일 tick — 야간 저volume(review-cron 04:10과 시차). 멀티데이 누적 → ~15일 완주.
+[Unit]
+Description=ht-estate enrich tick (daily 04:20 KST)
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

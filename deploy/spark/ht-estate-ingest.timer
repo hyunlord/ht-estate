@@ -1,0 +1,10 @@
+# 거래 적재 15분 tick (cron_ingest.sh 설계 cadence — WAIT_SEC 300s < 15분 tick).
+[Unit]
+Description=ht-estate ingest tick (every 15 min)
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

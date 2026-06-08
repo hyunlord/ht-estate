@@ -1,0 +1,14 @@
+# 건축물대장 enrich 일일 tick — cron_enrich.sh 래퍼 (migrate-1-spark PART4, enrich-1d).
+# self .enrich.lock(미중첩) + 러너 내부가 공유 .ingest.lock을 배치단위 점유/해제(C47 공존).
+# 러너는 항상 ledger resume(재처리 0). 건축HUB 429 일일쿼터는 우아 중단(C48) → 익일 이어받음.
+[Unit]
+Description=ht-estate enrich tick (building ledger, daily)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh /home/hyunlord/github/ht-estate/apps/api/scripts/cron_enrich.sh
