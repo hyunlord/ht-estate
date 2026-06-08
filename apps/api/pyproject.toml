@@ -22,6 +22,8 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# 스파이크는 throwaway·관찰용(HARNESS R2) — 린트 제외(현재·미래 spikes 모두). 게이트 오염 방지.
+extend-exclude = ["scripts/spikes"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
