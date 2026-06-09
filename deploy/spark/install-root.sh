@@ -3,7 +3,9 @@
 # 비권한 검증(지문/counts/Gemma/shlock/API/search)은 이미 통과한 상태에서 권한 필요분만 모음:
 #   (1) /usr/bin/shlock  (2) systemd 유닛  (3) ops 래퍼 /usr/local/sbin/ht-estate-ctl
 #   (4) scoped sudoers(래퍼-only, visudo 검증 후 활성화)  (5) enable/start  (6) docker 부팅.
-# 멱등 — 여러 번 실행해도 안전. ops-sudo 이후엔 restart/install/enable이 `sudo ht-estate-ctl`로 자율.
+# 멱등 — 여러 번 실행해도 안전. ops-sudo 이후 restart/enable/status/logs는 `sudo ht-estate-ctl`로
+# 무비번 자율(operate-ops). **새/변경 유닛 설치는 이 스크립트 재실행**(사용자 sudo, 드묾) — 무비번
+# 래퍼엔 유닛 설치 없음(새 root 유닛 내용은 사람 검토+사람 설치 = escalation 0).
 set -euo pipefail
 REPO=/home/hyunlord/github/ht-estate
 SPARK="$REPO/deploy/spark"

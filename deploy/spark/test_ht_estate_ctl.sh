@@ -7,7 +7,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WRAP="$HERE/ht-estate-ctl"
 
 BIN="$(mktemp -d)"; LOG="$BIN/calls.log"
-for tool in systemctl journalctl install; do
+for tool in systemctl journalctl; do
   cat > "$BIN/$tool" <<EOF
 #!/usr/bin/env bash
 echo "$tool \$*" >> "$LOG"
@@ -46,7 +46,8 @@ expect_reject "대문자/공백 unit"              restart "ht-estate Api.servic
 expect_reject "미지 서브커맨드"               frobnicate ht-estate-api.service
 expect_reject "여분 인자(restart-api)"        restart-api ht-estate-api.service
 expect_reject "여분 인자(restart)"            restart ht-estate-api.service extra
-expect_reject "install-units 인자(소스 하드코딩)" install-units /tmp/evil
+expect_reject "install-units 제거(무비번 표면서 사라짐→미지로 거부)" install-units
+expect_reject "install-units +인자도 미지로 거부"  install-units /tmp/evil
 expect_reject "인자 없는 restart"             restart
 expect_reject "빈 호출"
 
@@ -58,17 +59,6 @@ expect_dispatch "enable --now"       "systemctl enable --now ht-estate-enrich.ti
 expect_dispatch "disable"            "systemctl disable ht-estate-ingest.timer"       disable ht-estate-ingest.timer
 expect_dispatch "reload"             "systemctl daemon-reload"                        reload
 expect_dispatch "logs"               "journalctl -u ht-estate-poi.service -n 200"     logs ht-estate-poi.service
-
-echo "[install-units 소스 하드코딩]"
-: > "$LOG"
-if bash "$WRAP" install-units >/dev/null 2>&1 \
-   && grep -qF "/home/hyunlord/github/ht-estate/deploy/spark/ht-estate-" "$LOG" \
-   && grep -qF "/etc/systemd/system/" "$LOG" \
-   && grep -qF "systemctl daemon-reload" "$LOG"; then
-  ok "install-units → 하드코딩 소스 glob → /etc/systemd/system + daemon-reload"
-else
-  bad "install-units (로그: $(cat "$LOG"))"
-fi
 
 rm -rf "$BIN"
 echo "----"
