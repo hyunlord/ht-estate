@@ -1,0 +1,5 @@
+# ht-estate 배포 ops — scoped NOPASSWD (ops-sudo). 설치: /etc/sudoers.d/ht-estate (root:root 0440).
+# **래퍼 한정**(ALL 아님) — hyunlord는 비번 없이 /usr/local/sbin/ht-estate-ctl 만 root로 실행.
+# 래퍼가 ht-estate-* 유닛 ops + 고정 install로 하드스코프 → 임의 root·타테넌트 도달 0.
+# install-root.sh가 visudo -c 검증 통과 후에만 활성화(malformed로 sudo 락아웃 방지).
+hyunlord ALL=(root) NOPASSWD: /usr/local/sbin/ht-estate-ctl

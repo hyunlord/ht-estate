@@ -1,30 +1,49 @@
 #!/usr/bin/env bash
-# migrate-1-spark — 단일 권한(root) 설치 스텝. `sudo bash deploy/spark/install-root.sh`로 실행.
-# 비권한 검증(지문/counts/Gemma/shlock 빌드+스모크/API 부팅/search)은 이미 통과한 상태에서,
-# 권한이 필요한 것만 모았다: (1) /usr/bin/shlock (2) systemd 유닛 설치·enable·start.
+# ht-estate 단일 권한(root) 설치 스텝. `sudo bash deploy/spark/install-root.sh`로 1회 실행.
+# 비권한 검증(지문/counts/Gemma/shlock/API/search)은 이미 통과한 상태에서 권한 필요분만 모음:
+#   (1) /usr/bin/shlock  (2) systemd 유닛  (3) ops 래퍼 /usr/local/sbin/ht-estate-ctl
+#   (4) scoped sudoers(래퍼-only, visudo 검증 후 활성화)  (5) enable/start  (6) docker 부팅.
+# 멱등 — 여러 번 실행해도 안전. ops-sudo 이후엔 restart/install/enable이 `sudo ht-estate-ctl`로 자율.
 set -euo pipefail
 REPO=/home/hyunlord/github/ht-estate
 SPARK="$REPO/deploy/spark"
 
-echo "== [1/4] INN-호환 shlock → /usr/bin/shlock =="
+echo "== [1/6] INN-호환 shlock → /usr/bin/shlock =="
 test -x "$REPO/deploy/shlock/shlock" || { echo "shlock 바이너리 없음 — 먼저 빌드"; exit 1; }
 install -m 755 "$REPO/deploy/shlock/shlock" /usr/bin/shlock
 /usr/bin/shlock -f /tmp/.shlock_root_smoke -p $$ && echo "  acquire 스모크 ok" ; rm -f /tmp/.shlock_root_smoke
 
-echo "== [2/4] systemd 유닛 설치 =="
-install -m 644 "$SPARK"/ht-estate-api.service     /etc/systemd/system/
-install -m 644 "$SPARK"/ht-estate-ingest.service  /etc/systemd/system/
-install -m 644 "$SPARK"/ht-estate-ingest.timer    /etc/systemd/system/
-install -m 644 "$SPARK"/ht-estate-enrich.service  /etc/systemd/system/
-install -m 644 "$SPARK"/ht-estate-enrich.timer    /etc/systemd/system/
+echo "== [2/6] systemd 유닛 설치 (ht-estate-*.{service,timer} 전부) =="
+shopt -s nullglob
+units=("$SPARK"/ht-estate-*.service "$SPARK"/ht-estate-*.timer)
+[ ${#units[@]} -gt 0 ] || { echo "유닛 소스 없음"; exit 1; }
+install -m 644 -o root -g root "${units[@]}" /etc/systemd/system/
 systemctl daemon-reload
+echo "  ${#units[@]} units 설치"
 
-echo "== [3/4] enable + start =="
+echo "== [3/6] ops 래퍼 → /usr/local/sbin/ht-estate-ctl (root:root 0755) =="
+install -m 755 -o root -g root "$SPARK/ht-estate-ctl" /usr/local/sbin/ht-estate-ctl
+
+echo "== [4/6] scoped sudoers → /etc/sudoers.d/ht-estate (visudo -c 검증 후 활성화) =="
+# malformed sudoers가 sudo 락아웃을 일으키지 못하게: 임시로 검증 통과 후에만 제자리에 설치.
+_tmp_sudoers="$(mktemp)"
+install -m 440 -o root -g root "$SPARK/sudoers.d-ht-estate" "$_tmp_sudoers"
+if visudo -cf "$_tmp_sudoers" >/dev/null; then
+  install -m 440 -o root -g root "$SPARK/sudoers.d-ht-estate" /etc/sudoers.d/ht-estate
+  rm -f "$_tmp_sudoers"
+  echo "  sudoers 활성화(visudo -c 통과)"
+else
+  rm -f "$_tmp_sudoers"
+  echo "  ✗ sudoers visudo -c 실패 — 설치 건너뜀(락아웃 방지)"; exit 1
+fi
+
+echo "== [5/6] enable + start =="
 systemctl enable --now ht-estate-api.service
-systemctl enable --now ht-estate-ingest.timer
-systemctl enable --now ht-estate-enrich.timer
+for t in ht-estate-ingest.timer ht-estate-enrich.timer ht-estate-poi.timer; do
+  [ -f "/etc/systemd/system/$t" ] && systemctl enable --now "$t" || true
+done
 
-echo "== [4/4] docker 부팅 자동시작(gemma --restart unless-stopped 보존) =="
+echo "== [6/6] docker 부팅 자동시작(gemma --restart unless-stopped 보존) =="
 systemctl enable docker.service 2>/dev/null || true
 
-echo "DONE — systemctl status ht-estate-api / list-timers 로 확인"
+echo "DONE — 확인: sudo -n /usr/local/sbin/ht-estate-ctl status ht-estate-api"

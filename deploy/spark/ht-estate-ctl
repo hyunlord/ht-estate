@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# ht-estate 배포 ops 전용 root 래퍼 (ops-sudo). 설치: /usr/local/sbin/ht-estate-ctl (root:root 0755).
+# sudoers 드롭인이 이 래퍼에만 NOPASSWD(hyunlord) → Spark CC가 ht-estate-* 유닛 ops를 비번 없이 자율.
+#
+# **보안 경계 = 이 파일의 검증.** 고정 서브커맨드만 · unit은 정규식 검증 · install 소스는 하드코딩
+# (인자 유래 아님) · 미지 서브커맨드/여분 인자 거부 · eval/임의 passthrough 0. 단일 감사 진입점이라
+# blast radius가 ht-estate-* 유닛 ops + 고정 install로 한정된다(임의 root·타테넌트 도달 0).
+set -euo pipefail
+
+# ht-estate 소유 유닛만 — 경로구분자·메타문자 불가(앵커 + [a-z0-9-]만). 임의 유닛 systemctl 차단.
+UNIT_RE='^ht-estate-[a-z0-9-]+\.(service|timer)$'
+SRC=/home/hyunlord/github/ht-estate/deploy/spark   # install-units 하드코딩 소스(인자에서 안 받음)
+DEST=/etc/systemd/system
+
+die() { echo "ht-estate-ctl: $*" >&2; exit 1; }
+
+valid_unit() {
+  [[ "$1" =~ $UNIT_RE ]] || die "거부: 허용 안 된 unit '$1' (ht-estate-*.{service,timer}만)"
+}
+
+cmd="${1-}"
+shift || true
+
+case "$cmd" in
+  restart-api)
+    [ $# -eq 0 ] || die "restart-api: 인자 불가"
+    exec systemctl restart ht-estate-api.service
+    ;;
+  restart|start|stop|status)
+    [ $# -eq 1 ] || die "$cmd: unit 1개 필요"
+    valid_unit "$1"
+    exec systemctl "$cmd" "$1"
+    ;;
+  enable)
+    [ $# -eq 1 ] || die "enable: unit 1개 필요"
+    valid_unit "$1"
+    exec systemctl enable --now "$1"
+    ;;
+  disable)
+    [ $# -eq 1 ] || die "disable: unit 1개 필요"
+    valid_unit "$1"
+    exec systemctl disable "$1"
+    ;;
+  reload)
+    [ $# -eq 0 ] || die "reload: 인자 불가"
+    exec systemctl daemon-reload
+    ;;
+  install-units)
+    [ $# -eq 0 ] || die "install-units: 인자 불가 (소스는 하드코딩 — $SRC)"
+    shopt -s nullglob
+    files=("$SRC"/ht-estate-*.service "$SRC"/ht-estate-*.timer)
+    [ ${#files[@]} -gt 0 ] || die "install-units: 소스에 ht-estate 유닛 없음"
+    install -m 644 -o root -g root "${files[@]}" "$DEST"/
+    systemctl daemon-reload
+    echo "installed ${#files[@]} units → $DEST"
+    ;;
+  logs)
+    [ $# -eq 1 ] || die "logs: unit 1개 필요"
+    valid_unit "$1"
+    exec journalctl -u "$1" -n 200 --no-pager
+    ;;
+  *)
+    die "미지 서브커맨드 '${cmd}'. 허용: restart-api | restart|start|stop|status <unit> |"\
+        "enable|disable <unit> | reload | install-units | logs <unit>"
+    ;;
+esac
