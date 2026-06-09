@@ -40,6 +40,8 @@ export interface HardFilterSpec {
   heat_type?: string | null; // 난방방식 정확 일치
   builder?: string | null; // 건설사 부분 일치
   property_type?: PropertyType | null; // 주택유형(P5-1)
+  subway_max_dist_m?: number | null; // poi-1: 역세권 최근접 지하철역 ≤ N미터(미적재=keep)
+  mart_count_1km_min?: number | null; // poi-1: 1km 내 대형마트 ≥ N개(미적재=keep)
   net_area_min?: number | null;
   net_area_max?: number | null;
   price_min?: number | null; // 만원 (매매)
@@ -103,6 +105,16 @@ export interface PetSummary {
   caveats: string[];
   confirm_with_office: boolean; // 관리사무소 확인 권고(§11 — 카드가 표면화)
   sources: GymSource[];
+}
+
+// poi-1: 정적 POI 근접(eager Tier-1). 카드 표시 + subway/mart hard 필터. 미적재 단지는 빈 배열.
+export interface PoiNear {
+  category: string; // SW8|MT1|CS2|HP8|PM9|PARK
+  label: string; // 지하철역·대형마트…
+  nearest_dist_m: number | null; // 최근접 거리(m). 반경 내 0건이면 null.
+  nearest_name: string | null;
+  count_500m: number | null;
+  count_1km: number | null;
 }
 
 // 온디맨드 enrichment(ux-1) — 디테일뷰 진입 시 단건 gym/pet 추출 상태.
@@ -172,6 +184,7 @@ export interface Candidate {
   pet?: PetSummary | null;
   review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.
   floorplan?: FloorplanSummary | null; // 평면도 feature(표시 전용). optional: 구버전 mock 호환.
+  poi?: PoiNear[] | null; // poi-1: 정적 POI 근접(eager). 미적재=빈 배열(computed-or-dash).
   criteria_eval?: CriterionEval[] | null; // soft 조건 평가(랭킹 근거). optional: 구버전 mock 호환.
 }
 

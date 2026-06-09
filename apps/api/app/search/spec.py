@@ -91,6 +91,10 @@ class HardFilterSpec(BaseModel):
     heat_type: str | None = None  # 난방방식 정확 일치(예: '지역난방')
     builder: str | None = None  # 건설사 부분 일치(LIKE %..%)
     property_type: PropertyType | None = None  # 주택유형(P5-1). None=전 유형. 정확 일치.
+    # poi-1: 정적 POI 근접 hard 필터(poi_proximity). ⚠ **미적재=KEEP**(없는 데이터로 제외 금지 —
+    # repo가 correlated NOT EXISTS OR pass로 구현). present-and-failing만 제외.
+    subway_max_dist_m: int | None = None  # 역세권: 최근접 지하철역 ≤ N미터(SW8)
+    mart_count_1km_min: int | None = None  # 1km 내 대형마트 ≥ N개(MT1 count_1km)
 
     # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
     deal_type: DealType = "sale"

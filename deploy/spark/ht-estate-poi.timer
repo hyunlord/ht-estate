@@ -1,0 +1,10 @@
+# POI 근접 일일 tick — enrich(04:20) 뒤 04:50 KST(시차). 멀티데이 누적 → ~11일 완주.
+[Unit]
+Description=ht-estate POI proximity tick (daily 04:50 KST)
+
+[Timer]
+OnCalendar=*-*-* 04:50:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -19,6 +19,8 @@ const CHIPS = [
   { id: "elevator", label: "엘베", kind: "soft" as const, criterion: "elevator_count" },
   { id: "underground", label: "지하주차", kind: "underground" as const },
   { id: "cctv", label: "CCTV", kind: "soft" as const, criterion: "cctv_count" },
+  { id: "subway_poi", label: "역세권 500m", kind: "subway_poi" as const }, // poi-1 hard(미적재=keep)
+  { id: "mart_poi", label: "마트 1km", kind: "mart_poi" as const },
 ];
 
 type Ranges = Record<string, string>;
@@ -71,6 +73,8 @@ export function TopBar({
     for (const c of CHIPS) {
       if (!ch[c.id]) continue;
       if (c.kind === "underground") spec.parking_underground = true;
+      else if (c.kind === "subway_poi") spec.subway_max_dist_m = 500;
+      else if (c.kind === "mart_poi") spec.mart_count_1km_min = 1;
       else criteria.push({ key: c.criterion, weight: 1 });
     }
     if (criteria.length > 0) spec.soft = { gym: "none", pet: "none", criteria };

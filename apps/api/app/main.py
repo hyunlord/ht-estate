@@ -20,6 +20,7 @@ import app.settings  # noqa: F401  (루트 .env 로딩 — provider/fetcher env 
 from app.enrich.fetcher import NullFetcher, naver_fetcher_from_env
 from app.enrich.ondemand import READY, OnDemandEnricher
 from app.enrich.provider import provider_from_env
+from app.poi.store import attach_poi
 from app.search.floorplan import attach_floorplan
 from app.search.gym import GymSummary, attach_gym, synthesize_gym
 from app.search.nl_parse import (
@@ -127,6 +128,7 @@ def _run_search(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidat
     """
     candidates = search_complexes(conn, spec)
     now = datetime.now(UTC)
+    attach_poi(conn, candidates)  # 정적 POI 근접(eager Tier-1) 부착 — 카드 표시
     attach_gym(conn, candidates, now=now)  # soft 조건(gym) 사실 부착
     attach_pet(conn, candidates, now=now)  # soft 조건(pet) 사실 부착
     attach_review(conn, candidates, now=now)  # 표시 전용 — 레지스트리 밖(랭킹 신호 아님, P3-1)

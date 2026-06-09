@@ -11,6 +11,7 @@ import sqlite3
 
 from pydantic import BaseModel
 
+from app.poi.store import PoiNear
 from app.search.criteria import CriterionEval
 from app.search.floorplan import FloorplanSummary
 from app.search.gym import GymSummary
@@ -81,6 +82,8 @@ class Candidate(BaseModel):
     pet: PetSummary | None = None
     review: ReviewSummary | None = None  # 후기(표시 전용 — 랭킹 신호 아님, P3-1)
     floorplan: FloorplanSummary | None = None  # 평면도 feature(표시 전용 — 랭킹 아님, P3-2)
+    # poi-1: 정적 POI 근접(eager Tier-1). 카드 표시 + subway/mart hard 필터. attach_poi가 채움.
+    poi: list[PoiNear] | None = None
     # P4-2a: 활성 soft 조건별 평가(설계 §7 ✓/△/✗ + 프론트 튜닝 재료). ranking이 채운다.
     criteria_eval: list[CriterionEval] | None = None
 
@@ -154,7 +157,30 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
         clauses.append("c.lat IS NOT NULL AND c.lng IS NOT NULL")
         clauses.append("c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ?")
         params += [spec.min_lat, spec.max_lat, spec.min_lng, spec.max_lng]
+    # poi-1: 정적 POI 근접 hard 필터. ⚠ **미적재=KEEP** — 해당 카테고리 행이 없으면(아직 배치
+    # 안 돈 단지) 거르지 않는다(없는 데이터로 제외 금지). present-and-failing(행 있고 미달)만 제외.
+    if spec.subway_max_dist_m is not None:
+        clauses.append(_poi_keep_or(  # SW8 nearest ≤ N (NULL=반경내 0건 → 미달로 제외)
+            "SW8", "p.nearest_dist_m IS NOT NULL AND p.nearest_dist_m <= ?"
+        ))
+        params.append(spec.subway_max_dist_m)
+    if spec.mart_count_1km_min is not None:
+        clauses.append(_poi_keep_or("MT1", "p.count_1km >= ?"))  # 1km내 마트 N개
+        params.append(spec.mart_count_1km_min)
     return clauses, params
+
+
+def _poi_keep_or(category: str, pass_cond: str) -> str:
+    """POI hard 절 — **미적재=KEEP**: 카테고리 행 없으면 통과, 있으면 pass_cond 충족분만.
+
+    correlated (NOT EXISTS 카테고리행) OR (EXISTS 카테고리행 AND 조건). category는 우리 상수.
+    """
+    return (
+        f"(NOT EXISTS (SELECT 1 FROM poi_proximity p "
+        f"WHERE p.complex_id = c.complex_id AND p.category = '{category}') "
+        f"OR EXISTS (SELECT 1 FROM poi_proximity p "
+        f"WHERE p.complex_id = c.complex_id AND p.category = '{category}' AND {pass_cond}))"
+    )
 
 
 # deal_type → 거래 테이블 · select 컬럼. sale은 기존 transaction(회귀 0).

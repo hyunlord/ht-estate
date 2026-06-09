@@ -14,6 +14,7 @@ import type {
   GymSummary,
   PetSection,
   PetSummary,
+  PoiNear,
   ReviewSummary,
 } from "@/lib/types";
 
@@ -226,6 +227,38 @@ function PetBlock({ section, fallback }: { section: PetSection | null; fallback?
       ? (section.summary ?? NONE_PET)
       : (fallback ?? (section ? NONE_PET : null));
   return pet ? <PetRow pet={pet} /> : null;
+}
+
+// ── POI 근접(poi-1, 정적 eager) — computed-or-dash. 미적재(배치 안 돈 단지)는 '정보 없음'. ──
+function PoiSection({ poi }: { poi?: PoiNear[] | null }) {
+  if (!poi || poi.length === 0) {
+    return (
+      <div className="r" data-testid="poi-row">
+        <div className="b">
+          <div className="k">주변</div>
+          <div className="v">
+            <span data-testid="poi-status">정보 없음 / 미계산</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="r" data-testid="poi-row">
+      <div className="b">
+        <div className="k">주변</div>
+        <div className="v" data-testid="poi-list">
+          {poi.map((p, i) => (
+            <span key={p.category} data-testid={`poi-${p.category}`}>
+              {i > 0 && " · "}
+              {p.label} {p.nearest_dist_m != null ? `${p.nearest_dist_m}m` : "—"}
+              {p.count_1km != null && p.count_1km > 0 ? ` (1km ${p.count_1km})` : ""}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ReviewRow({ review }: { review: ReviewSummary }) {
@@ -447,6 +480,7 @@ export function DetailPanel({
         {candidate.criteria_eval && candidate.criteria_eval.length > 0 && (
           <CriteriaEval evals={candidate.criteria_eval} sourceUrl={candidate.source_url} />
         )}
+        <PoiSection poi={candidate.poi} />
         <GymBlock section={gymSec} fallback={candidate.gym} />
         <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}

@@ -165,3 +165,18 @@ CREATE TABLE IF NOT EXISTS enrichment (
   ttl_expires_at      TIMESTAMP,
   PRIMARY KEY (complex_id, attribute, source_url)   -- 한 속성에 여러 출처 보관
 );
+
+-- poi_proximity: 정적 좌표↔정적 POI 결정론 근접(eager Tier-1·poi-1). enrichment와 별개
+-- (lazy/provenance/LLM 아님 — Kakao Local 거리계산). (단지,카테고리)당 1행. additive.
+CREATE TABLE IF NOT EXISTS poi_proximity (
+  complex_id      TEXT NOT NULL REFERENCES complex(complex_id),
+  category        TEXT NOT NULL,        -- 'SW8'(지하철)|'MT1'(마트)|'CS2'(편의점)|'HP8'(병원)|'PM9'(약국)|'PARK'
+  nearest_dist_m  INTEGER,              -- 최근접 POI 거리(m). 반경 내 0건이면 NULL.
+  nearest_name    TEXT,                 -- 최근접 POI 이름(카드 표시)
+  count_500m      INTEGER,              -- 500m 내 개수(반환 페이지 기준 — total>page면 하한)
+  count_1km       INTEGER,              -- 1km 내 개수(Kakao meta.total_count)
+  fetched_at      TIMESTAMP,
+  source          TEXT,                 -- 'kakao_local'
+  PRIMARY KEY (complex_id, category)
+);
+CREATE INDEX IF NOT EXISTS idx_poi_category ON poi_proximity(category, complex_id);

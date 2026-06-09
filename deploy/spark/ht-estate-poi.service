@@ -1,0 +1,16 @@
+# POI 근접 배치 tick — enrich_poi.py(Kakao Local). 좌표 read·poi_proximity write만 (poi-1).
+# 공유 .ingest.lock(C47) 청크단위 spin-acquire/release로 거래·enrich cron과 직렬화·공존.
+# Kakao 일쿼터(429=C48 동형) 우아중단 → 다음날 resume. 멀티데이(~11일) 누적.
+[Unit]
+Description=ht-estate POI proximity tick (Kakao Local, daily)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+# --limit=complex 수. Kakao ~100k콜/일 ÷ 6카테고리 ≈ 16k complex/일 → 15000(~90k콜, 쿼터 하단 여유).
+# 초과해도 429 우아중단(C48)이 다음날 resume. ~11일 완주(172,670 geocoded).
+ExecStart=/home/hyunlord/.local/bin/uv run python scripts/enrich_poi.py --limit 15000 --chunk 25 --interval 0.15
