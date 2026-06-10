@@ -12,6 +12,7 @@ import sqlite3
 from pydantic import BaseModel
 
 from app.poi.store import PoiNear
+from app.school.store import SchoolNear
 from app.search.criteria import CriterionEval
 from app.search.floorplan import FloorplanSummary
 from app.search.gym import GymSummary
@@ -84,6 +85,8 @@ class Candidate(BaseModel):
     floorplan: FloorplanSummary | None = None  # 평면도 feature(표시 전용 — 랭킹 아님, P3-2)
     # poi-1: 정적 POI 근접(eager Tier-1). 카드 표시 + subway/mart hard 필터. attach_poi가 채움.
     poi: list[PoiNear] | None = None
+    # school-1: 학교 거리 근접(eager Tier-1). 카드 + 초/중/고 거리 hard 필터. attach_school 채움.
+    school: list[SchoolNear] | None = None
     # P4-2a: 활성 soft 조건별 평가(설계 §7 ✓/△/✗ + 프론트 튜닝 재료). ranking이 채운다.
     criteria_eval: list[CriterionEval] | None = None
 
@@ -167,7 +170,31 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     if spec.mart_count_1km_min is not None:
         clauses.append(_poi_keep_or("MT1", "p.count_1km >= ?"))  # 1km내 마트 N개
         params.append(spec.mart_count_1km_min)
+    # school-1: 학교 거리 hard 필터(school_proximity). ⚠ **미적재=KEEP**(poi와 동형).
+    for level, dist in (
+        ("elem", spec.elem_max_dist_m),
+        ("mid", spec.mid_max_dist_m),
+        ("high", spec.high_max_dist_m),
+    ):
+        if dist is not None:
+            clauses.append(_school_keep_or(  # 최근접 ≤ N (NULL=해당 level 학교 0개 → 미달로 제외)
+                level, "s.nearest_dist_m IS NOT NULL AND s.nearest_dist_m <= ?"
+            ))
+            params.append(dist)
     return clauses, params
+
+
+def _school_keep_or(level: str, pass_cond: str) -> str:
+    """학교 거리 hard 절 — **미적재=KEEP**: level 행 없으면 통과, 있으면 pass_cond 충족분만.
+
+    correlated (NOT EXISTS level행) OR (EXISTS level행 AND 조건). level은 우리 상수(elem/mid/high).
+    """
+    return (
+        f"(NOT EXISTS (SELECT 1 FROM school_proximity s "
+        f"WHERE s.complex_id = c.complex_id AND s.level = '{level}') "
+        f"OR EXISTS (SELECT 1 FROM school_proximity s "
+        f"WHERE s.complex_id = c.complex_id AND s.level = '{level}' AND {pass_cond}))"
+    )
 
 
 def _poi_keep_or(category: str, pass_cond: str) -> str:

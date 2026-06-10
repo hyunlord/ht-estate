@@ -180,3 +180,20 @@ CREATE TABLE IF NOT EXISTS poi_proximity (
   PRIMARY KEY (complex_id, category)
 );
 CREATE INDEX IF NOT EXISTS idx_poi_category ON poi_proximity(category, complex_id);
+
+-- school_proximity: 정적 좌표↔정부 학교좌표 결정론 근접(eager Tier-1·school-1). poi_proximity와
+-- 동형이나 소스/의미 다름(전국초중등학교위치표준데이터 15021148 거리 — Kakao 아님·외부 API 0).
+-- (단지,level) 1행. additive. 좌표 read·이 테이블 write만 → 지문/counts 불변.
+CREATE TABLE IF NOT EXISTS school_proximity (
+  complex_id        TEXT NOT NULL REFERENCES complex(complex_id),
+  level             TEXT NOT NULL,        -- 'elem'(초)|'mid'(중)|'high'(고)
+  nearest_dist_m    INTEGER,              -- 최근접 학교 거리(m). 해당 level 학교 0개면 NULL.
+  nearest_name      TEXT,                 -- 최근접 학교명(카드 표시)
+  nearest_school_id TEXT,                 -- 최근접 학교ID(15021148)
+  count_500m        INTEGER,              -- 500m 내 개수
+  count_1km         INTEGER,              -- 1km 내 개수
+  fetched_at        TIMESTAMP,
+  source            TEXT,                 -- 'moe_school_location_15021148'
+  PRIMARY KEY (complex_id, level)
+);
+CREATE INDEX IF NOT EXISTS idx_school_level ON school_proximity(level, complex_id);

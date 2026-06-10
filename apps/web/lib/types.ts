@@ -42,6 +42,9 @@ export interface HardFilterSpec {
   property_type?: PropertyType | null; // 주택유형(P5-1)
   subway_max_dist_m?: number | null; // poi-1: 역세권 최근접 지하철역 ≤ N미터(미적재=keep)
   mart_count_1km_min?: number | null; // poi-1: 1km 내 대형마트 ≥ N개(미적재=keep)
+  elem_max_dist_m?: number | null; // school-1: 최근접 초등학교 ≤ N미터(미적재=keep)
+  mid_max_dist_m?: number | null; // school-1: 최근접 중학교 ≤ N미터(미적재=keep)
+  high_max_dist_m?: number | null; // school-1: 최근접 고등학교 ≤ N미터(미적재=keep)
   net_area_min?: number | null;
   net_area_max?: number | null;
   price_min?: number | null; // 만원 (매매)
@@ -105,6 +108,17 @@ export interface PetSummary {
   caveats: string[];
   confirm_with_office: boolean; // 관리사무소 확인 권고(§11 — 카드가 표면화)
   sources: GymSource[];
+}
+
+// school-1: 학교 거리 근접(eager Tier-1). 가까운 초/중/고 + 거리. 미적재 단지는 빈 배열.
+export interface SchoolNear {
+  level: "elem" | "mid" | "high";
+  label: string; // 초등학교|중학교|고등학교
+  nearest_dist_m: number | null;
+  nearest_name: string | null;
+  nearest_school_id: string | null;
+  count_500m: number | null;
+  count_1km: number | null;
 }
 
 // poi-1: 정적 POI 근접(eager Tier-1). 카드 표시 + subway/mart hard 필터. 미적재 단지는 빈 배열.
@@ -185,6 +199,7 @@ export interface Candidate {
   review?: ReviewSummary | null; // 후기(표시 전용). optional: 구버전 mock 호환.
   floorplan?: FloorplanSummary | null; // 평면도 feature(표시 전용). optional: 구버전 mock 호환.
   poi?: PoiNear[] | null; // poi-1: 정적 POI 근접(eager). 미적재=빈 배열(computed-or-dash).
+  school?: SchoolNear[] | null; // school-1: 학교 거리 근접(eager). 미적재=빈 배열.
   criteria_eval?: CriterionEval[] | null; // soft 조건 평가(랭킹 근거). optional: 구버전 mock 호환.
 }
 

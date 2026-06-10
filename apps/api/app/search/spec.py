@@ -95,6 +95,10 @@ class HardFilterSpec(BaseModel):
     # repo가 correlated NOT EXISTS OR pass로 구현). present-and-failing만 제외.
     subway_max_dist_m: int | None = None  # 역세권: 최근접 지하철역 ≤ N미터(SW8)
     mart_count_1km_min: int | None = None  # 1km 내 대형마트 ≥ N개(MT1 count_1km)
+    # school-1: 학교 거리 근접 hard 필터(school_proximity). ⚠ **미적재=KEEP**(poi와 동일).
+    elem_max_dist_m: int | None = None  # 최근접 초등학교 ≤ N미터(주 필터)
+    mid_max_dist_m: int | None = None  # 최근접 중학교 ≤ N미터
+    high_max_dist_m: int | None = None  # 최근접 고등학교 ≤ N미터
 
     # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
     deal_type: DealType = "sale"

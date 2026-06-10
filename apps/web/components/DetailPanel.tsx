@@ -15,6 +15,7 @@ import type {
   PetSection,
   PetSummary,
   PoiNear,
+  SchoolNear,
   ReviewSummary,
 } from "@/lib/types";
 
@@ -261,6 +262,43 @@ function PoiSection({ poi }: { poi?: PoiNear[] | null }) {
   );
 }
 
+// ── 학교 거리 근접(school-1, 정적 eager) — 가까운 초/중/고 + 거리. computed-or-dash. ──
+const SCHOOL_ORDER: SchoolNear["level"][] = ["elem", "mid", "high"];
+function SchoolSection({ school }: { school?: SchoolNear[] | null }) {
+  if (!school || school.length === 0) {
+    return (
+      <div className="r" data-testid="school-row">
+        <div className="b">
+          <div className="k">학교</div>
+          <div className="v">
+            <span data-testid="school-status">정보 없음 / 미계산</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const byLevel = new Map(school.map((s) => [s.level, s]));
+  return (
+    <div className="r" data-testid="school-row">
+      <div className="b">
+        <div className="k">학교 (거리)</div>
+        <div className="v" data-testid="school-list">
+          {SCHOOL_ORDER.filter((lv) => byLevel.has(lv)).map((lv, i) => {
+            const s = byLevel.get(lv)!;
+            return (
+              <span key={lv} data-testid={`school-${lv}`}>
+                {i > 0 && " · "}
+                {s.label} {s.nearest_name ?? "—"}{" "}
+                {s.nearest_dist_m != null ? `${s.nearest_dist_m}m` : "—"}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReviewRow({ review }: { review: ReviewSummary }) {
   if (review.summary == null) {
     return (
@@ -481,6 +519,7 @@ export function DetailPanel({
           <CriteriaEval evals={candidate.criteria_eval} sourceUrl={candidate.source_url} />
         )}
         <PoiSection poi={candidate.poi} />
+        <SchoolSection school={candidate.school} />
         <GymBlock section={gymSec} fallback={candidate.gym} />
         <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}
