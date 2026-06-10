@@ -16,6 +16,7 @@ from app.poi.proximity import (
     KakaoLocalClient,
     PoiResult,
     QuotaExceeded,
+    TransientError,
     compute,
 )
 from app.poi.runner import enrich_poi
@@ -82,6 +83,60 @@ def test_client_429_raises_quota_exceeded() -> None:
         c.search("SW8", None, x=127.1, y=37.5)
 
 
+# ── 오류 3분류: 일시적(timeout/5xx) 재시도→TransientError · 영구(4xx) raise (C56) ──
+def _client_kw(handler, **kw) -> KakaoLocalClient:  # type: ignore[no-untyped-def]
+    tr = httpx.MockTransport(handler)
+    return KakaoLocalClient(
+        api_key="k", client=httpx.Client(transport=tr), sleep=lambda _s: None, **kw
+    )
+
+
+def test_client_connect_timeout_retries_then_transient() -> None:
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ConnectTimeout("handshake timed out")  # 라이브 크래시 재현
+
+    with pytest.raises(TransientError):  # 크래시(미처리 httpx 예외) 아님
+        _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
+    assert calls["n"] == 3  # 1 + 2 재시도
+
+
+def test_client_5xx_retries_then_transient() -> None:
+    c = _client_kw(lambda req: httpx.Response(503, json={}), max_retries=1)
+    with pytest.raises(TransientError):
+        c.search("SW8", None, x=127.1, y=37.5)
+
+
+def test_client_transient_then_success_recovers() -> None:
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("blip")
+        return httpx.Response(200, json={
+            "documents": [{"distance": "100", "place_name": "x"}], "meta": {"total_count": 1},
+        })
+
+    r = _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
+    assert r.nearest_name == "x" and calls["n"] == 2  # 재시도 후 성공
+
+
+def test_client_permanent_4xx_raises_not_transient() -> None:
+    # 401(키 문제 등) = 영구 → 즉시 raise(재시도 없음·TransientError/QuotaExceeded 아님)
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(401, json={})
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
+    assert calls["n"] == 1  # 영구 → 재시도 안 함
+
+
 # ── 러너 (resume·quota-graceful) ──
 class FakeClient:
     """결정론 mock — 카테고리별 고정 결과. quota_after 콜 수 후 QuotaExceeded."""
@@ -136,6 +191,49 @@ def test_runner_quota_graceful_partial(db: sqlite3.Connection) -> None:
     # C1 완료(6), C2는 2개만 쓰고 중단 → 다음 run이 이어받음
     assert done_categories(db, "C1") == {c for c, _ in CATEGORIES}
     assert 0 < len(done_categories(db, "C2")) < len(CATEGORIES)
+
+
+# ── 러너 transient skip-continue (C56 — crash 0, resume-correct) ──
+class FlakyClient:
+    """transient_on 콜 번호에서 TransientError 1회(재시도 소진 가정), 그 외 정상."""
+
+    def __init__(self, transient_on: int) -> None:
+        self.calls = 0
+        self.transient_on = transient_on
+
+    def search(self, category: str, keyword: str | None, *, x: float, y: float) -> PoiResult:
+        self.calls += 1
+        if self.calls == self.transient_on:
+            raise TransientError("blip")
+        return PoiResult(100 + self.calls, f"{category}-poi", 2, 5)
+
+
+def test_runner_transient_skips_complex_and_continues(db: sqlite3.Connection) -> None:
+    # C1 첫 카테고리에서 transient → C1 skip(미적재·다음 run retry), C2 정상. **크래시 0**.
+    client = FlakyClient(transient_on=1)
+    r = enrich_poi(db, client, now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r["quota_hit"] is False
+    assert r["transient_skips"] == 1
+    assert r["complexes"] == 1  # C2만 완료(C1 skip)
+    assert done_categories(db, "C1") == set()  # 첫 cat 실패 → 미적재(영구 갭 0, retry 대상)
+    assert done_categories(db, "C2") == {c for c, _ in CATEGORIES}  # 타 단지 정상
+
+
+def test_runner_transient_midcomplex_preserves_partial(db: sqlite3.Connection) -> None:
+    # C1 3번째 카테고리에서 transient → 앞 2개 보존(다음 run이 나머지 retry), C2 정상.
+    client = FlakyClient(transient_on=3)
+    r = enrich_poi(db, client, now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r["transient_skips"] == 1
+    assert 0 < len(done_categories(db, "C1")) < len(CATEGORIES)  # 부분 보존(resume)
+    assert done_categories(db, "C2") == {c for c, _ in CATEGORIES}
+
+
+def test_runner_transient_then_resume_completes(db: sqlite3.Connection) -> None:
+    # 1차 transient skip → 2차(정상 클라)가 미완 단지/카테고리 완주(영구 갭 0).
+    enrich_poi(db, FlakyClient(transient_on=1), now=NOW, limit=10)  # type: ignore[arg-type]
+    r2 = enrich_poi(db, FakeClient(), now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r2["transient_skips"] == 0
+    assert done_categories(db, "C1") == {c for c, _ in CATEGORIES}  # 다음 run에서 완주
 
 
 # ── store ──

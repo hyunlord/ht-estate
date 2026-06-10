@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
-from app.poi.proximity import CATEGORIES, KakaoLocalClient, QuotaExceeded
+from app.poi.proximity import CATEGORIES, KakaoLocalClient, QuotaExceeded, TransientError
 from app.poi.store import done_categories, write_poi
 
 
@@ -43,10 +43,12 @@ def enrich_poi(
     rows = pending_complexes(conn, limit)
     complexes = 0
     calls = 0
+    transient_skips = 0
     for row in rows:
         cid, lat, lng = row["complex_id"], row["lat"], row["lng"]
         done = done_categories(conn, cid)
         wrote = False
+        skipped = False
         for category, keyword in CATEGORIES:
             if category in done:
                 continue
@@ -54,13 +56,26 @@ def enrich_poi(
                 result = client.search(category, keyword, x=lng, y=lat)  # Kakao x=lng,y=lat
             except QuotaExceeded:
                 conn.commit()  # 쓴 만큼 보존
-                return {"complexes": complexes, "calls": calls, "quota_hit": True}
+                return {
+                    "complexes": complexes, "calls": calls,
+                    "transient_skips": transient_skips, "quota_hit": True,
+                }
+            except TransientError:
+                # 일시적 오류(재시도 소진) → 쓴 만큼 보존 + 이 단지 남은 카테고리 skip·다음 단지로.
+                # 미완 카테고리는 done_categories로 다음 run retry(영구 갭 0, crash 0).
+                conn.commit()
+                transient_skips += 1
+                skipped = True
+                break
             write_poi(conn, cid, category, result, now=now)
             calls += 1
             wrote = True
             if interval:
                 sleep(interval)
-        if wrote:
+        if wrote and not skipped:
             complexes += 1
             conn.commit()  # 단지 단위 커밋(resume-safe)
-    return {"complexes": complexes, "calls": calls, "quota_hit": False}
+    return {
+        "complexes": complexes, "calls": calls,
+        "transient_skips": transient_skips, "quota_hit": False,
+    }
