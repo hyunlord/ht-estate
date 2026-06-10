@@ -65,6 +65,14 @@ class Embedder(Protocol):
     def embed(self, texts: list[str]) -> EmbedResult: ...
 
 
+class Reranker(Protocol):
+    """리랭크 읽기 측(E3-3 retrieval)이 의존하는 좁은 인터페이스 — swappable·테스트 mock 가능."""
+
+    def rerank(
+        self, query: str, documents: list[str], top_n: int | None = None
+    ) -> list[RerankHit]: ...
+
+
 @dataclass(frozen=True)
 class RerankHit:
     index: int  # documents 입력 인덱스

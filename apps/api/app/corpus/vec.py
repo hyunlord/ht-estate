@@ -26,11 +26,19 @@ def load_vec(conn: sqlite3.Connection) -> None:
 
 
 def ensure_vec_table(conn: sqlite3.Connection) -> None:
-    """vec0 로드 + review_chunk_vec(chunk_id TEXT PK, emb float[DIM]) 생성(멱등)."""
+    """vec0 로드 + review_chunk_vec(chunk_id PK, complex_id 메타, emb float[DIM]) 생성(멱등).
+
+    complex_id는 vec0 메타 컬럼 — KNN을 단지로 필터(E3-3 retrieval). 구 스키마(complex_id 없음·
+    E3-2 초판)는 자동 마이그레이트(DROP+재생성). 벡터는 코퍼스 rebuild로 복구(review_chunk 보존)."""
     load_vec(conn)
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (VEC_TABLE,)
+    ).fetchone()
+    if row is not None and "complex_id" not in (row[0] or ""):
+        conn.execute(f"DROP TABLE {VEC_TABLE}")  # 구 스키마 → 재생성(벡터는 force rebuild로 복구)
     conn.execute(
         f"CREATE VIRTUAL TABLE IF NOT EXISTS {VEC_TABLE} USING vec0("
-        f"chunk_id TEXT PRIMARY KEY, emb float[{EMBED_DIM}])"
+        f"chunk_id TEXT PRIMARY KEY, complex_id TEXT, emb float[{EMBED_DIM}])"
     )
 
 
@@ -40,10 +48,22 @@ def serialize(vector: list[float]) -> bytes:
 
 
 def knn(conn: sqlite3.Connection, query_vec: list[float], k: int) -> list[tuple[str, float]]:
-    """쿼리 벡터 KNN → [(chunk_id, distance)] 거리 오름차순. conn은 vec 로드 선행 필요."""
+    """전역 KNN → [(chunk_id, distance)] 거리 오름차순. conn은 vec 로드 선행 필요."""
     rows = conn.execute(
         f"SELECT chunk_id, distance FROM {VEC_TABLE} "
         "WHERE emb MATCH ? AND k = ? ORDER BY distance",
         (serialize(query_vec), k),
+    ).fetchall()
+    return [(r[0], float(r[1])) for r in rows]
+
+
+def knn_filtered(
+    conn: sqlite3.Connection, complex_id: str, query_vec: list[float], k: int
+) -> list[tuple[str, float]]:
+    """단지-필터 KNN(E3-3 retrieval) → 해당 complex_id의 청크만 top-k. vec0 메타 컬럼 필터."""
+    rows = conn.execute(
+        f"SELECT chunk_id, distance FROM {VEC_TABLE} "
+        "WHERE complex_id = ? AND emb MATCH ? AND k = ? ORDER BY distance",
+        (complex_id, serialize(query_vec), k),
     ).fetchall()
     return [(r[0], float(r[1])) for r in rows]

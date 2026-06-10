@@ -7,6 +7,7 @@ import type {
   HardFilterSpec,
   MarkerCandidate,
   NlSearchResponse,
+  ReputationResponse,
 } from "./types";
 
 // 기본은 **같은-오리진 프록시**(`/api` → next.config rewrites → 127.0.0.1:8000). 공개 URL 1개·CORS 불요.
@@ -24,6 +25,27 @@ export async function fetchEnrichment(
   });
   if (!res.ok) throw new Error(`enrichment failed: ${res.status}`);
   return (await res.json()) as EnrichmentResponse;
+}
+
+/** 단지 평판 RAG (E3-3) — POST /complexes/{id}/reputation {query}.
+ * 코퍼스 miss면 pending(백그라운드 build·폴링)·신선이면 retrieve+rerank+gemma 종합+인용(ready).
+ * 느림(embed+KNN+rerank+gemma) — detail 트리거 전용. graceful: degrade해도 200(summary/인용 조정). */
+export async function fetchReputation(
+  complexId: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<ReputationResponse> {
+  const res = await fetch(
+    `${API_BASE}/complexes/${encodeURIComponent(complexId)}/reputation`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+      signal,
+    },
+  );
+  if (!res.ok) throw new Error(`reputation failed: ${res.status}`);
+  return (await res.json()) as ReputationResponse;
 }
 
 /** 자연어 질의 → 레지스트리-grounded spec + 감지칩 + 매핑불가 + 랭크 후보(#3b).

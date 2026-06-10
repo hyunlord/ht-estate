@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -17,10 +18,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import app.settings  # noqa: F401  (루트 .env 로딩 — provider/fetcher env 활성화: 온디맨드 라이브)
+from app.corpus.ondemand import OnDemandCorpus
+from app.corpus.vec import ensure_vec_table
+from app.embed.client import EmbedClient, embed_client_from_env
 from app.enrich.fetcher import NullFetcher, naver_fetcher_from_env
 from app.enrich.ondemand import READY, OnDemandEnricher
-from app.enrich.provider import provider_from_env
+from app.enrich.provider import LLMProvider, provider_from_env
 from app.poi.store import attach_poi
+from app.reputation.service import PENDING as REP_PENDING
+from app.reputation.service import UNAVAILABLE as REP_UNAVAILABLE
+from app.reputation.service import synthesize_reputation
 from app.school.assignment import attach_assignment
 from app.school.store import attach_school
 from app.search.floorplan import attach_floorplan
@@ -84,6 +91,32 @@ def get_enricher() -> OnDemandEnricher:
     return _default_enricher
 
 
+# 평판(E3-3) 의존 — 코퍼스 트리거(OnDemandCorpus·E3-2) + embed/rerank(:8092) + gemma(ENRICH_LLM).
+# embed_client 1개가 embed+rerank 둘 다(EmbedClient는 Embedder·Reranker 구현). provider 미구성이면
+# synth는 인용만(evidence-only). fetcher 미구성이면 코퍼스 unavailable. API 트리거 build는 gym/pet
+# 동형 lockless(graceful: DB 락 경합 시 defer) — 배치 C47은 build_corpus.py CLI.
+@dataclass
+class ReputationDeps:
+    corpus: OnDemandCorpus
+    embed_client: EmbedClient  # embed + rerank 겸용
+    provider: LLMProvider | None
+
+
+_reputation_embed = embed_client_from_env()
+_default_reputation_deps = ReputationDeps(
+    corpus=OnDemandCorpus(
+        fetcher=naver_fetcher_from_env(), embed_client=_reputation_embed
+    ),
+    embed_client=_reputation_embed,
+    provider=provider_from_env(),
+)
+
+
+def get_reputation() -> ReputationDeps:
+    """평판 의존 번들. 테스트는 dependency_overrides로 mock 주입(키리스)."""
+    return _default_reputation_deps
+
+
 class NlQuery(BaseModel):
     """NL 검색 요청 — 자유 텍스트 질의."""
 
@@ -119,6 +152,35 @@ class EnrichmentResponse(BaseModel):
     complex_id: str
     gym: GymSection
     pet: PetSection
+
+
+class ReputationQuery(BaseModel):
+    """평판 질의 — 열린 텍스트(소음·주차·관리·교통·층간소음 등)."""
+
+    query: str
+
+
+class CitationOut(BaseModel):
+    """인용 1건 — 딥링크 정밀(source_url + span_ref) + 근거 발췌."""
+
+    source_type: str
+    source_url: str
+    span_ref: str | None
+    snippet: str
+
+
+class ReputationResponse(BaseModel):
+    """평판 응답 — status + 종합(degrade 시 None) + 인용 + degraded(투명성).
+
+    advisory: 후기는 주관적·확인 권장(단정 아님) — 프론트가 배지 표기. summary None이면
+    인용만(evidence-only·gemma degrade) 또는 매치 0. status=pending이면 코퍼스 수집 중.
+    """
+
+    complex_id: str
+    status: str
+    summary: str | None
+    citations: list[CitationOut]
+    degraded: list[str]
 
 
 def _run_search(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
@@ -223,4 +285,50 @@ def complex_enrichment_endpoint(
             status=pet_state,
             summary=synthesize_pet(pet_facts) if pet_state == READY else None,
         ),
+    )
+
+
+@app.post("/complexes/{complex_id}/reputation")
+def complex_reputation_endpoint(
+    complex_id: str,
+    body: ReputationQuery,
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+    deps: Annotated[ReputationDeps, Depends(get_reputation)],
+) -> ReputationResponse:
+    """단지 평판 RAG (E3-3) — 열린 질의 → 코퍼스(E3-2)서 retrieve+rerank+gemma 종합+인용.
+
+    **검색 패스 아님**(detail 트리거·느림). 코퍼스 miss/만료 → OnDemandCorpus build 트리거 +
+    **pending**(동기 차단 0). 신선 → 질의 embed→단지필터 KNN→rerank(:8092)→gemma 종합(요약+인용·
+    단정 금지·DB권). 3 모델 각각 graceful degrade(embed→pending·rerank→KNN fallback·gemma→인용만)·
+    crash 0. **read-only**(canon write 0 → 지문/counts 불변. 트리거 build는 review_chunk/_vec만).
+    """
+    row = conn.execute(
+        "SELECT name FROM complex WHERE complex_id = ? LIMIT 1", (complex_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="단지를 찾을 수 없습니다")
+    name = row["name"] or complex_id
+    now = datetime.now(UTC)
+    state = deps.corpus.ensure(conn, complex_id, name, now=now)  # miss→build 트리거+pending
+    if state in (REP_PENDING, REP_UNAVAILABLE):
+        return ReputationResponse(
+            complex_id=complex_id, status=state, summary=None, citations=[], degraded=[]
+        )
+    ensure_vec_table(conn)  # 읽기 conn에 vec 로드(+구스키마 마이그레이트)
+    result = synthesize_reputation(
+        conn, complex_id, body.query,
+        embed_client=deps.embed_client, rerank_client=deps.embed_client, provider=deps.provider,
+    )
+    return ReputationResponse(
+        complex_id=complex_id,
+        status=result.status,
+        summary=result.summary,
+        citations=[
+            CitationOut(
+                source_type=c.source_type, source_url=c.source_url,
+                span_ref=c.span_ref, snippet=c.snippet,
+            )
+            for c in result.citations
+        ],
+        degraded=result.degraded,
     )

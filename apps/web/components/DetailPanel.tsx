@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchEnrichment } from "@/lib/api";
+import { fetchEnrichment, fetchReputation } from "@/lib/api";
 import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/lib/format";
 import type {
   AreaBucket,
   AreaUnit,
   AssignmentRow,
   Candidate,
+  Citation,
   CriterionEval,
   FloorplanSummary,
   GymSection,
@@ -16,6 +17,7 @@ import type {
   PetSection,
   PetSummary,
   PoiNear,
+  ReputationResponse,
   SchoolNear,
   ReviewSummary,
 } from "@/lib/types";
@@ -455,6 +457,124 @@ function AreaBuckets({ buckets, unit }: { buckets: AreaBucket[]; unit: AreaUnit 
   );
 }
 
+// ── 후기/평판 RAG 섹션(E3-3) — 프리셋 칩 → reputation 엔드포인트 → 종합+인용·advisory. ──
+// 검색 패스 아님(느림·detail 트리거). pending=코퍼스 수집/분석 중(폴링). summary 없고 인용만이면
+// evidence-only(gemma degrade) — 인용 노출. 코퍼스 없음/unavailable → '정보 없음'(computed-or-dash).
+const REPUTATION_PRESETS: { label: string; query: string }[] = [
+  { label: "주차", query: "주차 어때" },
+  { label: "층간소음", query: "층간소음 어때" },
+  { label: "관리", query: "관리 상태 어때" },
+  { label: "교통", query: "교통 편의 어때" },
+  { label: "소음", query: "소음 어때" },
+];
+const REP_POLL_MS = 3000;
+const REP_MAX_POLLS = 25;
+
+function CitationLinks({ citations }: { citations: Citation[] }) {
+  if (citations.length === 0) return null;
+  return (
+    <div className="v" data-testid="reputation-citations">
+      {citations.map((c, i) => (
+        <span key={i} data-testid="reputation-citation">
+          {i > 0 && " · "}
+          {c.source_url.startsWith("http") ? (
+            <a
+              data-testid="reputation-citation-link"
+              href={c.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="src"
+            >
+              {c.source_type}
+              {c.span_ref ? ` ${c.span_ref}` : ""} ↗
+            </a>
+          ) : (
+            <span className="agent">{c.source_type}</span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ReputationSection({ cid }: { cid: string }) {
+  const [active, setActive] = useState<string | null>(null);
+  const [result, setResult] = useState<ReputationResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  function ask(query: string) {
+    setActive(query);
+    setResult(null);
+    setLoading(true);
+    const ctrl = new AbortController();
+    const poll = async (attempt: number) => {
+      try {
+        const r = await fetchReputation(cid, query, ctrl.signal);
+        setResult(r);
+        // pending(코퍼스 수집 중) → 폴링 계속(MAX 후 멈춤·무한 스피너 없음).
+        if (r.status === "pending" && attempt < REP_MAX_POLLS) {
+          setTimeout(() => poll(attempt + 1), REP_POLL_MS);
+        } else {
+          setLoading(false);
+        }
+      } catch {
+        setLoading(false); // graceful: 네트워크/엔드포인트 실패 → 조용히 멈춤(스피너 해제)
+      }
+    };
+    poll(0);
+  }
+
+  const pending = loading || result?.status === "pending";
+  return (
+    <div className="r" data-testid="reputation-row">
+      <div className="b">
+        <div className="k">
+          후기 · 평판 (RAG)
+          <span className="badge" data-testid="reputation-advisory">
+            ⚠ 회자되는 평판 · 확인 권장
+          </span>
+        </div>
+        <div className="v">
+          <div className="rep-chips" data-testid="reputation-chips">
+            {REPUTATION_PRESETS.map((p) => (
+              <button
+                type="button"
+                key={p.query}
+                data-testid="reputation-chip"
+                data-query={p.query}
+                className={`chip${active === p.query ? " on" : ""}`}
+                onClick={() => ask(p.query)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {pending && (
+            <span className="conf" data-testid="reputation-pending">
+              후기 수집/분석 중…
+            </span>
+          )}
+          {!pending && result?.status === "unavailable" && (
+            <span data-testid="reputation-status">정보 없음 / 미구성</span>
+          )}
+          {!pending && result?.status === "ready" && (
+            <>
+              {result.summary ? (
+                <span data-testid="reputation-summary">{result.summary}</span>
+              ) : (
+                result.citations.length === 0 && (
+                  <span data-testid="reputation-status">관련 후기 없음</span>
+                )
+              )}
+              <CitationLinks citations={result.citations} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DetailPanel({
   candidate,
   unit,
@@ -561,6 +681,7 @@ export function DetailPanel({
         <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}
         {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
+        <ReputationSection cid={cid} />
         {candidate.source_url && (
           <div className="r">
             <div className="b">

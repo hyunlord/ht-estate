@@ -109,7 +109,8 @@ def write_chunks(
              now.isoformat(), ttl_at, recipe.embed_model, recipe.dim, recipe.normalized),
         )
         conn.execute(
-            f"INSERT INTO {VEC_TABLE}(chunk_id, emb) VALUES (?, ?)", (cid, serialize(list(vec)))
+            f"INSERT INTO {VEC_TABLE}(chunk_id, complex_id, emb) VALUES (?, ?, ?)",
+            (cid, complex_id, serialize(list(vec))),
         )
     conn.commit()  # review_chunk + vec0 동시 커밋(반쪽쓰기 0)
     return len(pending)
@@ -129,6 +130,25 @@ def read_chunks(conn: sqlite3.Connection, complex_id: str) -> list[ReviewChunk]:
         )
         for r in rows
     ]
+
+
+def read_chunks_by_ids(conn: sqlite3.Connection, ids: Sequence[str]) -> dict[str, ReviewChunk]:
+    """chunk_id 리스트 → {chunk_id: ReviewChunk}(retrieval 후 메타 조회). 순서는 호출부가 복원."""
+    if not ids:
+        return {}
+    ph = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT chunk_id, complex_id, chunk_text, source_type, source_url, span_ref "
+        f"FROM review_chunk WHERE chunk_id IN ({ph})",
+        list(ids),
+    ).fetchall()
+    return {
+        r["chunk_id"]: ReviewChunk(
+            chunk_id=r["chunk_id"], complex_id=r["complex_id"], chunk_text=r["chunk_text"],
+            source_type=r["source_type"], source_url=r["source_url"], span_ref=r["span_ref"],
+        )
+        for r in rows
+    }
 
 
 def chunk_count(conn: sqlite3.Connection, complex_id: str) -> int:

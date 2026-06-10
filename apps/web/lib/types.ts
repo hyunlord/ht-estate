@@ -166,6 +166,23 @@ export interface ReviewSummary {
   sources: GymSource[];
 }
 
+// 평판 RAG(E3-3) — 열린 질의 → 코퍼스 retrieve+rerank+gemma 종합 + 인용. advisory(주관·확인 권장).
+// status: ready(요약 또는 인용만)·pending(코퍼스 수집 중)·unavailable(라이브 미구성). summary null이면
+// 인용만(evidence-only·gemma degrade) 또는 매치 0. degraded: 어떤 모델이 degrade했는지(투명성).
+export interface Citation {
+  source_type: string;
+  source_url: string;
+  span_ref: string | null;
+  snippet: string;
+}
+export interface ReputationResponse {
+  complex_id: string;
+  status: EnrichStatus;
+  summary: string | null;
+  citations: Citation[];
+  degraded: string[];
+}
+
 // Tier-2 floorplan(평면도, P3-2). **표시 전용 — 랭킹 신호 아님**(객관 feature·SoftSpec에 없음).
 // bay·orientation·structure 각각 null 가능(못 읽음). §11: 점수화 아님, 중립 feature.
 export interface FloorplanSummary {
