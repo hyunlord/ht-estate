@@ -29,7 +29,20 @@ CATEGORY_LABELS: dict[str, str] = {
 
 
 class QuotaExceeded(RuntimeError):
-    """Kakao 일쿼터 초과(429) — 러너가 우아 중단(다음날 resume). C48 패턴 동형."""
+    """Kakao 일쿼터 초과 — 러너가 우아 중단(다음날 resume). C48 패턴 동형.
+
+    **두 신호 모두 포함(C62 실측 진단):** HTTP **429**, 그리고 Kakao Local이 일쿼터 초과를
+    내보내는 또 다른 형태인 **HTTP 400 + body code=-10**("API limit has been exceeded.").
+    후자가 C61 크래시의 진짜 원인 — 이건 per-row 데이터 이슈가 **아니라** quota라, skip+continue로
+    묻으면 quota 정전 동안 단지 수만 개를 영구 skip 마킹해 백필을 오염시킨다 → QuotaExceeded로
+    올려 우아 중단·다음 run resume(quota 리셋 시 자가치유)."""
+
+
+class BadRequestError(RuntimeError):
+    """Kakao **진짜** bad-request 4xx(HTTP 400·**quota code -10 아님**) — per-row 데이터 이슈
+    (좌표/파라미터 단발). 러너가 **해당 (단지,카테고리) skip+continue·attempted 마킹**(재시도 무의미
+    ·400은 재요청해도 안 변함). TransientError와 달리 단지 전체가 아니라 그 한 카테고리만 skip하고
+    같은 단지 나머지 카테고리는 계속 처리. 401/403(체계적 auth) 아님 — 그건 여전히 raise(abort)."""
 
 
 class TransientError(RuntimeError):
@@ -79,8 +92,15 @@ class KakaoLocalClient:
                 else:
                     if resp.status_code == 429:
                         raise QuotaExceeded("Kakao 429 — 일쿼터 초과")
+                    if resp.status_code == 400:
+                        # Kakao는 일쿼터 초과를 HTTP 400 + code -10로도 신호(429 아님·C62 실측).
+                        # quota → QuotaExceeded(우아 중단·자가치유) · 그 외 400(진짜 bad-request·
+                        # per-row) → BadRequestError(skip+continue·재시도 무의미).
+                        if _is_quota_400(resp):
+                            raise QuotaExceeded("Kakao 400 code=-10 — 일쿼터 초과(400 신호)")
+                        raise BadRequestError(f"Kakao 400 bad-request: {resp.text[:200]}")
                     if resp.status_code < 500:
-                        resp.raise_for_status()  # 그 외 4xx → 영구(raise) · 2xx → 통과
+                        resp.raise_for_status()  # 401/403 등 체계적 4xx → 영구 abort · 2xx → 통과
                         return resp.json()
                     last = httpx.HTTPStatusError(  # 5xx → 일시적(재시도)
                         f"Kakao {resp.status_code}", request=resp.request, response=resp
@@ -102,6 +122,21 @@ class KakaoLocalClient:
         else:
             data = self._get("keyword", {**base, "query": keyword})
         return compute(data.get("documents", []), data.get("meta", {}).get("total_count", 0))
+
+
+def _is_quota_400(resp: httpx.Response) -> bool:
+    """HTTP 400이 Kakao 일쿼터 초과(code -10·"API limit has been exceeded.")인지 판별.
+
+    JSON body의 `code == -10`가 1차 신호, 메시지 substring이 fallback(body 비-JSON 방어).
+    이게 true면 quota(우아 중단)·아니면 진짜 bad-request(per-row skip)."""
+    try:
+        body = resp.json()
+    except (ValueError, TypeError):
+        body = {}
+    if isinstance(body, dict) and body.get("code") == -10:
+        return True
+    blob = f"{body} {resp.text}".lower() if isinstance(body, dict) else resp.text.lower()
+    return "limit has been exceeded" in blob
 
 
 def compute(documents: list[dict], total_count: int) -> PoiResult:

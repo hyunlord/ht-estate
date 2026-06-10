@@ -14,6 +14,14 @@ from pydantic import BaseModel
 
 from app.poi.proximity import CATEGORY_LABELS, PoiResult
 
+# per-row 400(진짜 bad-request) skip 마킹 — poi_proximity에 `<cat>:skip` 의사-카테고리 1행으로 보관.
+# 왜 별 테이블 아니라 suffix 마커냐: (1) **missing=KEEP 보존** — search의 _poi_keep_or는 정확
+# category='SW8'만 매칭 → 'SW8:skip'은 그 카테고리 행 부재로 보여 검색서 제외 안 됨(없는 데이터로
+# 제외 금지). (2) **재시도 방지** — poi_proximity 행수에 포함돼 pending_complexes COUNT가 차고,
+# done_categories가 suffix를 벗겨 'SW8'을 done으로 봐 재호출 안 함. (3) **카드 무오염** — read_poi가
+# 마커 행 제외. 전부 app/poi/ 내부·poi_proximity만 read/write(타 테이블·search 무접촉).
+SKIP_SUFFIX = ":skip"
+
 
 class PoiNear(BaseModel):
     """카드/필터용 한 카테고리 근접 요약. computed-or-dash(미적재면 이 카테고리 행 자체가 없음)."""
@@ -51,12 +59,39 @@ def write_poi(
     )
 
 
+def write_poi_skip(
+    conn: sqlite3.Connection,
+    complex_id: str,
+    category: str,
+    *,
+    now: datetime,
+    source: str = "kakao_400_skip",
+) -> None:
+    """per-row 400(진짜 bad-request) → `<cat>:skip` 마커 1행(전 지표 NULL·멱등 upsert).
+
+    재시도 방지 마킹 — done_categories가 suffix를 벗겨 done으로 인식. read_poi·search엔 안 보임
+    (missing=KEEP 보존). 멱등(같은 단지·카테고리 재마킹 무해)."""
+    skip_cat = f"{category}{SKIP_SUFFIX}"
+    conn.execute(
+        "INSERT INTO poi_proximity "
+        "(complex_id, category, nearest_dist_m, nearest_name, count_500m, count_1km, "
+        " fetched_at, source) VALUES (?, ?, NULL, NULL, NULL, NULL, ?, ?) "
+        "ON CONFLICT(complex_id, category) DO UPDATE SET "
+        "fetched_at=excluded.fetched_at, source=excluded.source",
+        (complex_id, skip_cat, now.isoformat(), source),
+    )
+
+
 def done_categories(conn: sqlite3.Connection, complex_id: str) -> set[str]:
-    """이미 적재된 카테고리(resume skip용)."""
+    """이미 처리된 카테고리(resume skip용) — 적재분 + 400-skip 마커(suffix 벗겨 실 카테고리로)."""
     rows = conn.execute(
         "SELECT category FROM poi_proximity WHERE complex_id = ?", (complex_id,)
     ).fetchall()
-    return {r["category"] for r in rows}
+    out: set[str] = set()
+    for r in rows:
+        cat = str(r["category"])
+        out.add(cat[: -len(SKIP_SUFFIX)] if cat.endswith(SKIP_SUFFIX) else cat)
+    return out
 
 
 class _PoiTarget(Protocol):
@@ -82,7 +117,9 @@ def read_poi(conn: sqlite3.Connection, ids: Sequence[str]) -> dict[str, list[Poi
     ph = ",".join("?" * len(ids))
     rows = conn.execute(
         "SELECT complex_id, category, nearest_dist_m, nearest_name, count_500m, count_1km "
-        f"FROM poi_proximity WHERE complex_id IN ({ph}) ORDER BY complex_id, category",
+        f"FROM poi_proximity WHERE complex_id IN ({ph}) "
+        f"AND category NOT LIKE '%{SKIP_SUFFIX}' "  # 400-skip 마커는 카드/검색서 안 보임
+        "ORDER BY complex_id, category",
         list(ids),
     ).fetchall()
     out: dict[str, list[PoiNear]] = {cid: [] for cid in ids}

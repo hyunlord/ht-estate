@@ -13,6 +13,7 @@ import pytest
 
 from app.poi.proximity import (
     CATEGORIES,
+    BadRequestError,
     KakaoLocalClient,
     PoiResult,
     QuotaExceeded,
@@ -125,7 +126,7 @@ def test_client_transient_then_success_recovers() -> None:
 
 
 def test_client_permanent_4xx_raises_not_transient() -> None:
-    # 401(키 문제 등) = 영구 → 즉시 raise(재시도 없음·TransientError/QuotaExceeded 아님)
+    # 401(키 문제 등) = 체계적 영구 → 즉시 raise(재시도 없음·TransientError/QuotaExceeded 아님)
     calls = {"n": 0}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -135,6 +136,51 @@ def test_client_permanent_4xx_raises_not_transient() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
     assert calls["n"] == 1  # 영구 → 재시도 안 함
+
+
+def test_client_403_still_aborts() -> None:
+    # 403(forbidden = 체계적) → 여전히 abort(httpx.HTTPStatusError) — BadRequest/Quota 아님
+    c = _client_kw(lambda req: httpx.Response(403, json={}), max_retries=2)
+    with pytest.raises(httpx.HTTPStatusError):
+        c.search("SW8", None, x=127.1, y=37.5)
+
+
+def test_client_400_quota_code_minus10_raises_quota_exceeded() -> None:
+    # ★ C61 크래시 진짜 원인: Kakao는 일쿼터 초과를 HTTP 400 + code -10로 신호(429 아님).
+    # → QuotaExceeded(우아 중단·자가치유) · 재시도 안 함 · BadRequest/HTTPStatusError 아님.
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(400, json={
+            "errorType": "BadRequest", "code": -10,
+            "message": "API limit has been exceeded.",
+        })
+
+    with pytest.raises(QuotaExceeded):
+        _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
+    assert calls["n"] == 1  # quota → 재시도 안 함
+
+
+def test_client_400_quota_detected_by_message_fallback() -> None:
+    # code 필드 없어도 메시지 substring으로 quota 판별(body 형태 변형 방어).
+    c = _client_kw(lambda req: httpx.Response(
+        400, json={"msg": "API limit has been exceeded."}), max_retries=2)
+    with pytest.raises(QuotaExceeded):
+        c.search("SW8", None, x=127.1, y=37.5)
+
+
+def test_client_400_genuine_bad_request_raises_bad_request() -> None:
+    # 진짜 per-row 400(quota -10 아님) → BadRequestError(러너가 skip+continue) · 재시도 없음.
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(400, json={"code": -1, "message": "bad coordinate"})
+
+    with pytest.raises(BadRequestError):
+        _client_kw(handler, max_retries=2).search("SW8", None, x=127.1, y=37.5)
+    assert calls["n"] == 1  # 400은 재요청해도 안 변함 → 재시도 없음
 
 
 # ── 러너 (resume·quota-graceful) ──
@@ -234,6 +280,60 @@ def test_runner_transient_then_resume_completes(db: sqlite3.Connection) -> None:
     r2 = enrich_poi(db, FakeClient(), now=NOW, limit=10)  # type: ignore[arg-type]
     assert r2["transient_skips"] == 0
     assert done_categories(db, "C1") == {c for c, _ in CATEGORIES}  # 다음 run에서 완주
+
+
+# ── 러너 per-row 400 skip-continue (poi-fix — quota 아닌 진짜 bad-request) ──
+class BadReqClient:
+    """bad_on 콜 번호에서 BadRequestError 1회(진짜 per-row 400), 그 외 정상."""
+
+    def __init__(self, bad_on: int) -> None:
+        self.calls = 0
+        self.bad_on = bad_on
+
+    def search(self, category: str, keyword: str | None, *, x: float, y: float) -> PoiResult:
+        self.calls += 1
+        if self.calls == self.bad_on:
+            raise BadRequestError("per-row 400")
+        return PoiResult(100 + self.calls, f"{category}-poi", 2, 5)
+
+
+def test_runner_bad_request_skips_category_and_continues(db: sqlite3.Connection) -> None:
+    # C1 첫 카테고리에서 per-row 400 → 그 카테고리만 skip 마킹, **같은 단지 나머지는 계속**.
+    # transient(단지 전체 skip)와 다름. crash 0·tick 완주·C2 정상.
+    client = BadReqClient(bad_on=1)
+    r = enrich_poi(db, client, now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r["quota_hit"] is False
+    assert r["bad_request_skips"] == 1
+    assert r["complexes"] == 2  # C1·C2 둘 다 처리(C1은 5 적재 + 1 skip-마킹)
+    # 첫 카테고리(SW8)는 skip 마킹 → done에 잡힘(재호출 방지) · 나머지 5개 정상 적재.
+    assert done_categories(db, "C1") == {c for c, _ in CATEGORIES}
+    assert done_categories(db, "C2") == {c for c, _ in CATEGORIES}
+
+
+def test_runner_bad_request_marks_attempted_no_reretry(db: sqlite3.Connection) -> None:
+    # 1차 per-row 400 skip → 2차 run은 그 카테고리 **재호출 안 함**(무한루프 0).
+    enrich_poi(db, BadReqClient(bad_on=1), now=NOW, limit=10)  # type: ignore[arg-type]
+    client2 = BadReqClient(bad_on=999)  # 호출되면 정상 반환(재호출 여부 확인용)
+    r2 = enrich_poi(db, client2, now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r2["complexes"] == 0 and client2.calls == 0  # 전부 done(+skip) → 재호출 0
+
+
+def test_runner_bad_request_skip_invisible_to_read_poi(db: sqlite3.Connection) -> None:
+    # missing=KEEP: skip 마커는 read_poi(카드/검색 attach)에 안 보임 → 5개 카테고리만.
+    enrich_poi(db, BadReqClient(bad_on=1), now=NOW, limit=10)  # type: ignore[arg-type]
+    got = read_poi(db, ["C1"])
+    cats = {p.category for p in got["C1"]}
+    assert all(":skip" not in c for c in cats)  # 마커 비노출
+    assert len(got["C1"]) == len(CATEGORIES) - 1  # SW8 skip → 5개만
+
+
+def test_runner_quota_400_graceful_stop_not_skip_storm(db: sqlite3.Connection) -> None:
+    # ★ 진짜 원인 회귀가드: quota(400 code -10)는 QuotaExceeded로 와 **우아 중단** —
+    # per-row skip 폭주(수만 마킹)로 백필 오염시키지 않음. quota_hit=True·skip 0.
+    client = FakeClient(quota_after=3)  # 3콜 후 QuotaExceeded(quota-400 동형)
+    r = enrich_poi(db, client, now=NOW, limit=10)  # type: ignore[arg-type]
+    assert r["quota_hit"] is True
+    assert r["bad_request_skips"] == 0  # quota는 skip 마킹 안 함
 
 
 # ── store ──

@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     lock = ShlockBatch(lock_path, max_spin=args.max_spin)
 
     remaining = args.limit
-    total_c = total_calls = 0
+    total_c = total_calls = total_skips = 0
     while remaining > 0:
         with lock() as acquired:  # type: ignore[attr-defined]
             if not acquired:
@@ -60,15 +60,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         total_c += int(r["complexes"])
         total_calls += int(r["calls"])
+        total_skips += int(r.get("bad_request_skips", 0))
         remaining -= int(r["complexes"])
         if r["quota_hit"]:
-            print(f"[quota] Kakao 429 우아중단. complexes={total_c} calls={total_calls}")
+            # 429 또는 400 code=-10(일쿼터 초과) — 우아 중단, 다음 run resume(자가치유).
+            print(f"[quota] Kakao 쿼터 초과 우아중단. complexes={total_c} "
+                  f"calls={total_calls} 400-skips={total_skips}")
             return 0
         if int(r["complexes"]) == 0:
             print("[done] 더 처리할 미적재 complex 없음(또는 청크 0).")
             break
         time.sleep(args.inter_batch_sleep)  # cron release 창
-    print(f"[ok] complexes={total_c} calls={total_calls}")
+    print(f"[ok] complexes={total_c} calls={total_calls} 400-skips={total_skips}")
     return 0
 
 
