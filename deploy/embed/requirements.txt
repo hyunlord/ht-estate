@@ -1,0 +1,5 @@
+# ht-estate embed/rerank 서비스 deps (E3-1) — 전용 venv(apps/api와 분리: torch 무거움·게이트 오염 방지).
+# torch는 sentence-transformers가 끌어옴(ARM64 CPU 휠 — recon 검증). GPU 최적화는 미래(EMBED_DEVICE=cuda).
+sentence-transformers
+fastapi
+uvicorn[standard]

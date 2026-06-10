@@ -1,0 +1,21 @@
+# ht-estate embed/rerank 네이티브 서비스 (E3-1) — bge-m3 + bge-reranker-v2-m3, OpenAI-호환.
+# ARM64 GB10서 prebuilt 컨테이너(amd64) 불가 → 네이티브 systemd 서비스. localhost:8092(gemma 8087 옆).
+# CPU-first(멀티테넌트 GPU 무경합). 전용 venv(deploy/embed/.venv — build.sh로 1회 빌드). 실패/리부트 auto-restart.
+[Unit]
+Description=ht-estate embed/rerank (bge-m3, native)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/deploy/embed
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/hyunlord/github/ht-estate/deploy/embed/.venv/bin/uvicorn serve:app --host 127.0.0.1 --port 8092
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

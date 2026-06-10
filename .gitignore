@@ -27,6 +27,9 @@ next-env.d.ts
 # 추적/적재되지 않게 무시(자동 출력이 main에 자동 진입하는 것을 구조적으로 차단).
 apps/api/data/staging/
 
+# ── embed/rerank 서비스 전용 venv(E3-1) — torch 등 빌드 산출물. build.sh로 재현. 추적 제외. ──
+deploy/embed/.venv/
+
 # ── 학교 데이터 fetch 산출물(fetch-school-data) — 재현 가능(fetcher가 받음). git 추적 제외. ──
 apps/api/data/school_locations.csv
 apps/api/data/school_zone/
