@@ -27,6 +27,12 @@ next-env.d.ts
 # 추적/적재되지 않게 무시(자동 출력이 main에 자동 진입하는 것을 구조적으로 차단).
 apps/api/data/staging/
 
+# ── 학교 데이터 fetch 산출물(fetch-school-data) — 재현 가능(fetcher가 받음). git 추적 제외. ──
+apps/api/data/school_locations.csv
+apps/api/data/school_zone/
+apps/api/data/school_zone_link.csv
+apps/api/data/school_data_versions.json
+
 # ── Playwright ──
 test-results/
 playwright-report/

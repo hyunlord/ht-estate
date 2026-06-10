@@ -1,0 +1,11 @@
+# 학교 데이터 월 1회 fetch-if-newer (반기 갱신이라도 월간 체크가 단순·견고 — 안 새것이면 no-op).
+# enabling은 선택: sudo ht-estate-ctl enable ht-estate-school-fetch.timer
+[Unit]
+Description=ht-estate school data fetch (monthly, 1st 05:30 KST)
+
+[Timer]
+OnCalendar=*-*-01 05:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

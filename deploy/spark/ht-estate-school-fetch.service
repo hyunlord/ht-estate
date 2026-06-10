@@ -1,0 +1,13 @@
+# 학교 데이터 fetch-if-newer (fetch-school-data) — 반기 3종 최신본 자동 취득(파일만·DB write 0).
+# schoolzone.emac.kr에서 더 새 버전만 받아 data/에 배치(로더가 소비). graceful·멱등.
+[Unit]
+Description=ht-estate school data fetch-if-newer (schoolzone, monthly)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/hyunlord/.local/bin/uv run python scripts/fetch_school_data.py
