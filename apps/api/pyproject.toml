@@ -12,6 +12,7 @@ dependencies = [
     "shapely>=2.1.2",
     "pyshp>=3.0.12",
     "pyproj>=3.7.2",
+    "sqlite-vec>=0.1.9",
 ]
 
 # uv가 관리하는 개발 의존성 (PEP 735). uv sync/run 시 기본 설치.

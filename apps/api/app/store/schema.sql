@@ -216,3 +216,25 @@ CREATE TABLE IF NOT EXISTS school_assignment (
   PRIMARY KEY (complex_id, zone_id, school_id)
 );
 CREATE INDEX IF NOT EXISTS idx_school_assignment_cid ON school_assignment(complex_id);
+
+-- review_chunk: 후기/평판 RAG 코퍼스(E3-2). 후보-한정 lazy on-demand로 blog/cafe(차후 youtube)
+-- 소스를 청킹해 적재 — chunk마다 출처(source_url)+인용정밀(span_ref: 문단idx/타임스탬프구간).
+-- ★레시피핀(embed_model/dim/normalized)으로 모델변경 감지·재임베딩(geocode 지문 규율의 임베딩판).
+-- TTL(후기 수주)로 신선도 관리. 벡터는 review_chunk_vec(sqlite-vec vec0 가상테이블·런타임 생성 —
+-- 확장 로드 필요라 schema.sql 밖, app/corpus/vec.py가 chunk_id 조인으로 보강). additive·
+-- review_chunk/_vec만 write(좌표/complex/transaction 무접촉) → 지문/counts 불변. DB권: 개인리서치
+-- 범위·요약+출처(원문 대량 재배포 0).
+CREATE TABLE IF NOT EXISTS review_chunk (
+  chunk_id         TEXT PRIMARY KEY,     -- det. sha256(complex_id|source_url|span_ref) — 멱등 upsert
+  complex_id       TEXT NOT NULL REFERENCES complex(complex_id),
+  chunk_text       TEXT NOT NULL,        -- 청크 본문(요약 스니펫 — DB권 경계)
+  source_type      TEXT NOT NULL,        -- 'blog'|'cafe'|'web'|'youtube'(차후)
+  source_url       TEXT NOT NULL,        -- 딥링크(출처 이동)
+  span_ref         TEXT,                 -- 인용정밀: 'p{idx}'(문단) | 't{start}-{end}'(자막구간)
+  fetched_at       TIMESTAMP,
+  ttl_expires_at   TIMESTAMP,            -- 만료 시 재수집(후기 신선도)
+  embed_model      TEXT,                 -- ★레시피핀
+  embed_dim        INTEGER,              -- ★레시피핀(1024)
+  embed_normalized BOOLEAN               -- ★레시피핀
+);
+CREATE INDEX IF NOT EXISTS idx_review_chunk_complex ON review_chunk(complex_id);

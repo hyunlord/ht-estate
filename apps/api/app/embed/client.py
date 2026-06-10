@@ -18,6 +18,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import httpx
 
@@ -52,6 +53,16 @@ class EmbedRecipe:
 class EmbedResult:
     vectors: list[list[float]]
     recipe: EmbedRecipe
+
+
+class Embedder(Protocol):
+    """임베딩 쓰기 측(코퍼스 build)이 의존하는 좁은 인터페이스 — swappable·테스트 mock 가능.
+
+    EmbedClient가 구현. 하류(corpus)는 embed + 레시피 식별(embed_model)만 필요(rerank는 E3-3)."""
+
+    embed_model: str
+
+    def embed(self, texts: list[str]) -> EmbedResult: ...
 
 
 @dataclass(frozen=True)
