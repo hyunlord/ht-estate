@@ -117,6 +117,60 @@ def _numeric_scorer(
     return scorer
 
 
+def _dist_signal(near: int | None, cap: float) -> float:
+    """거리(작을수록 좋음)→[0.1,1.0]. near None=반경/level내 0건(계산됨)→0.1(far)."""
+    if near is None:
+        return 0.1
+    return 0.1 + 0.9 * (1 - min(1.0, max(0.0, float(near)) / cap))
+
+
+def _score_school_dist(
+    level: str, cap: float
+) -> Callable[[Candidate], tuple[object, float, float | None, bool]]:
+    """학교 최근접거리 scorer(lower_better) — attach_school이 채운 c.school[level] READ.
+
+    미적재(해당 level 행 없음) → NEUTRAL(missing=NEUTRAL·demote-not-exclude). 계산됐으나 학교 0개
+    (nearest None) → 0.1(far). school_proximity READ만(랭킹 JOIN은 attach_school·write 0)."""
+    def scorer(c: Candidate) -> tuple[object, float, float | None, bool]:
+        row = next((s for s in (c.school or []) if s.level == level), None)
+        if row is None:
+            return None, NEUTRAL, None, False  # 미적재 → NEUTRAL
+        return row.nearest_dist_m, _dist_signal(row.nearest_dist_m, cap), 1.0, True
+
+    return scorer
+
+
+def _score_poi_count(
+    category: str, cap: float
+) -> Callable[[Candidate], tuple[object, float, float | None, bool]]:
+    """POI 1km 개수 scorer(higher_better) — attach_poi가 채운 c.poi[category].count_1km READ.
+
+    미적재(카테고리 행 없음) → NEUTRAL. 계산된 0건 → 0.1(낮음). poi_proximity READ만(write 0)."""
+    def scorer(c: Candidate) -> tuple[object, float, float | None, bool]:
+        row = next((p for p in (c.poi or []) if p.category == category), None)
+        if row is None:
+            return None, NEUTRAL, None, False  # 미적재 → NEUTRAL
+        v = row.count_1km or 0
+        return v, 0.1 + 0.9 * min(1.0, v / cap), 1.0, True
+
+    return scorer
+
+
+def _score_poi_dist(
+    category: str, cap: float
+) -> Callable[[Candidate], tuple[object, float, float | None, bool]]:
+    """POI 최근접거리 scorer(lower_better) — attach_poi가 채운 c.poi[category].nearest_dist_m READ.
+
+    미적재 → NEUTRAL. 반경내 0건(nearest None) → 0.1(far). poi_proximity READ만(write 0)."""
+    def scorer(c: Candidate) -> tuple[object, float, float | None, bool]:
+        row = next((p for p in (c.poi or []) if p.category == category), None)
+        if row is None:
+            return None, NEUTRAL, None, False  # 미적재 → NEUTRAL
+        return row.nearest_dist_m, _dist_signal(row.nearest_dist_m, cap), 1.0, True
+
+    return scorer
+
+
 def _score_approval_year(c: Candidate) -> tuple[object, float, float | None, bool]:
     """신축일수록 좋음 — approval_date 'YYYY..'에서 연도. 1980~2025로 정규화."""
     year: int | None = None
@@ -190,6 +244,26 @@ REGISTRY: dict[str, Criterion] = {
                   ("approval_year_min", "approval_year_max")),
         Criterion("top_floor", "최고층", "complex:top_floor", "numeric", "higher_better",
                   _numeric_scorer("top_floor", 40.0), True, ("top_floor_min",)),
+        # 학교 거리(school-1) — 최근접거리 lower_better. school_proximity READ(JOIN=attach_school).
+        # hard_fields는 기존 elem/mid/high_max_dist_m. 미적재→NEUTRAL(랭킹)·KEEP(하드·기존).
+        Criterion("elem_dist", "초등학교 거리", "school_proximity:elem", "numeric", "lower_better",
+                  _score_school_dist("elem", 1000.0), True, ("elem_max_dist_m",)),
+        Criterion("mid_dist", "중학교 거리", "school_proximity:mid", "numeric", "lower_better",
+                  _score_school_dist("mid", 1500.0), True, ("mid_max_dist_m",)),
+        Criterion("high_dist", "고등학교 거리", "school_proximity:high", "numeric", "lower_better",
+                  _score_school_dist("high", 2000.0), True, ("high_max_dist_m",)),
+        # POI 풀세트(poi-1) — poi_proximity READ. subway는 위 subway_time(K-apt ordinal). 카테고리별
+        # 의미 큰 축: 마트·편의점=많을수록(count_1km↑) / 병원·약국·공원=가까울수록(nearest↓).
+        Criterion("mart", "대형마트", "poi_proximity:MT1", "numeric", "higher_better",
+                  _score_poi_count("MT1", 3.0), True, ("mart_count_1km_min",)),
+        Criterion("conv", "편의점", "poi_proximity:CS2", "numeric", "higher_better",
+                  _score_poi_count("CS2", 15.0), True, ("conv_count_1km_min",)),
+        Criterion("hospital", "병원", "poi_proximity:HP8", "numeric", "lower_better",
+                  _score_poi_dist("HP8", 1500.0), True, ("hospital_max_dist_m",)),
+        Criterion("pharmacy", "약국", "poi_proximity:PM9", "numeric", "lower_better",
+                  _score_poi_dist("PM9", 1000.0), True, ("pharmacy_max_dist_m",)),
+        Criterion("park", "공원", "poi_proximity:PARK", "numeric", "lower_better",
+                  _score_poi_dist("PARK", 1000.0), True, ("park_max_dist_m",)),
         # 구조화 (hard-only — categorical 매칭, 내재 순서 없어 soft 랭킹 부적합)
         Criterion("heat_type", "난방방식", "complex:heat_type", "categorical", "match",
                   None, True, ("heat_type",)),

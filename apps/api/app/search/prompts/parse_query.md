@@ -50,5 +50,13 @@
 (주: "강남"은 좌표/지역코드 매핑이 이 단계 밖이라 매핑 안 됨 → 무시하거나 unsupported. "신축 단지만"이었다면
 `approval_year_min`을 hard로. "큰"은 비교형이라 soft.)
 
+질의: "초등학교 가까운 신축, 병원 편의점도 가까우면 좋아"
+```
+{"hard": {}, "soft": {"gym": "none", "pet": "none", "criteria": [{"key": "elem_dist", "weight": 1.0}, {"key": "approval_year", "weight": 1.0}, {"key": "hospital", "weight": 1.0}, {"key": "conv", "weight": 1.0}]}, "detected": [{"phrase": "초등학교 가까운", "criterion_key": "elem_dist", "mode": "soft"}, {"phrase": "신축", "criterion_key": "approval_year", "mode": "soft"}, {"phrase": "병원 가까우면", "criterion_key": "hospital", "mode": "soft"}, {"phrase": "편의점 가까우면", "criterion_key": "conv", "mode": "soft"}], "unsupported": []}
+```
+(주: 학교/POI 거리·개수 조건은 비교형 "가까운/많은"이면 **soft**. "초등 500m 이내인 곳만"처럼 명시 임계+한정이면
+hard `elem_max_dist_m:500`. "편의점 많은"→soft `conv`, "병원 가까운"→soft `hospital`, "마트 가까운/많은"→soft `mart`,
+"공원 가까운"→soft `park`, "약국 가까운"→soft `pharmacy`. 카테고리별 의미축은 카탈로그 type 참고.)
+
 ## 변환할 질의
 {QUERY}

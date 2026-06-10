@@ -173,6 +173,20 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
     if spec.mart_count_1km_min is not None:
         clauses.append(_poi_keep_or("MT1", "p.count_1km >= ?"))  # 1km내 마트 N개
         params.append(spec.mart_count_1km_min)
+    # search-deepen-1: POI 풀세트 hard 필터(subway/mart 미러). ⚠ **미적재=KEEP**(동형).
+    if spec.conv_count_1km_min is not None:
+        clauses.append(_poi_keep_or("CS2", "p.count_1km >= ?"))  # 1km내 편의점 N개
+        params.append(spec.conv_count_1km_min)
+    for category, dist in (
+        ("HP8", spec.hospital_max_dist_m),
+        ("PM9", spec.pharmacy_max_dist_m),
+        ("PARK", spec.park_max_dist_m),
+    ):
+        if dist is not None:
+            clauses.append(_poi_keep_or(  # 최근접 ≤ N (NULL=반경내 0건 → 미달로 제외)
+                category, "p.nearest_dist_m IS NOT NULL AND p.nearest_dist_m <= ?"
+            ))
+            params.append(dist)
     # school-1: 학교 거리 hard 필터(school_proximity). ⚠ **미적재=KEEP**(poi와 동형).
     for level, dist in (
         ("elem", spec.elem_max_dist_m),
