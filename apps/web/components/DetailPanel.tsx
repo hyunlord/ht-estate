@@ -7,6 +7,7 @@ import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/l
 import type {
   AreaBucket,
   AreaUnit,
+  AssignmentRow,
   Candidate,
   CriterionEval,
   FloorplanSummary,
@@ -299,6 +300,41 @@ function SchoolSection({ school }: { school?: SchoolNear[] | null }) {
   );
 }
 
+// ── 배정 초등 통학구역(school-2, advisory) — 거리 섹션 아래. 단정 금지·교육청 확인 권장. ──
+function AssignmentSection({ assignment }: { assignment?: AssignmentRow[] | null }) {
+  if (!assignment || assignment.length === 0) {
+    return (
+      <div className="r" data-testid="assignment-row">
+        <div className="b">
+          <div className="k">배정 초등 (통학구역)</div>
+          <div className="v">
+            <span data-testid="assignment-status">정보 없음 / 미계산</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const names = assignment.map((a) => a.school_name ?? "—");
+  const shared = assignment.some((a) => a.is_shared) || names.length > 1;
+  return (
+    <div className="r" data-testid="assignment-row">
+      <div className="b">
+        <div className="k">
+          배정 초등 (통학구역)
+          <span className="badge" data-testid="assignment-confirm-badge">
+            ⚠ 교육청 확인 권장
+          </span>
+        </div>
+        <div className="v">
+          <span data-testid="assignment-schools">
+            {shared ? `${names.join(" 또는 ")} (공동통학구역)` : names[0]}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReviewRow({ review }: { review: ReviewSummary }) {
   if (review.summary == null) {
     return (
@@ -520,6 +556,7 @@ export function DetailPanel({
         )}
         <PoiSection poi={candidate.poi} />
         <SchoolSection school={candidate.school} />
+        <AssignmentSection assignment={candidate.assignment} />
         <GymBlock section={gymSec} fallback={candidate.gym} />
         <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}

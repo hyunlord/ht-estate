@@ -110,6 +110,15 @@ export interface PetSummary {
   sources: GymSource[];
 }
 
+// school-2: 배정 초등 통학구역(advisory). point-in-polygon → 학구ID → 연계 조인. 미배정=빈 배열.
+export interface AssignmentRow {
+  zone_id: string;
+  zone_class: string | null; // '1'=공동통학구역
+  school_id: string;
+  school_name: string | null;
+  is_shared: boolean; // 공동통학구역(복수 배정)
+}
+
 // school-1: 학교 거리 근접(eager Tier-1). 가까운 초/중/고 + 거리. 미적재 단지는 빈 배열.
 export interface SchoolNear {
   level: "elem" | "mid" | "high";
@@ -200,6 +209,7 @@ export interface Candidate {
   floorplan?: FloorplanSummary | null; // 평면도 feature(표시 전용). optional: 구버전 mock 호환.
   poi?: PoiNear[] | null; // poi-1: 정적 POI 근접(eager). 미적재=빈 배열(computed-or-dash).
   school?: SchoolNear[] | null; // school-1: 학교 거리 근접(eager). 미적재=빈 배열.
+  assignment?: AssignmentRow[] | null; // school-2: 배정 초등(advisory). 미배정=빈 배열.
   criteria_eval?: CriterionEval[] | null; // soft 조건 평가(랭킹 근거). optional: 구버전 mock 호환.
 }
 

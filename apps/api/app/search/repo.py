@@ -12,6 +12,7 @@ import sqlite3
 from pydantic import BaseModel
 
 from app.poi.store import PoiNear
+from app.school.assignment import AssignmentRow
 from app.school.store import SchoolNear
 from app.search.criteria import CriterionEval
 from app.search.floorplan import FloorplanSummary
@@ -87,6 +88,8 @@ class Candidate(BaseModel):
     poi: list[PoiNear] | None = None
     # school-1: 학교 거리 근접(eager Tier-1). 카드 + 초/중/고 거리 hard 필터. attach_school 채움.
     school: list[SchoolNear] | None = None
+    # school-2: 배정 초등 통학구역(advisory). attach_assignment 채움. 미배정=빈 리스트(dash).
+    assignment: list[AssignmentRow] | None = None
     # P4-2a: 활성 soft 조건별 평가(설계 §7 ✓/△/✗ + 프론트 튜닝 재료). ranking이 채운다.
     criteria_eval: list[CriterionEval] | None = None
 

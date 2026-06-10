@@ -19,8 +19,12 @@ const CANDIDATES = [
       { level: "high", label: "고등학교", nearest_dist_m: 700, nearest_name: "행복고등학교",
         nearest_school_id: "S3", count_500m: 0, count_1km: 1 },
     ],
+    assignment: [
+      { zone_id: "Z9", zone_class: "1", school_id: "S1", school_name: "원묵초", is_shared: true },
+      { zone_id: "Z9", zone_class: "1", school_id: "S9", school_name: "묵현초", is_shared: true },
+    ],
   },
-  { ...base, complex_id: "A2", name: "미계산아파트", school: [] }, // computed-or-dash
+  { ...base, complex_id: "A2", name: "미계산아파트", school: [], assignment: [] }, // dash
 ];
 
 test("school distance section: nearest 초/중/고 + dist / none", async ({ page }) => {
@@ -46,8 +50,13 @@ test("school distance section: nearest 초/중/고 + dist / none", async ({ page
   await expect(card.getByTestId("school-elem")).toContainText("250m");
   await expect(card.getByTestId("school-mid")).toContainText("행복중학교");
   await expect(card.getByTestId("school-high")).toContainText("700m");
+  // school-2: 배정 초등(공동통학구역) + advisory 배지
+  await expect(card.getByTestId("assignment-schools")).toContainText("원묵초 또는 묵현초");
+  await expect(card.getByTestId("assignment-schools")).toContainText("공동통학구역");
+  await expect(card.getByTestId("assignment-confirm-badge")).toBeVisible();
 
   await items.nth(1).click();
   card = page.getByTestId("complex-card");
   await expect(card.getByTestId("school-status")).toContainText("정보 없음");
+  await expect(card.getByTestId("assignment-status")).toContainText("정보 없음");
 });

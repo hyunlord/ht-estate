@@ -197,3 +197,22 @@ CREATE TABLE IF NOT EXISTS school_proximity (
   PRIMARY KEY (complex_id, level)
 );
 CREATE INDEX IF NOT EXISTS idx_school_level ON school_proximity(level, complex_id);
+
+-- school_assignment: 배정 초등 통학구역(school-2). 단지 좌표 point-in-polygon(초등 통학구역 SHP·
+-- EPSG:5186) → 학구ID → 연계 CSV 조인 → 배정 초등. **초등 ONLY**(중/고는 평준화 추첨이라 배정 X).
+-- 공동통학구역(zone_class='1')은 단지당 복수 학교 보관. 폴리곤 밖 단지는 sentinel 행(zone_id='')로
+-- '계산했으나 배정 없음' 표시(resume done-set·read에서 제외=dash). 좌표 read·이 테이블 write만 →
+-- 지문/counts 불변. additive. advisory(열람용·교육청 확인 — schoolzone 법적효력 없음).
+CREATE TABLE IF NOT EXISTS school_assignment (
+  complex_id   TEXT NOT NULL REFERENCES complex(complex_id),
+  zone_id      TEXT NOT NULL,        -- 학구ID(HAKGUDO_ID). ''=sentinel(배정 없음·계산됨).
+  zone_class   TEXT,                 -- 학구분류(HAKGUDO_GB) '0'=일반 '1'=공동통학구역
+  school_id    TEXT,                 -- 배정 초등 학교ID(연계 CSV)
+  school_name  TEXT,                 -- 배정 초등 학교명
+  is_shared    BOOLEAN,              -- 공동통학구역(단지당 복수 배정)
+  source       TEXT,                 -- 'schoolzone_elem_zone'
+  source_url   TEXT,                 -- attribution(열람용·교육청 확인)
+  fetched_at   TIMESTAMP,
+  PRIMARY KEY (complex_id, zone_id, school_id)
+);
+CREATE INDEX IF NOT EXISTS idx_school_assignment_cid ON school_assignment(complex_id);
