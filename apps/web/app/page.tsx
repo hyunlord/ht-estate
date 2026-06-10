@@ -7,15 +7,17 @@ import { DetectedChips } from "@/components/DetectedChips";
 import { MapView } from "@/components/MapView";
 import { ResultList } from "@/components/ResultList";
 import { TopBar } from "@/components/TopBar";
-import { fetchMarkers, searchComplexes, searchNl } from "@/lib/api";
+import { fetchCriteria, fetchMarkers, searchComplexes, searchNl } from "@/lib/api";
 import { buildSpecFromChips, initialLevels, type ChipLevel } from "@/lib/nlChips";
 import type {
   AreaUnit,
   Bbox,
   Candidate,
+  CatalogCriterion,
   Detected,
   HardFilterSpec,
   MarkerCandidate,
+  QuickFilter,
 } from "@/lib/types";
 
 // 최초 로드 즉시 1회 조회용 기본 bbox(서울 중심) — spec §5.1.
@@ -65,6 +67,11 @@ export default function Home() {
   const [unsupported, setUnsupported] = useState<string[]>([]);
   const [chipLevels, setChipLevels] = useState<Record<string, ChipLevel>>({});
 
+  // frontend-polish-1: 조건 카탈로그(GET /criteria) — TopBar 퀵 토글 + ResultList 뱃지 값 포맷.
+  // registry-driven(하드코딩 0). 실패는 graceful 빈([])(필터 칩만 빠짐·NL/검색 무영향·콘솔 무오염).
+  const [quickFilters, setQuickFilters] = useState<QuickFilter[]>([]);
+  const [criteriaCatalog, setCriteriaCatalog] = useState<CatalogCriterion[]>([]);
+
   const specRef = useRef<HardFilterSpec>({ limit: 100 });
   const bboxRef = useRef<Bbox>(DEFAULT_BBOX);
   const markersRef = useRef<MarkerCandidate[]>([]);
@@ -107,6 +114,20 @@ export default function Home() {
   useEffect(() => {
     void runSearch(specRef.current, bboxRef.current);
   }, [runSearch]);
+
+  // 조건 카탈로그 1회 로드 — registry-driven 필터 UI. 실패는 graceful(빈 칩·검색/NL 무영향).
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchCriteria(ctrl.signal)
+      .then((cat) => {
+        setQuickFilters(cat.quick_filters);
+        setCriteriaCatalog(cat.criteria);
+      })
+      .catch(() => {
+        /* graceful: /criteria 실패 → 퀵 토글만 비고 NL/검색은 정상 */
+      });
+    return () => ctrl.abort();
+  }, []);
 
   // NL 감지칩 상태 초기화(수동 필터 전환·지우기 공용). 활성 칩이 없으면 no-op.
   const clearNl = useCallback(() => {
@@ -208,6 +229,7 @@ export default function Home() {
         onUnitChange={setUnit}
         onNlSearch={onNlSearch}
         nlLoading={loading}
+        quickFilters={quickFilters}
       />
       <DetectedChips
         detected={detected}
@@ -223,6 +245,7 @@ export default function Home() {
           loading={loading}
           unit={unit}
           onSelect={onSelect}
+          catalog={criteriaCatalog}
         />
         <div className="map">
           <MapView

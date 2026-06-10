@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
+
 
 // auto-viewport(★ v2 핵심) — 검색 버튼 없이 마운트 시 현 bbox로 자동 조회 → 리스트/마커 채움.
 // 인프라 칩 → spec 매핑 · criteria_eval ✓/△/✗/○ 상세 · 색마커 범례 · 키-graceful · 콘솔 0.

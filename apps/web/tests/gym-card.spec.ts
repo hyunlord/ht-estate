@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // gym 행 — API mock(키리스). ✓/△/✗ 매핑 · evidence · conf · http 링크 / urn 비링크 / none.
 // v2: 상세 패널(complex-card)에 행이 들어감. 마운트 auto-search로 리스트 채움(검색 버튼 없음).

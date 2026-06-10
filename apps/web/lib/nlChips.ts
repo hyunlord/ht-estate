@@ -31,6 +31,15 @@ const HARD_FIELDS: Record<string, (keyof HardFilterSpec)[]> = {
   heat_type: ["heat_type"],
   builder: ["builder"],
   property_type: ["property_type"],
+  // search-deepen-1: 학교거리·POI 풀세트(criteria.REGISTRY.hard_fields 미러).
+  elem_dist: ["elem_max_dist_m"],
+  mid_dist: ["mid_max_dist_m"],
+  high_dist: ["high_max_dist_m"],
+  mart: ["mart_count_1km_min"],
+  conv: ["conv_count_1km_min"],
+  hospital: ["hospital_max_dist_m"],
+  pharmacy: ["pharmacy_max_dist_m"],
+  park: ["park_max_dist_m"],
   // core hard 필드(nl_parse._CORE_FIELDS) + region bbox
   net_area: ["net_area_min", "net_area_max"],
   price: ["price_min", "price_max"],
@@ -52,6 +61,15 @@ const SOFT_ABLE = new Set<string>([
   "household_count",
   "approval_year",
   "top_floor",
+  // search-deepen-1: 학교거리·POI 풀세트(criteria.REGISTRY soft_scorer 보유 — 약/강 soft 제공).
+  "elem_dist",
+  "mid_dist",
+  "high_dist",
+  "mart",
+  "conv",
+  "hospital",
+  "pharmacy",
+  "park",
 ]);
 const PREF_KEYS = new Set<string>(["gym", "pet"]);
 

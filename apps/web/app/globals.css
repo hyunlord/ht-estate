@@ -159,6 +159,22 @@ body {
 .chips {
   display: flex;
   gap: 6px;
+  /* frontend-polish-1: registry-driven 인프라 칩이 많아져 한 줄 가로 스크롤(바 레이아웃 보존). */
+  min-width: 0;
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.chips::-webkit-scrollbar {
+  height: 4px;
+}
+.chips::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 2px;
+}
+.chips .chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 /* 후기/평판(E3-3) 프리셋 칩 — 디테일 패널 내 작은 칩 묶음(줄바꿈 허용). */
 .rep-chips {

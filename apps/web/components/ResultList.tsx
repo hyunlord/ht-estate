@@ -1,7 +1,7 @@
 "use client";
 
 import { formatArea, markerLabel } from "@/lib/format";
-import type { AreaUnit, Candidate, CriterionEval } from "@/lib/types";
+import type { AreaUnit, Candidate, CatalogCriterion, CriterionEval } from "@/lib/types";
 
 // 좌측 랭크 리스트 — 단지 카드(순위·이름·대표가·메타·근거 뱃지). 지도와 동기(선택↔강조).
 // 사진 자리를 근거 뱃지(criteria_eval ✓/△/✗/○)가 대신한다.
@@ -12,6 +12,17 @@ const STATUS: Record<CriterionEval["status"], { icon: string; cls: string }> = {
   miss: { icon: "✗", cls: "miss" },
   unknown: { icon: "○", cls: "info" },
 };
+
+// frontend-polish-1: 뱃지 값 포맷 — 카탈로그(value_type/direction)로 단위 결정(registry-driven).
+// lower_better numeric = 거리(m) / higher_better numeric = 개수 / 그 외(상태·bool)는 값 생략.
+function badgeValue(ev: CriterionEval, cat: Map<string, CatalogCriterion>): string {
+  const c = cat.get(ev.key);
+  if (!c || ev.value == null || ev.status === "unknown") return "";
+  if (c.value_type === "numeric" && typeof ev.value === "number") {
+    return c.direction === "lower_better" ? ` ${ev.value}m` : ` ${ev.value}`;
+  }
+  return "";
+}
 
 function meta(c: Candidate, unit: AreaUnit): string {
   const parts: string[] = [];
@@ -28,13 +39,16 @@ export function ResultList({
   loading,
   unit,
   onSelect,
+  catalog = [],
 }: {
   candidates: Candidate[];
   selectedId: string | null;
   loading: boolean;
   unit: AreaUnit;
   onSelect: (c: Candidate) => void;
+  catalog?: CatalogCriterion[]; // 뱃지 값 포맷(registry-driven 단위)
 }) {
+  const catMap = new Map(catalog.map((c) => [c.key, c]));
   return (
     <aside className="list">
       <div className="l-head">
@@ -74,6 +88,7 @@ export function ResultList({
                     return (
                       <span key={ev.key} className={`ev ${s.cls}`}>
                         {s.icon} {ev.label}
+                        {badgeValue(ev, catMap)}
                       </span>
                     );
                   })}

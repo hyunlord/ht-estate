@@ -276,3 +276,62 @@ REGISTRY: dict[str, Criterion] = {
                   ("apartment", "rowhouse", "officetel", "detached")),
     )
 }
+
+
+@dataclass(frozen=True)
+class QuickFilter:
+    """TopBar 퀵 토글 descriptor — REGISTRY와 같은 파일에 1소스(드리프트 0). 프론트는 /criteria로
+    이걸 받아 토글을 렌더·배선(하드코딩 0). apply='hard'면 hard_field=hard_value 셋,
+    apply='soft'면 soft_key를 SoftCriterion(gym/pet은 Preference)로 푸시. 신규 신호는 여기 한 줄."""
+
+    id: str
+    label: str
+    apply: str  # 'hard' | 'soft'
+    hard_field: str | None = None
+    hard_value: float | None = None
+    soft_key: str | None = None
+
+
+# TopBar 퀵 필터 카탈로그 — 거리/근접은 hard 임계 토글, 구조/enrichment는 soft 부스트.
+# 새 criteria 등록 시 여기 한 줄 추가 → 프론트 자동 등장(registry-driven·드리프트 0).
+QUICK_FILTERS: tuple[QuickFilter, ...] = (
+    QuickFilter("subway_poi", "역세권 500m", "hard", "subway_max_dist_m", 500),
+    QuickFilter("elem_school", "초등 500m", "hard", "elem_max_dist_m", 500),
+    QuickFilter("mid_school", "중등 1km", "hard", "mid_max_dist_m", 1000),
+    QuickFilter("high_school", "고등 1.5km", "hard", "high_max_dist_m", 1500),
+    QuickFilter("mart_poi", "마트 1km", "hard", "mart_count_1km_min", 1),
+    QuickFilter("conv_poi", "편의점 1km", "hard", "conv_count_1km_min", 1),
+    QuickFilter("hospital_poi", "병원 1km", "hard", "hospital_max_dist_m", 1000),
+    QuickFilter("pharmacy_poi", "약국 1km", "hard", "pharmacy_max_dist_m", 1000),
+    QuickFilter("park_poi", "공원 1km", "hard", "park_max_dist_m", 1000),
+    QuickFilter("has_daycare", "어린이집", "soft", soft_key="has_daycare"),
+    QuickFilter("elevator", "엘베", "soft", soft_key="elevator_count"),
+    QuickFilter("cctv", "CCTV", "soft", soft_key="cctv_count"),
+    QuickFilter("gym_q", "헬스장", "soft", soft_key="gym"),
+    QuickFilter("pet_q", "반려동물", "soft", soft_key="pet"),
+)
+
+
+def criteria_catalog() -> list[dict[str, object]]:
+    """REGISTRY user-facing 직렬화(read-only) — key·label·type·direction·soft/hard·hard_fields.
+
+    프론트 뱃지/칩 포맷·검증용 카탈로그. 인메모리 직렬화(DB 무접촉) → 지문/counts 불변."""
+    return [
+        {
+            "key": c.key, "label": c.label, "value_type": c.value_type,
+            "direction": c.direction, "soft_able": c.soft_able, "hard_able": c.hard_able,
+            "hard_fields": list(c.hard_fields), "values": list(c.values),
+        }
+        for c in REGISTRY.values()
+    ]
+
+
+def quick_filters_catalog() -> list[dict[str, object]]:
+    """QUICK_FILTERS 직렬화 — TopBar 퀵 토글 빌드용(registry-driven·하드코딩 0)."""
+    return [
+        {
+            "id": q.id, "label": q.label, "apply": q.apply,
+            "hard_field": q.hard_field, "hard_value": q.hard_value, "soft_key": q.soft_key,
+        }
+        for q in QUICK_FILTERS
+    ]

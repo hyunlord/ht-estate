@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // 전월세(P2-2) — 거래유형 세그먼트 → 요청 body deal_type · 가격 라벨 적응(가격↔보증금) · 카드 전월세 표기.
 const SALE = {

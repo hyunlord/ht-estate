@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // floorplan 행 (P3-2) — API mock(키리스). 객관 feature(bay·향·판상/타워) · null-tolerant · 출처 ·
 // gym/pet/review 공존. v2: 상세 패널(complex-card)에 행. 마운트 auto-search. **표시 전용**.

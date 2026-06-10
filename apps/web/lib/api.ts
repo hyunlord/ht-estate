@@ -3,6 +3,7 @@
 import type {
   Bbox,
   Candidate,
+  CriteriaResponse,
   EnrichmentResponse,
   HardFilterSpec,
   MarkerCandidate,
@@ -13,6 +14,14 @@ import type {
 // 기본은 **같은-오리진 프록시**(`/api` → next.config rewrites → 127.0.0.1:8000). 공개 URL 1개·CORS 불요.
 // 별도 오리진 직접호출이 필요하면 NEXT_PUBLIC_API_BASE_URL로 절대 URL 주입(빌드타임 인라인).
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
+
+/** 조건 카탈로그 (frontend-polish-1) — GET /criteria. 백엔드 REGISTRY 직렬화(registry-driven 필터
+ * UI). TopBar 퀵 토글·뱃지 값 포맷에 사용. read-only·결정론. 실패 시 호출부가 graceful 빈 처리. */
+export async function fetchCriteria(signal?: AbortSignal): Promise<CriteriaResponse> {
+  const res = await fetch(`${API_BASE}/criteria`, { signal });
+  if (!res.ok) throw new Error(`criteria failed: ${res.status}`);
+  return (await res.json()) as CriteriaResponse;
+}
 
 /** 단지 상세 온디맨드 gym/pet (ux-1) — GET /complexes/{id}/enrichment.
  * cache-hit이면 ready(summary)·miss면 pending(백그라운드 추출). 카드가 폴링으로 완료분 픽업. */

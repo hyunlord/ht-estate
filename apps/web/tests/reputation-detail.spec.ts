@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // 후기/평판 RAG 섹션(E3-3) — API mock(키리스). 프리셋 칩 클릭 → reputation 엔드포인트 →
 // 종합 요약 + 인용 딥링크(source_url + span_ref) + advisory 배지. pending→폴링→ready.

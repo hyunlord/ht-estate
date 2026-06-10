@@ -30,6 +30,7 @@ from app.reputation.service import UNAVAILABLE as REP_UNAVAILABLE
 from app.reputation.service import synthesize_reputation
 from app.school.assignment import attach_assignment
 from app.school.store import attach_school
+from app.search.criteria import criteria_catalog, quick_filters_catalog
 from app.search.floorplan import attach_floorplan
 from app.search.gym import GymSummary, attach_gym, synthesize_gym
 from app.search.nl_parse import (
@@ -206,6 +207,15 @@ def _run_search(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidat
 def health() -> dict[str, str]:
     """헬스 체크 — 게이트/스모크용 결정론 엔드포인트."""
     return {"status": "ok"}
+
+
+@app.get("/criteria")
+def criteria_endpoint() -> dict[str, list[dict[str, object]]]:
+    """조건 카탈로그(read-only) — criteria.REGISTRY + 퀵필터 직렬화. 프론트 필터 UI registry-driven.
+
+    인메모리 REGISTRY/QUICK_FILTERS 직렬화 → **DB 무접촉**(지문/counts 불변). 신규 criteria 등록 시
+    프론트 토글/뱃지 자동 동기(하드코딩 드리프트 0·search-deepen-1 철학 연장)."""
+    return {"criteria": criteria_catalog(), "quick_filters": quick_filters_catalog()}
 
 
 @app.post("/complexes/search")

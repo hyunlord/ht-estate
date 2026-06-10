@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // 학교 거리 섹션(school-1) — API mock(키리스). 가까운 초/중/고 + 거리·이름. computed-or-dash.
 

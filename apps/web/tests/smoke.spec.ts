@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
+
 
 /**
  * 앱 셸 스모크 — v2 지도-퍼스트 (키리스).

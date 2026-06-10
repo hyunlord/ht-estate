@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
+
 
 // 마커 피드(P4-3a-2) — 지도 마커 = /complexes/markers(뷰포트 전체), 리스트 = /complexes/search(랭크 top-N).
 // 둘은 분리된 별도 조회. 마커 피드는 필터 존중. (마커 픽셀 렌더는 JS 키 필요 → 사용자; 여긴 피드 와이어링.)

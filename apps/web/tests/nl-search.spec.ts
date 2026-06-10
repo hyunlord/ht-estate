@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // #3b NL 검색 — (1) 질의 → 감지칩 + unsupported 노트 (2) 칩 강/약/제외 → 조정 spec 재검색.
 // 키리스: /search/nl·/search·/markers 전부 mock. spec↔칩 매핑은 재검색 요청 body로 검증.

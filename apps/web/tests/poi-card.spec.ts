@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
+
 
 // POI 근접(poi-1) — API mock(키리스). 디테일 카드 POI 섹션(computed-or-dash) + 역세권/마트 칩이
 // hard 필터(subway_max_dist_m/mart_count_1km_min)를 request body로 보낸다.

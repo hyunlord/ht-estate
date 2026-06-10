@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // auto-viewport(마운트 자동검색) → 리스트 → 카드 클릭 → 상세 패널. 배지·출처·대표거래(키리스 mock).
 const CANDIDATE = {

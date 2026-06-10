@@ -42,6 +42,11 @@ export interface HardFilterSpec {
   property_type?: PropertyType | null; // 주택유형(P5-1)
   subway_max_dist_m?: number | null; // poi-1: 역세권 최근접 지하철역 ≤ N미터(미적재=keep)
   mart_count_1km_min?: number | null; // poi-1: 1km 내 대형마트 ≥ N개(미적재=keep)
+  // search-deepen-1: POI 풀세트(미적재=keep). 편의점=count·병원/약국/공원=거리.
+  conv_count_1km_min?: number | null; // 1km 내 편의점 ≥ N개(CS2)
+  hospital_max_dist_m?: number | null; // 최근접 병원 ≤ N미터(HP8)
+  pharmacy_max_dist_m?: number | null; // 최근접 약국 ≤ N미터(PM9)
+  park_max_dist_m?: number | null; // 최근접 공원 ≤ N미터(PARK)
   elem_max_dist_m?: number | null; // school-1: 최근접 초등학교 ≤ N미터(미적재=keep)
   mid_max_dist_m?: number | null; // school-1: 최근접 중학교 ≤ N미터(미적재=keep)
   high_max_dist_m?: number | null; // school-1: 최근접 고등학교 ≤ N미터(미적재=keep)
@@ -192,6 +197,31 @@ export interface FloorplanSummary {
   evidence: string | null;
   confidence: number | null;
   sources: GymSource[];
+}
+
+// 조건 카탈로그(frontend-polish-1) — GET /criteria. 백엔드 criteria.REGISTRY 직렬화(registry-driven
+// UI·하드코딩 드리프트 0). value_type/direction은 뱃지 값 포맷에, quick_filters는 TopBar 토글 빌드에.
+export interface CatalogCriterion {
+  key: string;
+  label: string;
+  value_type: string; // 'state'|'bool'|'numeric'|'categorical'
+  direction: string; // 'higher_better'|'lower_better'|'match'
+  soft_able: boolean;
+  hard_able: boolean;
+  hard_fields: string[];
+  values: string[];
+}
+export interface QuickFilter {
+  id: string;
+  label: string;
+  apply: "hard" | "soft";
+  hard_field: string | null;
+  hard_value: number | null;
+  soft_key: string | null;
+}
+export interface CriteriaResponse {
+  criteria: CatalogCriterion[];
+  quick_filters: QuickFilter[];
 }
 
 // 조건 평가(P4-2a) — 후보×활성 soft 조건. status: match(✓)·partial(△)·miss(✗)·unknown(○).

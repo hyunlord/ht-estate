@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // detail-1: 다평형 건물 → 디테일 카드 평형별 브레이크다운(평형마다 한 줄: 전용·최근가+월·거래수).
 // 단일평형 건물 → 한 줄(과분할 없음). 키리스 mock(area_buckets는 backend 집계 산출물).

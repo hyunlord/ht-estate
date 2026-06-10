@@ -3,10 +3,20 @@
 import { useState } from "react";
 
 import { convertArea, toSqm } from "@/lib/format";
-import type { AreaUnit, DealType, HardFilterSpec, SoftCriterion } from "@/lib/types";
+import type {
+  AreaUnit,
+  DealType,
+  HardFilterSpec,
+  Preference,
+  QuickFilter,
+  SoftCriterion,
+} from "@/lib/types";
 
 // 상단 필터바 — 거래유형 세그먼트 + 필터 드롭다운(슬라이더+입력 동기) + 인프라 칩 + 평/㎡ 토글
 // + NL placeholder(#3b). 필터 변경 → onChange(spec). 면적은 현 단위 입력 → ㎡로 환산해 전송.
+//
+// frontend-polish-1: 인프라 칩 = **registry-driven**(quickFilters는 page가 GET /criteria서 받아 주입
+// — 하드코딩 드리프트 0·REGISTRY 진화 시 자동 동기). 지하주차만 core 필드(비-criterion)라 고정.
 
 const SEG: { value: DealType; label: string }[] = [
   { value: "sale", label: "매매" },
@@ -14,14 +24,8 @@ const SEG: { value: DealType; label: string }[] = [
   { value: "monthly", label: "월세" },
 ];
 
-const CHIPS = [
-  { id: "has_daycare", label: "어린이집", kind: "soft" as const, criterion: "has_daycare" },
-  { id: "elevator", label: "엘베", kind: "soft" as const, criterion: "elevator_count" },
-  { id: "underground", label: "지하주차", kind: "underground" as const },
-  { id: "cctv", label: "CCTV", kind: "soft" as const, criterion: "cctv_count" },
-  { id: "subway_poi", label: "역세권 500m", kind: "subway_poi" as const }, // poi-1 hard(미적재=keep)
-  { id: "mart_poi", label: "마트 1km", kind: "mart_poi" as const },
-];
+// 지하주차(parking_underground)는 REGISTRY criterion이 아닌 core hard 필드 → 고정 칩(net_area처럼).
+const UNDERGROUND_ID = "underground";
 
 type Ranges = Record<string, string>;
 const num = (v: string | undefined): number | undefined =>
@@ -32,11 +36,13 @@ export function TopBar({
   onUnitChange,
   onNlSearch,
   nlLoading,
+  quickFilters = [],
 }: {
   onChange: (spec: HardFilterSpec) => void;
   onUnitChange: (unit: AreaUnit) => void;
   onNlSearch: (query: string) => void; // #3b NL 질의 제출(Enter)
   nlLoading?: boolean;
+  quickFilters?: QuickFilter[]; // registry-driven 퀵 토글(GET /criteria) — page가 주입
 }) {
   const [dealType, setDealType] = useState<DealType>("sale");
   const [chips, setChips] = useState<Record<string, boolean>>({});
@@ -69,15 +75,25 @@ export function TopBar({
         if (num(rg.rentMax) !== undefined) spec.monthly_rent_max = num(rg.rentMax);
       }
     }
+    // 지하주차(core 고정 칩)
+    if (ch[UNDERGROUND_ID]) spec.parking_underground = true;
+    // registry-driven 퀵 토글 — apply=hard(필드=값) / apply=soft(criterion weight·gym/pet은 Preference)
     const criteria: SoftCriterion[] = [];
-    for (const c of CHIPS) {
-      if (!ch[c.id]) continue;
-      if (c.kind === "underground") spec.parking_underground = true;
-      else if (c.kind === "subway_poi") spec.subway_max_dist_m = 500;
-      else if (c.kind === "mart_poi") spec.mart_count_1km_min = 1;
-      else criteria.push({ key: c.criterion, weight: 1 });
+    let gym: Preference = "none";
+    let pet: Preference = "none";
+    for (const q of quickFilters) {
+      if (!ch[q.id]) continue;
+      if (q.apply === "hard" && q.hard_field) {
+        (spec as Record<string, unknown>)[q.hard_field] = q.hard_value;
+      } else if (q.apply === "soft" && q.soft_key) {
+        if (q.soft_key === "gym") gym = "preferred";
+        else if (q.soft_key === "pet") pet = "preferred";
+        else criteria.push({ key: q.soft_key, weight: 1 });
+      }
     }
-    if (criteria.length > 0) spec.soft = { gym: "none", pet: "none", criteria };
+    if (criteria.length > 0 || gym !== "none" || pet !== "none") {
+      spec.soft = { gym, pet, criteria };
+    }
     return spec;
   }
 
@@ -246,16 +262,25 @@ export function TopBar({
       </div>
 
       <div className="chips" data-testid="infra-chips">
-        {CHIPS.map((c) => (
+        <button
+          type="button"
+          data-testid={`chip-${UNDERGROUND_ID}`}
+          aria-pressed={!!chips[UNDERGROUND_ID]}
+          className={`chip${chips[UNDERGROUND_ID] ? " on" : ""}`}
+          onClick={() => toggleChip(UNDERGROUND_ID)}
+        >
+          지하주차
+        </button>
+        {quickFilters.map((q) => (
           <button
-            key={c.id}
+            key={q.id}
             type="button"
-            data-testid={`chip-${c.id}`}
-            aria-pressed={!!chips[c.id]}
-            className={`chip${chips[c.id] ? " on" : ""}`}
-            onClick={() => toggleChip(c.id)}
+            data-testid={`chip-${q.id}`}
+            aria-pressed={!!chips[q.id]}
+            className={`chip${chips[q.id] ? " on" : ""}`}
+            onClick={() => toggleChip(q.id)}
           >
-            {c.label}
+            {q.label}
           </button>
         ))}
       </div>

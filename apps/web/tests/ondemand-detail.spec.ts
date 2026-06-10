@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // 온디맨드 디테일뷰(ux-1) — API mock(키리스). 상세 진입 시 gym/pet pending 스피너 → 폴링 → 채움.
 // pet은 확인 배지+caveats 전수. unavailable이어도 검색 캐시 fallback 유지(무한 스피너 없음).

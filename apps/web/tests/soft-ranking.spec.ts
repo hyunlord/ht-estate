@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
+
 
 // soft 랭킹 — 인프라 칩(어린이집)=soft 조건 → 요청 body soft.criteria 실림 + 순서 반영 + 후보 수 불변
 // (demote-not-exclude). v2: gym/pet 셀렉트 폐기 → 칩이 일반화 soft criteria로 데모트-낫-익스클루드 계약 보존.

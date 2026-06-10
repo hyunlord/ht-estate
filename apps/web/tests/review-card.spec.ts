@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // review 행 (P3-1) — API mock(키리스). 요약+포인트+다출처 딥링크 · 미조사 · urn 비링크 · gym/pet 공존.
 // v2: 상세 패널(complex-card)에 행. 마운트 auto-search. **표시 전용**(랭킹 무관).

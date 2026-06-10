@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // 필터 UX(P4-3a-2) — (1) 범위 슬라이더 ↔ 숫자입력 동기 (2) 평/㎡ 토글이 면적 표기 전환(리스트·상세).
 const CAND = {

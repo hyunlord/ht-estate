@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_criteria";
 
 // pet 행 — API mock(키리스). 5상태 시각구분 · conditional caveats · 확인권고 배지 전수 ·
 // http 링크 / urn 비링크 · gym 공존. v2: 상세 패널(complex-card)에 행. 마운트 auto-search.
