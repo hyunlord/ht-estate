@@ -45,6 +45,7 @@ expect_reject "경로 traversal"                status "../../etc/passwd"
 expect_reject "대문자/공백 unit"              restart "ht-estate Api.service"
 expect_reject "미지 서브커맨드"               frobnicate ht-estate-api.service
 expect_reject "여분 인자(restart-api)"        restart-api ht-estate-api.service
+expect_reject "여분 인자(restart-web)"        restart-web ht-estate-web.service
 expect_reject "여분 인자(restart)"            restart ht-estate-api.service extra
 expect_reject "install-units 제거(무비번 표면서 사라짐→미지로 거부)" install-units
 expect_reject "install-units +인자도 미지로 거부"  install-units /tmp/evil
@@ -53,6 +54,8 @@ expect_reject "빈 호출"
 
 echo "[정상 디스패치]"
 expect_dispatch "restart-api"        "systemctl restart ht-estate-api.service"        restart-api
+expect_dispatch "restart-web"        "systemctl restart ht-estate-web.service"        restart-web
+expect_dispatch "restart web (generic)" "systemctl restart ht-estate-web.service"     restart ht-estate-web.service
 expect_dispatch "restart timer"      "systemctl restart ht-estate-poi.timer"          restart ht-estate-poi.timer
 expect_dispatch "status service"     "systemctl status ht-estate-api.service"         status ht-estate-api.service
 expect_dispatch "enable --now"       "systemctl enable --now ht-estate-enrich.timer"  enable ht-estate-enrich.timer

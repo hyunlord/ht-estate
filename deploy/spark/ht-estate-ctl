@@ -27,6 +27,10 @@ case "$cmd" in
     [ $# -eq 0 ] || die "restart-api: 인자 불가"
     exec systemctl restart ht-estate-api.service
     ;;
+  restart-web)
+    [ $# -eq 0 ] || die "restart-web: 인자 불가"
+    exec systemctl restart ht-estate-web.service
+    ;;
   restart|start|stop|status)
     [ $# -eq 1 ] || die "$cmd: unit 1개 필요"
     valid_unit "$1"
@@ -52,7 +56,8 @@ case "$cmd" in
     exec journalctl -u "$1" -n 200 --no-pager
     ;;
   *)
-    die "미지 서브커맨드 '${cmd}'. 허용: restart-api | restart|start|stop|status <unit> |"\
-        "enable|disable <unit> | reload | logs <unit> (새 유닛 설치는 install-root.sh·사용자 sudo)"
+    die "미지 서브커맨드 '${cmd}'. 허용: restart-api | restart-web | restart|start|stop|status"\
+        " <unit> | enable|disable <unit> | reload | logs <unit>"\
+        " (새 유닛 설치는 install-root.sh·사용자 sudo)"
     ;;
 esac

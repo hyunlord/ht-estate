@@ -44,6 +44,9 @@ systemctl enable --now ht-estate-api.service
 for t in ht-estate-ingest.timer ht-estate-enrich.timer ht-estate-poi.timer; do
   [ -f "/etc/systemd/system/$t" ] && systemctl enable --now "$t" || true
 done
+# web: **enable만**(부팅 생존) — `--now` 미사용. 임시 nohup 웹이 아직 :3100 점유(핸드오프 finish서
+# kill 후 `ht-estate-ctl restart-web`이 인수) → 설치 시점 즉시 start하면 포트 충돌. enable로 재부팅만 보장.
+[ -f "/etc/systemd/system/ht-estate-web.service" ] && systemctl enable ht-estate-web.service || true
 
 echo "== [6/6] docker 부팅 자동시작(gemma --restart unless-stopped 보존) =="
 systemctl enable docker.service 2>/dev/null || true

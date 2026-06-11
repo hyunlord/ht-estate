@@ -1,0 +1,25 @@
+# ht-estate web (Next.js 프리빌드 서빙) 상시 서비스 — Spark 주호스트 (web-service).
+# Tailscale로 macOS 도달: http://100.70.109.50:3100. /api/*는 next.config rewrite로 127.0.0.1:8000
+# (ht-estate-api) 프록시 → 같은-오리진(CORS 불요). **프리빌드 서빙**(next start — 빌드는 별도 유저
+# 스텝 `npm run build`, 매 기동 빌드 안 함). node는 systemd 최소 PATH서 못 찾는 함정 → ExecStart
+# 절대경로(/usr/bin/node) + Environment PATH 명시. NEXT_PUBLIC_KAKAO_JS_KEY는 빌드 타임 인라인
+# (.env.local·gitignored) → **유닛에 시크릿 0**. 실패 시 auto-restart·리부트 생존(enable).
+[Unit]
+Description=ht-estate web (Next.js)
+After=network-online.target ht-estate-api.service
+Wants=network-online.target ht-estate-api.service
+
+[Service]
+Type=simple
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/web
+Environment=HOME=/home/hyunlord
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node /home/hyunlord/github/ht-estate/apps/web/node_modules/next/dist/bin/next start -H 0.0.0.0 -p 3100
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
