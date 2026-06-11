@@ -90,6 +90,10 @@ CREATE TABLE IF NOT EXISTS complex (
   geo_source          TEXT,               -- 좌표 출처(DB명+기준일) — T0-5
   geo_updated_at      TIMESTAMP           -- 좌표 획득시각 — T0-5
 );
+-- 지도 bbox 핫패스 인덱스(complex-latlng-index) — search_markers/search_complexes의
+-- `c.lat BETWEEN ? AND ? AND c.lng BETWEEN ?`가 172k 풀스캔하던 걸 lat 선행 레인지 스캔으로.
+-- 매 뷰포트 pan/zoom + 콜드 첫 로드 지연 픽스. additive·메타데이터만(행/좌표 무변경 → 지문/counts 불변).
+CREATE INDEX IF NOT EXISTS idx_complex_latlng ON complex(lat, lng);
 
 -- 실거래 (MOLIT, eager)
 CREATE TABLE IF NOT EXISTS "transaction" (
