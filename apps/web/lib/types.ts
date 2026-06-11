@@ -299,4 +299,6 @@ export interface NlSearchResponse {
   detected: Detected[];
   unsupported: string[];
   candidates: Candidate[];
+  // reputation-routing: 주관 평판 의도 free-text(없으면 null) → detail 평판 섹션(E3 RAG) pre-seed.
+  reputation_query?: string | null;
 }

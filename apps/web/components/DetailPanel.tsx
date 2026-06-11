@@ -497,10 +497,17 @@ function CitationLinks({ citations }: { citations: Citation[] }) {
   );
 }
 
-function ReputationSection({ cid }: { cid: string }) {
+function ReputationSection({ cid, reputationQuery }: { cid: string; reputationQuery?: string | null }) {
   const [active, setActive] = useState<string | null>(null);
   const [result, setResult] = useState<ReputationResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // reputation-routing: 검색 NL이 평판 의도를 표했으면 detail 진입 시 그 쿼리로 평판 섹션 자동 트리거
+  // (pre-seed). detail-트리거·lazy 유지(검색 경로 인라인 synth 아님). 패널은 cid로 리마운트라 1회.
+  useEffect(() => {
+    if (reputationQuery) ask(reputationQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid, reputationQuery]);
 
   function ask(query: string) {
     setActive(query);
@@ -578,10 +585,12 @@ function ReputationSection({ cid }: { cid: string }) {
 export function DetailPanel({
   candidate,
   unit,
+  reputationQuery,
   onClose,
 }: {
   candidate: Candidate;
   unit: AreaUnit;
+  reputationQuery?: string | null; // reputation-routing: NL 평판 의도 → 평판 섹션 자동 트리거
   onClose: () => void;
 }) {
   // 온디맨드 gym/pet — 상세 진입 시 fetch(캐시 즉답·miss는 백그라운드+pending) 후 폴링으로 완료 픽업.
@@ -681,7 +690,7 @@ export function DetailPanel({
         <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}
         {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
-        <ReputationSection cid={cid} />
+        <ReputationSection cid={cid} reputationQuery={reputationQuery} />
         {candidate.source_url && (
           <div className="r">
             <div className="b">

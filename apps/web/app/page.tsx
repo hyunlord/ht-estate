@@ -66,6 +66,8 @@ export default function Home() {
   const [detected, setDetected] = useState<Detected[]>([]);
   const [unsupported, setUnsupported] = useState<string[]>([]);
   const [chipLevels, setChipLevels] = useState<Record<string, ChipLevel>>({});
+  // reputation-routing: NL 주관 평판 의도 → detail 평판 섹션 pre-seed(자동 트리거)·감지 칩 표시.
+  const [reputationQuery, setReputationQuery] = useState<string | null>(null);
 
   // frontend-polish-1: 조건 카탈로그(GET /criteria) — TopBar 퀵 토글 + ResultList 뱃지 값 포맷.
   // registry-driven(하드코딩 0). 실패는 graceful 빈([])(필터 칩만 빠짐·NL/검색 무영향·콘솔 무오염).
@@ -137,6 +139,7 @@ export default function Home() {
     setDetected([]);
     setUnsupported([]);
     setChipLevels({});
+    setReputationQuery(null);
   }, []);
 
   const onFilterChange = useCallback(
@@ -174,6 +177,7 @@ export default function Home() {
         setDetected(parsed.detected);
         setUnsupported(parsed.unsupported);
         setChipLevels(levels);
+        setReputationQuery(parsed.reputation_query ?? null); // 평판 의도 → detail pre-seed
         setError(null);
         await runSearch(parsed.spec, bboxRef.current);
       } catch (e) {
@@ -235,6 +239,7 @@ export default function Home() {
         detected={detected}
         levels={chipLevels}
         unsupported={unsupported}
+        reputationQuery={reputationQuery}
         onLevelChange={onChipLevelChange}
         onClear={onNlClear}
       />
@@ -265,6 +270,7 @@ export default function Home() {
               key={selected.complex_id}
               candidate={selected}
               unit={unit}
+              reputationQuery={reputationQuery}
               onClose={() => setSelected(null)}
             />
           )}

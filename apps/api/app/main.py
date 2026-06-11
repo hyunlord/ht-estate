@@ -125,12 +125,17 @@ class NlQuery(BaseModel):
 
 
 class NlSearchResponse(BaseModel):
-    """NL 검색 응답 — 확정 spec(투명성) + 감지·반영 + 매핑 불가 + 후보."""
+    """NL 검색 응답 — 확정 spec(투명성) + 감지·반영 + 매핑 불가 + 후보 + 평판 의도.
+
+    reputation_query: 주관적 평판 의도 free-text(없으면 None) → 프론트가 detail 평판 섹션(E3 RAG)에
+    pre-seed. **검색/랭킹 경로서 평판 synth 0**(detail 열 때만 lazy — 50후보 인라인 금지).
+    """
 
     spec: HardFilterSpec
     detected: list[Detected]
     unsupported: list[str]
     candidates: list[Candidate]
+    reputation_query: str | None = None
 
 
 class GymSection(BaseModel):
@@ -254,12 +259,13 @@ def search_complexes_nl_endpoint(
         parsed = parse_query(body.query, runner=runner)
     except QueryParseError as exc:
         raise HTTPException(status_code=422, detail=f"질의를 spec으로 파싱 실패: {exc}") from exc
-    candidates = _run_search(conn, parsed.spec)
+    candidates = _run_search(conn, parsed.spec)  # 평판 synth 없음 — detail-트리거(reputation_query)
     return NlSearchResponse(
         spec=parsed.spec,
         detected=parsed.detected,
         unsupported=parsed.unsupported,
         candidates=candidates,
+        reputation_query=parsed.reputation_query,  # 주관 평판 의도 → 프론트 detail pre-seed
     )
 
 

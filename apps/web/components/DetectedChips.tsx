@@ -11,16 +11,18 @@ export function DetectedChips({
   detected,
   levels,
   unsupported,
+  reputationQuery,
   onLevelChange,
   onClear,
 }: {
   detected: Detected[];
   levels: Record<string, ChipLevel>;
   unsupported: string[];
+  reputationQuery?: string | null; // reputation-routing: 주관 평판 의도(필터 아님 — 별도 표식)
   onLevelChange: (id: string, level: ChipLevel) => void;
   onClear?: () => void;
 }) {
-  if (detected.length === 0 && unsupported.length === 0) return null;
+  if (detected.length === 0 && unsupported.length === 0 && !reputationQuery) return null;
 
   return (
     <div className="detected" data-testid="detected-chips">
@@ -63,6 +65,11 @@ export function DetectedChips({
           </button>
         ) : null}
       </div>
+      {reputationQuery ? (
+        <div className="detected-reputation" data-testid="nl-reputation">
+          <span className="rep-badge">평판</span> “{reputationQuery}” — 단지 상세에서 후기 분석
+        </div>
+      ) : null}
       {unsupported.length > 0 ? (
         <div className="detected-unsup" data-testid="nl-unsupported">
           반영 못 함: {unsupported.join(" · ")}

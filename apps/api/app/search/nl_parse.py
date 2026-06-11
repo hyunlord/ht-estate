@@ -78,11 +78,16 @@ class Detected(BaseModel):
 
 
 class ParsedQuery(BaseModel):
-    """NL 파싱 결과 — 확정 spec + 감지 + 매핑 불가(unsupported)."""
+    """NL 파싱 결과 — 확정 spec + 감지 + 매핑 불가(unsupported) + 평판 의도(reputation_query).
+
+    reputation_query: 구조 필드에 매핑 안 되는 **주관 평판 의도**("관리 잘 되는·조용한") free-text.
+    드롭(unsupported) 대신 추출 → 프론트가 detail 평판 섹션(E3 RAG)에 pre-seed. 없으면 None.
+    """
 
     spec: HardFilterSpec
     detected: list[Detected]
     unsupported: list[str]
+    reputation_query: str | None = None
 
 
 def _default_runner(prompt: str, max_turns: int) -> str:
@@ -254,7 +259,13 @@ def _build_parsed(payload: dict[str, object]) -> ParsedQuery:
     detected = _derive_detected(spec, payload.get("detected"))
     raw_unsup = payload.get("unsupported")
     unsupported = [str(x) for x in raw_unsup] if isinstance(raw_unsup, list) else []
-    return ParsedQuery(spec=spec, detected=detected, unsupported=unsupported)
+    # 평판 의도(free-text) — 구조 매핑 안 되는 주관 구절. 빈 문자열/비-str은 None(false 라우팅 0).
+    rep_raw = payload.get("reputation_query")
+    reputation_query = rep_raw.strip() if isinstance(rep_raw, str) and rep_raw.strip() else None
+    return ParsedQuery(
+        spec=spec, detected=detected, unsupported=unsupported,
+        reputation_query=reputation_query,
+    )
 
 
 def parse_query(

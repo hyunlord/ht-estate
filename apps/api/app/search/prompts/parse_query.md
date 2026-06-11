@@ -25,8 +25,15 @@
      "역세권 가까우면"→soft `subway_time`, "강아지 되면 좋고"→soft `pet:"preferred"`.
 3. **모호하면 soft** — hard인지 soft인지 애매하면 **반드시 soft**로 분류한다. soft는 후보를 떨구지 않으므로
    (demote-not-exclude) 잘못 분류해도 결과를 잃지 않는다. 과하게 hard로 박지 마라(보수적).
-4. **매핑 불가는 unsupported** — 등록 조건에 매핑 못 하는 구절(예 "바다 전망", "조용한")은 spec에 넣지 말고
-   `unsupported` 배열에 그 구절을 그대로 넣어라. **억지 매핑·환각 금지.**
+4. **주관적 평판 의도는 `reputation_query`로 추출**(드롭 금지) — 등록 조건/core 필드에 매핑 안 되는
+   **주관적 평판** 구절("관리 잘 되는"·"조용한"·"층간소음 적은"·"동네 분위기 좋은"·"주차 평 좋은"·"평판 좋은")은
+   spec에 못 넣지만 **버리지 말고** `reputation_query`(free-text 문자열)에 그 주관 의도를 모아라(예 "관리 잘 되는 조용한").
+   - **★ 핵심 구분(이중처리 금지)**: 구조 필드에 매핑되면 **그 필드를 쓰고 reputation_query엔 넣지 마라**.
+     "주차 넉넉/많은"→`parking_ratio_gte`(필터) · "지하철 가까운"→soft `subway_time` · "초등 가까운"→soft `elem_dist` ·
+     "○○초 배정"→`assigned_school`. **필터/조건이 된 구절은 reputation_query로 또 가지 않는다.** 잔여 **주관적
+     부분만**("관리"·"소음/조용"·"분위기"·"평판" 같이 측정 불가·주관)을 reputation_query로.
+   - 측정 가능하지만 등록 안 된 객관 구절("바다 전망"처럼 객관이나 데이터 없음)은 여전히 `unsupported`.
+   - 평판 의도가 전혀 없으면 `reputation_query`는 `null`(빈 문자열 금지·false 라우팅 금지).
 5. **gym/pet은 soft 전용** — 레지스트리에서 hard 불가. soft `gym`/`pet`은 `"required"|"preferred"|"none"`.
    나머지 soft 조건은 `criteria` 배열에 `{"key":..., "weight":1.0}`로(기본 weight 1.0).
 6. **detected** — 감지해 반영한 각 조건을 `{"phrase":"<원문 구절>","criterion_key":"<key>","mode":"hard|soft"}`로
@@ -39,10 +46,11 @@
   "hard": { "<HardFilterSpec 필드>": <값>, ... },
   "soft": { "gym": "none", "pet": "preferred", "criteria": [{"key": "subway_time", "weight": 1.0}] },
   "detected": [{"phrase": "역세권 가까우면", "criterion_key": "subway_time", "mode": "soft"}],
-  "unsupported": ["바다 전망"]
+  "unsupported": ["바다 전망"],
+  "reputation_query": "관리 잘 되는 조용한"
 }
 ```
-- 비어 있는 절은 빈 객체/배열로(`"hard": {}`, `"unsupported": []`).
+- 비어 있는 절은 빈 객체/배열로(`"hard": {}`, `"unsupported": []`). 평판 의도 없으면 `"reputation_query": null`.
 - 코드블록·머리말 없이 **JSON 객체만** 출력.
 
 ## 예시
@@ -67,6 +75,12 @@ hard `elem_max_dist_m:500`. "편의점 많은"→soft `conv`, "병원 가까운"
 ```
 (주: "○○초 배정/통학구역/배정받는/보내는"은 **배정 필터** `assigned_school`(hard·positive-match — 그 학교 통학구역 단지만).
 "초등 가까운"[거리]과 다름 — 그건 soft `elem_dist`. "신축"은 비교형이라 soft.)
+
+질의: "관리 잘 되고 조용한 주차 넉넉한 신축 84"
+```
+{"hard": {"net_area_min": 84, "parking_ratio_gte": 1.0}, "soft": {"gym": "none", "pet": "none", "criteria": [{"key": "approval_year", "weight": 1.0}]}, "detected": [{"phrase": "주차 넉넉한", "criterion_key": "parking_ratio", "mode": "hard"}, {"phrase": "신축", "criterion_key": "approval_year", "mode": "soft"}, {"phrase": "84", "criterion_key": "net_area", "mode": "hard"}], "unsupported": [], "reputation_query": "관리 잘 되고 조용한"}
+```
+(주: **구조-vs-평판 구분** — "주차 넉넉한"→`parking_ratio_gte`(필터)이지 reputation_query 아님(**이중처리 금지**). "84"→net_area, "신축"→soft. **잔여 주관 "관리 잘 되고 조용한"만** reputation_query. 순수 구조 쿼리면 reputation_query는 null.)
 
 ## 변환할 질의
 {QUERY}
