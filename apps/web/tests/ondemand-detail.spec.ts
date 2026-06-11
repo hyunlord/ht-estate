@@ -38,7 +38,7 @@ test("detail on-demand: pending spinner → fill with provenance, pet badge+cave
   page,
 }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   let calls = 0;
   await page.route("**/enrichment", (route) => {
     calls += 1;

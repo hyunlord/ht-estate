@@ -24,7 +24,7 @@ test("registry-driven 퀵 토글: 신규 신호 등장 + hard/soft 배선 + 뱃�
     bodies.push(route.request().postDataJSON() as Record<string, unknown>);
     route.fulfill({ json: CAND });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
 
   await page.goto("/", { waitUntil: "networkidle" });
 

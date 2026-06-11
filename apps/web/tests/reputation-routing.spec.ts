@@ -27,7 +27,7 @@ const REP_READY = {
 
 test("NL 평판 의도 → 감지 표식 + detail 평판 섹션 자동 트리거", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CAND }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/complexes/search/nl", (route) => route.fulfill({ json: NL_RESP }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({ json: { complex_id: "A1", gym: { status: "ready", summary: null }, pet: { status: "ready", summary: null } } }),
@@ -61,7 +61,7 @@ test("NL 평판 의도 → 감지 표식 + detail 평판 섹션 자동 트리거
 
 test("순수 구조 NL → 평판 표식 없음(false 라우팅 0)", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CAND }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/complexes/search/nl", (route) =>
     route.fulfill({
       json: {

@@ -6,7 +6,7 @@ import type {
   CriteriaResponse,
   EnrichmentResponse,
   HardFilterSpec,
-  MarkerCandidate,
+  MarkerFeed,
   NlSearchResponse,
   ReputationResponse,
 } from "./types";
@@ -92,7 +92,7 @@ export async function fetchMarkers(
   spec: HardFilterSpec,
   bbox?: Bbox,
   signal?: AbortSignal,
-): Promise<MarkerCandidate[]> {
+): Promise<MarkerFeed> {
   const body: HardFilterSpec = bbox ? { ...spec, ...bbox } : spec;
   const res = await fetch(`${API_BASE}/complexes/markers`, {
     method: "POST",
@@ -101,5 +101,5 @@ export async function fetchMarkers(
     signal,
   });
   if (!res.ok) throw new Error(`markers failed: ${res.status}`);
-  return (await res.json()) as MarkerCandidate[];
+  return (await res.json()) as MarkerFeed; // server-marker-clustering: {mode, markers, clusters}
 }

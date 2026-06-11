@@ -8,6 +8,7 @@ gym은 어디에도 없다(R1 — Tier-2 소관).
 from __future__ import annotations
 
 import sqlite3
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -108,8 +109,31 @@ class MarkerCandidate(BaseModel):
     net_area: float | None  # 전용(㎡)
 
 
-# 마커 피드 서버 캡 — 저줌 광역 폭주 흡수(클라 클러스터와 함께). bbox 바운드라 보통 훨씬 적음.
+# 마커 피드 서버 캡(degenerate 무-bbox 안전망 — 정상 경로는 COUNT 스위치가 처리).
 MARKER_CAP = 2500
+# server-marker-clustering: COUNT 스위치 — 매칭 ≤MAX면 전부 개별 마커(절단 0), 초과면 grid 집계.
+MARKER_INDIVIDUAL_MAX = 1200  # 이하 = 개별(완전·편향 ORDER BY 컷 없음)
+GRID_N = 24  # 초과 = bbox를 N×N 셀로 GROUP BY → 비어있지 않은 셀당 1 클러스터(≤N²·무편향·완전)
+
+
+class Cluster(BaseModel):
+    """서버 grid 클러스터 — 셀 중심(좌표 AVG) + 카운트. price 없음(순수 집계·무편향·전 구역)."""
+
+    lat: float
+    lng: float
+    count: int
+
+
+class MarkerFeed(BaseModel):
+    """마커 피드 — 서버가 밀도로 모드 결정. mode='markers'(개별·≤MAX) 또는 'clusters'(grid 집계).
+
+    한 모드의 리스트만 채운다. clusters는 편향 `ORDER BY complex_id LIMIT` 절단을 대체 —
+    뷰포트 전 구역(부천 포함) 무편향·완전 표현. read-only(COUNT+GROUP BY) → 지문/counts 불변.
+    """
+
+    mode: Literal["markers", "clusters"]
+    markers: list[MarkerCandidate] = []
+    clusters: list[Cluster] = []
 
 
 def _resolve_assigned(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[str] | None:
@@ -462,46 +486,115 @@ def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Can
     return candidates[: spec.limit]
 
 
-def search_markers(
-    conn: sqlite3.Connection, spec: HardFilterSpec, *, cap: int = MARKER_CAP
-) -> list[MarkerCandidate]:
-    """지도 마커 피드 — bbox+hard 필터 통과 단지 *전체*(좌표 보유)의 최소 필드. 고캡(cap), 경량.
+def _marker_where(
+    conn: sqlite3.Connection, spec: HardFilterSpec
+) -> tuple[list[str], list[object]]:
+    """마커 공통 WHERE — bbox+hard+좌표보유+거래필터 EXISTS. 개별/COUNT/grid 경로 공유.
 
-    search_complexes와 **동일 hard 필터**(가격/면적/인프라/bbox 존중)를 재사용하되, 랭킹·soft·
-    enrichment·criteria_eval은 없다(마커는 SET만 — 리스트가 랭킹 담당). 좌표 없는 단지는 제외.
+    search_complexes와 **동일 hard 필터** 재사용(랭킹·soft 없음). 좌표 없는 단지 제외(마커 필수).
     """
     cwhere, cparams = _complex_where(spec, assigned_schools=_resolve_assigned(conn, spec))
-    twhere, tparams = _txn_where(spec)
-    trade_table = _TRADE_TABLE[spec.deal_type]
-    amount_col = "price" if spec.deal_type == "sale" else "deposit"
-
     parts = list(cwhere)
     params = list(cparams)
     parts.append("c.lat IS NOT NULL AND c.lng IS NOT NULL")  # 마커는 좌표 필수
+    twhere, tparams = _txn_where(spec)
     if spec.has_txn_filters:
         parts.append(
-            f'EXISTS (SELECT 1 FROM "{trade_table}" t '
+            f'EXISTS (SELECT 1 FROM "{_TRADE_TABLE[spec.deal_type]}" t '
             f"WHERE t.complex_id = c.complex_id AND {' AND '.join(twhere)})"
         )
         params += tparams
+    return parts, params
 
-    sql = "SELECT c.complex_id, c.name, c.lat, c.lng FROM complex c"
-    sql += " WHERE " + " AND ".join(parts)
-    sql += " ORDER BY c.complex_id LIMIT ?"  # 결정론 + 캡
-    params.append(cap)
 
+def _fetch_markers(
+    conn: sqlite3.Connection,
+    spec: HardFilterSpec,
+    parts: list[str],
+    params: list[object],
+    *,
+    limit: int | None,
+) -> list[MarkerCandidate]:
+    """개별 마커 SELECT(+per-row 대표거래 price). limit=None이면 전부(threshold-바운드 경로)."""
+    twhere, tparams = _txn_where(spec)
+    amount_col = "price" if spec.deal_type == "sale" else "deposit"
+    sql = (
+        "SELECT c.complex_id, c.name, c.lat, c.lng FROM complex c WHERE "
+        + " AND ".join(parts)
+        + " ORDER BY c.complex_id"  # 결정론 정렬(절단은 limit이 줄 때만 — 정상 경로는 절단 0)
+    )
+    p = list(params)
+    if limit is not None:
+        sql += " LIMIT ?"
+        p.append(limit)
     markers: list[MarkerCandidate] = []
-    for row in conn.execute(sql, params).fetchall():
+    for row in conn.execute(sql, p).fetchall():
         trades = _matching_trades(conn, spec, row["complex_id"], twhere, tparams)
         rep = trades[0] if trades else None
         markers.append(
             MarkerCandidate(
-                complex_id=row["complex_id"],
-                name=row["name"],
-                lat=row["lat"],
-                lng=row["lng"],
+                complex_id=row["complex_id"], name=row["name"],
+                lat=row["lat"], lng=row["lng"],
                 price=(rep[amount_col] if rep is not None else None),
                 net_area=(rep["net_area"] if rep is not None else None),
             )
         )
     return markers
+
+
+def _grid_clusters(
+    conn: sqlite3.Connection,
+    spec: HardFilterSpec,
+    where: str,
+    params: list[object],
+    grid_n: int,
+) -> list[Cluster]:
+    """bbox를 grid_n×grid_n 셀로 GROUP BY → 비어있지 않은 셀당 {중심(AVG), 카운트}. **무편향·완전**.
+
+    셀 인덱스 = floor((lat-min)/cell). 출력 ≤(grid_n+1)²(경계행) — 172k 무관. idx_complex_latlng
+    레인지 스캔 + 인메모리 집계. bbox 필수(has_bbox 호출부 보장). 0폭 bbox는 epsilon으로 단일셀화.
+    """
+    cell_lat = max((spec.max_lat - spec.min_lat) / grid_n, 1e-9)  # type: ignore[operator]
+    cell_lng = max((spec.max_lng - spec.min_lng) / grid_n, 1e-9)  # type: ignore[operator]
+    sql = (
+        "SELECT CAST((c.lat - ?) / ? AS INTEGER) AS gy, "
+        "CAST((c.lng - ?) / ? AS INTEGER) AS gx, "
+        "AVG(c.lat) AS clat, AVG(c.lng) AS clng, COUNT(*) AS n "
+        f"FROM complex c WHERE {where} GROUP BY gy, gx"
+    )
+    p: list[object] = [spec.min_lat, cell_lat, spec.min_lng, cell_lng, *params]
+    return [
+        Cluster(lat=r["clat"], lng=r["clng"], count=int(r["n"]))
+        for r in conn.execute(sql, p).fetchall()
+    ]
+
+
+def search_markers(
+    conn: sqlite3.Connection, spec: HardFilterSpec, *, cap: int = MARKER_CAP
+) -> list[MarkerCandidate]:
+    """개별 마커 리스트(cap 절단) — 레거시/내부. 무편향 피드는 search_marker_feed."""
+    parts, params = _marker_where(conn, spec)
+    return _fetch_markers(conn, spec, parts, params, limit=cap)
+
+
+def search_marker_feed(
+    conn: sqlite3.Connection,
+    spec: HardFilterSpec,
+    *,
+    individual_max: int = MARKER_INDIVIDUAL_MAX,
+    grid_n: int = GRID_N,
+) -> MarkerFeed:
+    """★ 무편향 마커 피드 — COUNT 스위치. ≤MAX면 개별 전부(절단 0)·초과면 grid 집계(완전·무편향).
+
+    편향 `ORDER BY complex_id LIMIT 2500`(부천-굶김 원인) 제거: 밀집 뷰포트는 자르는 대신 grid로
+    집계해 **전 구역 표현**. hard 필터(bbox+criteria+assigned+txn)는 두 경로 모두 적용. read-only.
+    """
+    parts, params = _marker_where(conn, spec)
+    where = " AND ".join(parts)
+    total = conn.execute(f"SELECT COUNT(*) FROM complex c WHERE {where}", params).fetchone()[0]
+    if total <= individual_max or not spec.has_bbox:
+        # 정상: 개별 전부(threshold 바운드·절단 0). 무-bbox+대량(degenerate)만 안전캡.
+        limit = None if total <= individual_max else MARKER_CAP
+        markers = _fetch_markers(conn, spec, parts, params, limit=limit)
+        return MarkerFeed(mode="markers", markers=markers)
+    return MarkerFeed(mode="clusters", clusters=_grid_clusters(conn, spec, where, params, grid_n))

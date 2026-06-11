@@ -280,6 +280,19 @@ export interface MarkerCandidate {
   net_area: number | null;
 }
 
+// server-marker-clustering — 서버 grid 클러스터(셀 중심+카운트). 저줌/고밀도서 무편향·완전 집계.
+export interface Cluster {
+  lat: number;
+  lng: number;
+  count: number;
+}
+// 마커 피드 — 서버가 밀도로 모드 결정. markers(개별·≤MAX·price) 또는 clusters(grid 집계). 한쪽만 채움.
+export interface MarkerFeed {
+  mode: "markers" | "clusters";
+  markers: MarkerCandidate[];
+  clusters: Cluster[];
+}
+
 // 면적 단위 토글 — 평/㎡. 1평 = 3.3058㎡.
 export type AreaUnit = "pyeong" | "sqm";
 

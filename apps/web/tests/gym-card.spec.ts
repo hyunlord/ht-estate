@@ -31,7 +31,7 @@ const CANDIDATES = [
 
 async function search(page: import("@playwright/test").Page) {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {

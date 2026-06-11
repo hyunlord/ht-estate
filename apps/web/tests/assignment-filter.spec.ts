@@ -23,7 +23,7 @@ test("배정 초등 입력 → assigned_school을 검색 body로 전송 + 배정
     bodies.push(route.request().postDataJSON() as Record<string, unknown>);
     route.fulfill({ json: CAND });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: { complex_id: "A1", gym: { status: "unavailable", summary: null }, pet: { status: "unavailable", summary: null } },

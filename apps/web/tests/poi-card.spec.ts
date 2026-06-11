@@ -25,7 +25,7 @@ async function setup(page: import("@playwright/test").Page, captured: { body?: u
     captured.body = route.request().postDataJSON();
     return route.fulfill({ json: CANDIDATES });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: { complex_id: "x", gym: { status: "unavailable", summary: null }, pet: { status: "unavailable", summary: null } },

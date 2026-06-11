@@ -49,7 +49,7 @@ test("NL query → detected chips + unsupported, chip weight tuning re-searches 
     searchBodies.push(JSON.parse(route.request().postData() ?? "{}"));
     return route.fulfill({ json: [CAND] });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
 
   await page.goto("/", { waitUntil: "networkidle" });
 

@@ -39,7 +39,7 @@ test("deal_type segment: request body, adaptive price label, rent card display",
       : body?.deal_type === "monthly" ? [MONTHLY] : [SALE];
     await route.fulfill({ json });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {

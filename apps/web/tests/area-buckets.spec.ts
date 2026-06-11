@@ -85,7 +85,7 @@ test("multi-area building shows per-평형 breakdown rows", async ({ page }) => 
   page.on("pageerror", (e) => consoleErrors.push(e.message));
 
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [MULTI] }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {
@@ -115,7 +115,7 @@ test("multi-area building shows per-평형 breakdown rows", async ({ page }) => 
 
 test("single-area building shows one breakdown row (no over-split)", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [SINGLE] }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {

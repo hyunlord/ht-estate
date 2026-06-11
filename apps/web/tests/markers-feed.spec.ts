@@ -38,7 +38,7 @@ test("marker feed (/markers) is separate from rank list (/search) + respects fil
   });
   await page.route("**/complexes/markers", (route) => {
     markerBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-    route.fulfill({ json: MANY });
+    route.fulfill({ json: { mode: "markers", markers: MANY, clusters: [] } });
   });
 
   await page.goto("/", { waitUntil: "networkidle" });
@@ -56,4 +56,29 @@ test("marker feed (/markers) is separate from rank list (/search) + respects fil
   expect(mb.soft?.criteria).toContainEqual({ key: "has_daycare", weight: 1 });
 
   expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+});
+
+// server-marker-clustering — 저줌/고밀도서 서버가 mode='clusters'(grid 집계) 반환. 프론트가 새 shape를
+// crash 없이 처리(부천-굶김 픽스의 클라이언트 측). (지도 픽셀 렌더는 JS 키 필요 → 사람 — 여긴 피드 처리.)
+test("marker feed clusters mode handled without crash", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+  page.on("pageerror", (e) => consoleErrors.push(e.message));
+
+  await page.route("**/complexes/search", (route) => route.fulfill({ json: FIVE }));
+  await page.route("**/complexes/markers", (route) =>
+    route.fulfill({
+      json: {
+        mode: "clusters", markers: [],
+        clusters: [
+          { lat: 37.47, lng: 126.82, count: 1200 }, // 부천 — 편향 제거로 표현됨
+          { lat: 37.50, lng: 127.05, count: 800 }, // 강남
+        ],
+      },
+    }),
+  );
+
+  await page.goto("/", { waitUntil: "networkidle" });
+  await expect(page.getByTestId("result-item")).toHaveCount(5); // 리스트 정상(별도 경로)
+  expect(consoleErrors, consoleErrors.join("\n")).toEqual([]); // 새 shape crash 0
 });

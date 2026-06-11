@@ -15,7 +15,7 @@ test("app shell renders keyless with zero console errors", async ({ page }) => {
 
   // 마운트 시 auto-viewport 검색 + 마커 피드 발사 → 둘 다 mock(네트워크 에러/콘솔오염 방지).
   await page.route("**/complexes/search", (route) => route.fulfill({ json: [] }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
 
   await page.goto("/", { waitUntil: "networkidle" });
 

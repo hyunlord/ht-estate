@@ -29,7 +29,7 @@ const CANDIDATES = [
 
 test("school distance section: nearest 초/중/고 + dist / none", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {

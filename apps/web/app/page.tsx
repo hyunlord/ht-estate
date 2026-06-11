@@ -17,6 +17,7 @@ import type {
   Detected,
   HardFilterSpec,
   MarkerCandidate,
+  MarkerFeed,
   QuickFilter,
 } from "@/lib/types";
 
@@ -56,7 +57,8 @@ function markerToCandidate(m: MarkerCandidate): Candidate {
 
 export default function Home() {
   const [candidates, setCandidates] = useState<Candidate[]>([]); // 리스트/상세(랭크 top-N)
-  const [markers, setMarkers] = useState<MarkerCandidate[]>([]); // 지도(뷰포트 전체)
+  // 지도 피드(server-marker-clustering) — mode=markers(개별) 또는 clusters(grid 집계).
+  const [feed, setFeed] = useState<MarkerFeed>({ mode: "markers", markers: [], clusters: [] });
   const [selected, setSelected] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,7 +78,7 @@ export default function Home() {
 
   const specRef = useRef<HardFilterSpec>({ limit: 100 });
   const bboxRef = useRef<Bbox>(DEFAULT_BBOX);
-  const markersRef = useRef<MarkerCandidate[]>([]);
+  const feedRef = useRef<MarkerFeed>({ mode: "markers", markers: [], clusters: [] });
   const candidatesRef = useRef<Candidate[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const nlBaseRef = useRef<HardFilterSpec | null>(null); // NL 확정 spec(칩 재구성 기준)
@@ -85,7 +87,7 @@ export default function Home() {
 
   // 렌더 중 ref 쓰기는 react-hooks 위반 → effect에서 동기(클릭 핸들러가 최신 목록 조회용).
   useEffect(() => {
-    markersRef.current = markers;
+    feedRef.current = feed;
     candidatesRef.current = candidates;
     detectedRef.current = detected;
     chipLevelsRef.current = chipLevels;
@@ -103,7 +105,7 @@ export default function Home() {
         fetchMarkers(spec, bbox, ctrl.signal),
       ]);
       setCandidates(list);
-      setMarkers(feed);
+      setFeed(feed);
       setError(null);
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return;
@@ -220,7 +222,7 @@ export default function Home() {
       setSelected(full);
       return;
     }
-    const m = markersRef.current.find((x) => x.complex_id === id);
+    const m = feedRef.current.markers.find((x) => x.complex_id === id);
     if (m) setSelected(markerToCandidate(m));
   }, []);
 
@@ -254,7 +256,7 @@ export default function Home() {
         />
         <div className="map">
           <MapView
-            markers={markers}
+            feed={feed}
             selectedId={selectedId}
             loading={loading}
             onBoundsChange={onBoundsChange}

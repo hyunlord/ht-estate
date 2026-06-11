@@ -10,7 +10,7 @@ import {
   type KakaoMap,
   type KakaoMaps,
 } from "@/lib/kakao";
-import type { Bbox, MarkerCandidate } from "@/lib/types";
+import type { Bbox, MarkerCandidate, MarkerFeed } from "@/lib/types";
 
 const GANGNAM = { lat: 37.4979, lng: 127.0476 };
 const DEBOUNCE_MS = 280; // spec §5.1 — idle 후 250~300ms 디바운스
@@ -45,13 +45,13 @@ function clusterMarkers(markers: MarkerCandidate[], level: number): Cell[] {
 }
 
 export function MapView({
-  markers,
+  feed,
   selectedId,
   loading,
   onBoundsChange,
   onSelectId,
 }: {
-  markers: MarkerCandidate[];
+  feed: MarkerFeed; // server-marker-clustering: mode=markers(개별) 또는 clusters(grid 집계)
   selectedId: string | null;
   loading: boolean;
   onBoundsChange: (bbox: Bbox) => void;
@@ -61,7 +61,7 @@ export function MapView({
   const mapRef = useRef<KakaoMap | null>(null);
   const mapsRef = useRef<KakaoMaps | null>(null);
   const overlaysRef = useRef<KakaoCustomOverlay[]>([]);
-  const markersRef = useRef(markers);
+  const feedRef = useRef(feed);
   const selectedIdRef = useRef(selectedId);
   const boundsCb = useRef(onBoundsChange);
   const selectCb = useRef(onSelectId);
@@ -70,7 +70,7 @@ export function MapView({
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    markersRef.current = markers;
+    feedRef.current = feed;
     selectedIdRef.current = selectedId;
     boundsCb.current = onBoundsChange;
     selectCb.current = onSelectId;
@@ -108,6 +108,31 @@ export function MapView({
     });
   }
 
+  // 서버 클러스터(grid 집계) 오버레이 — 카운트 서클·클릭→줌인+중심 recenter. price 없음(순수 카운트).
+  function serverCluster(
+    maps: KakaoMaps,
+    map: KakaoMap,
+    cl: { lat: number; lng: number; count: number },
+    level: number,
+  ): KakaoCustomOverlay {
+    const el = document.createElement("div");
+    el.className = "cluster srv";
+    el.style.background = "var(--brand)";
+    el.innerHTML = `<span class="n">${cl.count}</span><span class="t">단지</span>`;
+    el.addEventListener("click", () => {
+      map.setLevel(Math.max(1, level - 2));
+      map.panTo(new maps.LatLng(cl.lat, cl.lng));
+    });
+    return new maps.CustomOverlay({
+      position: new maps.LatLng(cl.lat, cl.lng),
+      content: el,
+      map,
+      xAnchor: 0.5,
+      yAnchor: 0.5,
+      clickable: true,
+    });
+  }
+
   function renderMarkers() {
     const maps = mapsRef.current;
     const map = mapRef.current;
@@ -115,8 +140,18 @@ export function MapView({
     overlaysRef.current.forEach((o) => o.setMap(null));
     const next: KakaoCustomOverlay[] = [];
     const level = map.getLevel();
-    const list = markersRef.current;
+    const fd = feedRef.current;
     const selId = selectedIdRef.current;
+
+    // 서버 클러스터 모드(저줌/고밀도) — 무편향·완전 집계를 그대로 렌더(클라 클러스터 안 함).
+    if (fd.mode === "clusters") {
+      for (const cl of fd.clusters) next.push(serverCluster(maps, map, cl, level));
+      overlaysRef.current = next;
+      return;
+    }
+
+    // 개별 모드(≤MAX) — 기존 개별 마커 + 클라 클러스터(시각 밀도용).
+    const list = fd.markers;
     const bnd = boundaries(list);
     const coordCount = list.filter((m) => m.lat != null && m.lng != null).length;
 
@@ -200,7 +235,7 @@ export function MapView({
   useEffect(() => {
     renderMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markers, selectedId, ready]);
+  }, [feed, selectedId, ready]);
 
   return (
     <div data-testid="map-container" style={{ position: "absolute", inset: 0 }}>

@@ -42,7 +42,7 @@ from app.search.nl_parse import (
 )
 from app.search.pet import ALIAS_ATTRIBUTES, PetSummary, attach_pet, synthesize_pet
 from app.search.ranking import rank_candidates
-from app.search.repo import Candidate, MarkerCandidate, search_complexes, search_markers
+from app.search.repo import Candidate, MarkerFeed, search_complexes, search_marker_feed
 from app.search.review import attach_review
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
@@ -234,13 +234,14 @@ def search_complexes_endpoint(
 @app.post("/complexes/markers")
 def markers_endpoint(
     spec: HardFilterSpec, conn: Annotated[sqlite3.Connection, Depends(get_db)]
-) -> list[MarkerCandidate]:
-    """지도 마커 피드 — bbox+hard 필터 내 *전체* 단지의 최소 필드(고캡·경량, P4-3a-2).
+) -> MarkerFeed:
+    """지도 마커 피드 — 서버가 밀도로 모드 결정(server-marker-clustering).
 
-    동일 hard 필터 재사용(가격/면적/인프라/bbox 존중). 랭킹·soft·enrichment·criteria_eval 없음
-    (마커는 SET만 — 리스트가 /complexes/search로 랭킹 담당). 좌표 없는 단지 제외.
+    매칭 ≤MAX → mode='markers'(개별 전부·절단 0) · 초과 → mode='clusters'(grid 집계·무편향·완전).
+    편향 `ORDER BY complex_id LIMIT` 제거(부천-굶김 픽스) — 전 구역 표현. 동일 hard 필터 재사용·
+    랭킹/soft 없음(리스트가 /search로 랭킹 담당). read-only(COUNT+GROUP BY) → 지문/counts 불변.
     """
-    return search_markers(conn, spec)
+    return search_marker_feed(conn, spec)
 
 
 @app.post("/complexes/search/nl")

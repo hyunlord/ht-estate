@@ -32,7 +32,7 @@ const REP_READY = {
 
 test("reputation: 프리셋 칩 → pending 폴링 → 종합+인용 딥링크+advisory", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: { complex_id: "A1", gym: { status: "ready", summary: null }, pet: { status: "ready", summary: null } },
@@ -71,7 +71,7 @@ test("reputation: 프리셋 칩 → pending 폴링 → 종합+인용 딥링크+a
 
 test("reputation: gemma degrade → 인용만(evidence-only·summary 없음)", async ({ page }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [] }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: { complex_id: "A1", gym: { status: "ready", summary: null }, pet: { status: "ready", summary: null } },

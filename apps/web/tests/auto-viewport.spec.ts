@@ -33,7 +33,9 @@ test("auto-viewport: mount auto-search by bbox (no button) + chip→spec + crite
     bodies.push(route.request().postDataJSON() as Record<string, unknown>);
     await route.fulfill({ json: [CAND, CAND2] });
   });
-  await page.route("**/complexes/markers", (route) => route.fulfill({ json: [CAND, CAND2] }));
+  await page.route("**/complexes/markers", (route) =>
+    route.fulfill({ json: { mode: "markers", markers: [CAND, CAND2], clusters: [] } }),
+  );
   await page.route("**/enrichment", (route) =>
     route.fulfill({
       json: {
