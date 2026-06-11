@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
-from .normalize import name_numbers, normalize_name
+from .normalize import name_numbers, normalize_name, normalize_school_name
 
 # 라이브 보정 임계값. threshold 미만 또는 2등과 gap 미만이면 무매치(NULL).
 DEFAULT_THRESHOLD = 0.85
@@ -39,6 +39,15 @@ def similarity(query_raw: str, candidate_raw: str) -> float:
     if len(query) >= 2 and query in candidate:
         base = max(base, _CONTAINMENT_SCORE)
     return base
+
+
+def school_similarity(query_raw: str, stored_raw: str) -> float:
+    """학교명 유사도 — 접미('초등학교'/'초') 통일 후 similarity 재사용(번호가드·포함부스트·비율).
+
+    "잠원초"/"서울잠원초"/"잠원초등학교" 모두 stored "서울잠원초등학교"와 매치(포함부스트 0.9):
+    질의 base("잠원"/"서울잠원") ⊂ stored base("서울잠원"). 지역 접두 다르면(부산잠원) 비매치.
+    """
+    return similarity(normalize_school_name(query_raw), normalize_school_name(stored_raw))
 
 
 def best_match(

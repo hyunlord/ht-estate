@@ -12,6 +12,9 @@
 - `deposit_min` / `deposit_max` — 보증금(만원, 전세·월세).
 - `monthly_rent_min` / `monthly_rent_max` — 월세(만원).
 - `deal_type` — `"sale"`(매매·기본) | `"jeonse"`(전세) | `"monthly"`(월세).
+- `assigned_school` — **배정 초등(통학구역)** 학교명. "○○초 배정"·"○○초 통학구역"·"○○초 배정받는"·
+  "○○초 보내는"·"○○초등학교 배정" → 그 학교명 문자열(예 `"서울잠원초"`·`"반원초"`). **배정 의도가 명확할 때만**
+  (단순히 "초등학교 가까운"은 거리=soft `elem_dist`이지 배정 아님 — 혼동 금지). 부분명 OK(백엔드 fuzzy 매치).
 
 ## 규율 (반드시 준수)
 1. **등록 key만** — soft `criteria[].key`와 `detected[].criterion_key`는 위 카탈로그의 key만. 발명 금지.
@@ -57,6 +60,13 @@
 (주: 학교/POI 거리·개수 조건은 비교형 "가까운/많은"이면 **soft**. "초등 500m 이내인 곳만"처럼 명시 임계+한정이면
 hard `elem_max_dist_m:500`. "편의점 많은"→soft `conv`, "병원 가까운"→soft `hospital`, "마트 가까운/많은"→soft `mart`,
 "공원 가까운"→soft `park`, "약국 가까운"→soft `pharmacy`. 카테고리별 의미축은 카탈로그 type 참고.)
+
+질의: "서울잠원초 배정받는 신축 84"
+```
+{"hard": {"assigned_school": "서울잠원초", "net_area_min": 84}, "soft": {"gym": "none", "pet": "none", "criteria": [{"key": "approval_year", "weight": 1.0}]}, "detected": [{"phrase": "서울잠원초 배정받는", "criterion_key": "assigned_school", "mode": "hard"}, {"phrase": "신축", "criterion_key": "approval_year", "mode": "soft"}, {"phrase": "84", "criterion_key": "net_area", "mode": "hard"}], "unsupported": []}
+```
+(주: "○○초 배정/통학구역/배정받는/보내는"은 **배정 필터** `assigned_school`(hard·positive-match — 그 학교 통학구역 단지만).
+"초등 가까운"[거리]과 다름 — 그건 soft `elem_dist`. "신축"은 비교형이라 soft.)
 
 ## 변환할 질의
 {QUERY}

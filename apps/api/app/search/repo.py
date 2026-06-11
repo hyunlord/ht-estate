@@ -112,7 +112,21 @@ class MarkerCandidate(BaseModel):
 MARKER_CAP = 2500
 
 
-def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
+def _resolve_assigned(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[str] | None:
+    """spec.assigned_school → 매칭 stored school_name 리스트(fuzzy). 미지정이면 None(쿼리 0).
+
+    DISTINCT school_name(~5k) read만 → 지문/counts 불변. 결과를 _complex_where에 IN 절로 넘긴다.
+    """
+    if spec.assigned_school is None:
+        return None
+    from app.school.assignment import resolve_assigned_schools
+
+    return resolve_assigned_schools(conn, spec.assigned_school)
+
+
+def _complex_where(
+    spec: HardFilterSpec, *, assigned_schools: list[str] | None = None
+) -> tuple[list[str], list[object]]:
     clauses: list[str] = []
     params: list[object] = []
     if spec.approval_year_min is not None:
@@ -198,6 +212,19 @@ def _complex_where(spec: HardFilterSpec) -> tuple[list[str], list[object]]:
                 level, "s.nearest_dist_m IS NOT NULL AND s.nearest_dist_m <= ?"
             ))
             params.append(dist)
+    # school-assignment: 특정 초등 배정 positive-match. ⚠ **missing≠keep**(거리 필터와 반대) —
+    # 이 학교 통학구역만(공동은 여럿 중 하나 매치). 다른학교·무배정·미계산=제외(EXISTS).
+    if spec.assigned_school is not None:
+        names = assigned_schools or []
+        if names:
+            ph = ",".join("?" * len(names))
+            clauses.append(  # 배정 행(real zone)에 매칭 학교명이 EXISTS — positive-selection
+                f"EXISTS (SELECT 1 FROM school_assignment sa WHERE sa.complex_id = c.complex_id "
+                f"AND sa.zone_id != '' AND sa.school_name IN ({ph}))"
+            )
+            params.extend(names)
+        else:
+            clauses.append("1 = 0")  # 해석된 학교 0 → 무결과(없는 통학구역=제외가 의도)
     return clauses, params
 
 
@@ -371,7 +398,8 @@ def _cluster_area_buckets(spec: HardFilterSpec, trades: list[sqlite3.Row]) -> li
 
 def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
     """complex 속성+bbox 필터 → (txn 필터시) 매칭거래 EXISTS → 후보. 이진 in/out, limit."""
-    cwhere, cparams = _complex_where(spec)
+    schools = _resolve_assigned(conn, spec)
+    cwhere, cparams = _complex_where(spec, assigned_schools=schools)
     twhere, tparams = _txn_where(spec)
 
     sql = (
@@ -442,7 +470,7 @@ def search_markers(
     search_complexes와 **동일 hard 필터**(가격/면적/인프라/bbox 존중)를 재사용하되, 랭킹·soft·
     enrichment·criteria_eval은 없다(마커는 SET만 — 리스트가 랭킹 담당). 좌표 없는 단지는 제외.
     """
-    cwhere, cparams = _complex_where(spec)
+    cwhere, cparams = _complex_where(spec, assigned_schools=_resolve_assigned(conn, spec))
     twhere, tparams = _txn_where(spec)
     trade_table = _TRADE_TABLE[spec.deal_type]
     amount_col = "price" if spec.deal_type == "sale" else "deposit"

@@ -50,6 +50,8 @@ export interface HardFilterSpec {
   elem_max_dist_m?: number | null; // school-1: 최근접 초등학교 ≤ N미터(미적재=keep)
   mid_max_dist_m?: number | null; // school-1: 최근접 중학교 ≤ N미터(미적재=keep)
   high_max_dist_m?: number | null; // school-1: 최근접 고등학교 ≤ N미터(미적재=keep)
+  // school-assignment: 특정 초등 배정(통학구역) categorical positive-match(missing≠keep — 타/무배정 제외).
+  assigned_school?: string | null; // 배정 초등 학교명(부분명·백엔드 fuzzy 매치)
   net_area_min?: number | null;
   net_area_max?: number | null;
   price_min?: number | null; // 만원 (매매)

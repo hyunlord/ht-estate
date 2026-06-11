@@ -104,6 +104,10 @@ class HardFilterSpec(BaseModel):
     elem_max_dist_m: int | None = None  # 최근접 초등학교 ≤ N미터(주 필터)
     mid_max_dist_m: int | None = None  # 최근접 중학교 ≤ N미터
     high_max_dist_m: int | None = None  # 최근접 고등학교 ≤ N미터
+    # school-assignment: 특정 초등 배정(통학구역) categorical positive-match. ⚠ **missing≠keep** —
+    # 다른 학교 배정·무배정(sentinel)은 **제외**(이 학교 통학구역만 — threshold 필터와 다름).
+    # 학교명은 fuzzy(app/match)로 stored와 매치. 공동통학구역은 여럿 중 하나만 맞아도 매치.
+    assigned_school: str | None = None  # 배정 초등 학교명(부분명 OK·"서울잠원초"·"잠원초등학교")
 
     # 거래유형(P2-2). 기본 sale → 기존 매매 동작 그대로(회귀 0).
     deal_type: DealType = "sale"

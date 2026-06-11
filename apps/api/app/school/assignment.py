@@ -184,6 +184,29 @@ def read_assignment(conn: sqlite3.Connection, ids: Sequence[str]) -> dict[str, l
     return out
 
 
+def resolve_assigned_schools(conn: sqlite3.Connection, query: str) -> list[str]:
+    """질의 학교명 → 매칭 stored school_name 리스트(fuzzy·app/match 재사용). positive-match 필터용.
+
+    "잠원초"·"서울잠원초"·"잠원초등학교" → "서울잠원초등학교"(접미통일+포함부스트). 지역 접두 다르면
+    제외(부산잠원). 매칭 0이면 빈 리스트 → 호출부가 무결과 처리(없는 학교=무결과).
+    DISTINCT school_name(~5k)만 read → 지문/counts 불변.
+    """
+    from app.match.fuzzy import DEFAULT_THRESHOLD, school_similarity
+
+    q = (query or "").strip()
+    if not q:
+        return []
+    rows = conn.execute(
+        "SELECT DISTINCT school_name FROM school_assignment "
+        "WHERE school_name IS NOT NULL AND school_name != '' AND zone_id != ''"
+    ).fetchall()
+    return [
+        r["school_name"]
+        for r in rows
+        if school_similarity(q, r["school_name"]) >= DEFAULT_THRESHOLD
+    ]
+
+
 def enrich_assignment(
     conn: sqlite3.Connection, index: ZoneIndex, *, now: datetime, limit: int
 ) -> dict[str, int]:

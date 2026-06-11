@@ -64,6 +64,10 @@ export function TopBar({
     if (aMin !== undefined) spec.net_area_min = toSqm(aMin, u);
     if (aMax !== undefined) spec.net_area_max = toSqm(aMax, u);
     if (num(rg.approvalMin) !== undefined) spec.approval_year_min = num(rg.approvalMin);
+    // school-assignment: 배정 초등 학교명(부분명) → assigned_school(백엔드 fuzzy positive-match).
+    if (rg.assignedSchool && rg.assignedSchool.trim() !== "") {
+      spec.assigned_school = rg.assignedSchool.trim();
+    }
     if (dt === "sale") {
       if (num(rg.priceMin) !== undefined) spec.price_min = num(rg.priceMin);
       if (num(rg.priceMax) !== undefined) spec.price_max = num(rg.priceMax);
@@ -129,6 +133,7 @@ export function TopBar({
   const priceActive = ranges.priceMin || ranges.priceMax;
   const areaActive = ranges.areaMin || ranges.areaMax;
   const approvalActive = ranges.approvalMin;
+  const assignedActive = ranges.assignedSchool && ranges.assignedSchool.trim() !== "";
   const areaUnitSym = unit === "pyeong" ? "평" : "㎡";
 
   // 슬라이더 + 숫자입력(동일 state 바인딩 → 양방향 동기).
@@ -254,6 +259,44 @@ export function TopBar({
           <div className="popover" data-testid="pop-approval" style={{ minWidth: 280 }}>
             {rangeRow("approvalMin", "사용승인 이후(년)", 2025, 1, 1980)}
             <button type="button" data-testid="apply-approval" onClick={applyDropdown}
+              className="chip on" style={{ marginTop: 10, width: "100%" }}>
+              적용
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 배정 초등(통학구역) — 학교명 텍스트 입력(부분명 OK·백엔드 fuzzy positive-match) */}
+      <div style={{ position: "relative" }}>
+        <button
+          type="button"
+          data-testid="fdrop-assigned"
+          className={`fdrop${assignedActive ? " act" : ""}`}
+          onClick={() => setOpen(open === "assigned" ? null : "assigned")}
+        >
+          {assignedActive ? `배정 ${ranges.assignedSchool}` : "배정 초등"}{" "}
+          <span className="ca">▾</span>
+        </button>
+        {open === "assigned" && (
+          <div className="popover" data-testid="pop-assigned" style={{ minWidth: 240 }}>
+            <label>
+              배정 초등학교명
+              <input
+                data-testid="in-assigned-school"
+                type="text"
+                value={ranges.assignedSchool ?? ""}
+                placeholder="예: 서울잠원초 / 반원초등학교"
+                onChange={(e) => setRange("assignedSchool", e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyDropdown();
+                }}
+                style={{ width: "100%", marginTop: 4 }}
+              />
+            </label>
+            <div className="ca" style={{ marginTop: 6, fontSize: 10 }}>
+              ⚠ 통학구역 추정 · 교육청 확인 권장
+            </div>
+            <button type="button" data-testid="apply-assigned" onClick={applyDropdown}
               className="chip on" style={{ marginTop: 10, width: "100%" }}>
               적용
             </button>

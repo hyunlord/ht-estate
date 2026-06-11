@@ -50,6 +50,8 @@ _CORE_FIELDS: dict[str, str] = {
     "deposit_max": "deposit",
     "monthly_rent_min": "monthly_rent",
     "monthly_rent_max": "monthly_rent",
+    # school-assignment: 배정 초등 categorical 하드(registry criterion 아님 — net_area 류).
+    "assigned_school": "assigned_school",
 }
 _CORE_LABELS: dict[str, str] = {
     "net_area": "전용면적",
@@ -58,6 +60,7 @@ _CORE_LABELS: dict[str, str] = {
     "monthly_rent": "월세",
     "deal_type": "거래유형",
     "region": "지역(지도범위)",
+    "assigned_school": "배정 초등(통학구역)",
 }
 
 

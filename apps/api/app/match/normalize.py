@@ -25,6 +25,9 @@ _BLDG_SUFFIX = re.compile(r"\d+동?\s*[~∼]\s*\d+동?$|\d+동$")
 # (P3-2 스파이크: sim 0.83<0.85, 포함부스트 미발동)을 메운다. **선행 LH만** 제거(운영사 접두) —
 # '주공'·'휴먼시아'는 이름 중간 정체성 토큰("개포주공7단지"≠"개포7단지") → 제거하면 오매칭, 보존.
 _LH_PREFIX = re.compile(r"^lh")
+# 학교명 접미 통일 — "잠원초등학교"/"잠원초"를 한 base로(접미 제거 후 normalize_name).
+# 지역 접두("서울"·"부산")는 **정체성**이라 보존(서울잠원초 ≠ 부산잠원초). '분교'도 보존(별개 학교).
+_SCHOOL_SUFFIX = re.compile(r"(초등학교|초)$")
 
 
 def normalize_name(raw: str) -> str:
@@ -38,6 +41,14 @@ def normalize_name(raw: str) -> str:
     s = _SUFFIX.sub("", s)
     s = s.strip().lower()
     return _LH_PREFIX.sub("", s)
+
+
+def normalize_school_name(raw: str) -> str:
+    """학교명 비교용 canonical — '초등학교'/'초' 접미 통일 후 normalize_name(괄호/구분자/소문자).
+
+    "서울잠원초등학교"→"서울잠원" · "잠원초"→"잠원". 지역 접두는 보존(정체성).
+    """
+    return normalize_name(_SCHOOL_SUFFIX.sub("", raw or ""))
 
 
 def name_numbers(name: str) -> set[str]:
