@@ -132,6 +132,10 @@ class HardFilterSpec(BaseModel):
 
     limit: int = Field(default=50, ge=1, le=200)
 
+    # region-clustering: 지도 줌 레벨(Kakao map level). 마커 클러스터의 행정단위(구/동) 선택에만
+    # 쓰임 — 넓으면(레벨↑) 시군구·가까우면(레벨↓) 동. 검색/필터 SET·랭킹 무영향(조회 결과 불변).
+    level: int | None = None
+
     # soft 선호 — 랭킹 전용(SET 불변). 기본 all-none → 중립 정렬.
     soft: SoftSpec = Field(default_factory=SoftSpec)
 

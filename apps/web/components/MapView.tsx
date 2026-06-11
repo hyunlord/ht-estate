@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { markerLabelAmount, ppp, tierBoundaries, tierColor, tierOf } from "@/lib/format";
+import {
+  markerLabelAmount,
+  ppp,
+  TIER_COUNT,
+  tierBoundaries,
+  tierColor,
+  tierOf,
+} from "@/lib/format";
 import {
   KAKAO_JS_KEY,
   loadKakaoMaps,
@@ -54,7 +61,7 @@ export function MapView({
   feed: MarkerFeed; // server-marker-clustering: mode=markers(개별) 또는 clusters(grid 집계)
   selectedId: string | null;
   loading: boolean;
-  onBoundsChange: (bbox: Bbox) => void;
+  onBoundsChange: (bbox: Bbox, level: number) => void; // level=줌(클러스터 행정단위 구/동 선택)
   onSelectId: (complexId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -108,18 +115,20 @@ export function MapView({
     });
   }
 
-  // 서버 클러스터(grid 집계) 오버레이 — 지역명+카운트 서클(원 크기 ∝ 카운트)·클릭→줌인+recenter.
+  // 서버 클러스터(행정구역 집계) 오버레이 — 지역명+카운트 서클(원 크기 ∝ 카운트·색 ∝ 평당가 tier)·
+  // 클릭→줌인+recenter. bnd=클러스터 평당가 분위 경계(세부 tier 색).
   function serverCluster(
     maps: KakaoMaps,
     map: KakaoMap,
-    cl: { lat: number; lng: number; count: number; region?: string | null },
+    cl: { lat: number; lng: number; count: number; region?: string | null; ppp?: number | null },
     level: number,
+    bnd: number[],
   ): KakaoCustomOverlay {
     // 카운트로 원 반경 스케일(sqrt·캡) — 큰 병합이 시각적으로 지배(겹침 인상 완화).
     const size = Math.round(Math.min(86, 42 + Math.sqrt(cl.count) * 2));
     const el = document.createElement("div");
     el.className = "cluster srv";
-    el.style.background = "var(--brand)";
+    el.style.background = tierColor(tierOf(cl.ppp ?? null, bnd)); // 탈-파랑: 구역 평당가 색
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
     const region = cl.region ?? "";
@@ -151,8 +160,12 @@ export function MapView({
     const selId = selectedIdRef.current;
 
     // 서버 클러스터 모드(저줌/고밀도) — 무편향·완전 집계를 그대로 렌더(클라 클러스터 안 함).
+    // 색: 클러스터 평당가의 적응적 분위 경계로 tier 색(구역별 평당가 세부 구별 — 탈-파랑).
     if (fd.mode === "clusters") {
-      for (const cl of fd.clusters) next.push(serverCluster(maps, map, cl, level));
+      const cbnd = tierBoundaries(
+        fd.clusters.map((c) => c.ppp).filter((v): v is number => v != null),
+      );
+      for (const cl of fd.clusters) next.push(serverCluster(maps, map, cl, level, cbnd));
       overlaysRef.current = next;
       return;
     }
@@ -220,12 +233,15 @@ export function MapView({
             const b = map.getBounds();
             const sw = b.getSouthWest();
             const ne = b.getNorthEast();
-            boundsCb.current({
-              min_lat: sw.getLat(),
-              max_lat: ne.getLat(),
-              min_lng: sw.getLng(),
-              max_lng: ne.getLng(),
-            });
+            boundsCb.current(
+              {
+                min_lat: sw.getLat(),
+                max_lat: ne.getLat(),
+                min_lng: sw.getLng(),
+                max_lng: ne.getLng(),
+              },
+              map.getLevel(), // 현 줌 → 서버 클러스터 행정단위(구/동) 선택
+            );
           }, DEBOUNCE_MS);
         });
       })
@@ -255,11 +271,9 @@ export function MapView({
       <div className="legend" data-testid="legend">
         <div className="t">평당가</div>
         <div className="bar">
-          <i style={{ background: "var(--t1)" }} />
-          <i style={{ background: "var(--t2)" }} />
-          <i style={{ background: "var(--t3)" }} />
-          <i style={{ background: "var(--t4)" }} />
-          <i style={{ background: "var(--t5)" }} />
+          {Array.from({ length: TIER_COUNT }, (_, i) => (
+            <i key={i} style={{ background: `var(--t${i + 1})` }} />
+          ))}
         </div>
         <div className="sc">
           <span>낮음</span>

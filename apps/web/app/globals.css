@@ -22,12 +22,14 @@
   --miss-soft: #f7e7e6;
   --info: #5b6b86;
   --info-soft: #eef1f6;
-  /* 평당가 tier 낮음→높음 */
+  /* 평당가 tier 낮음→높음 (region-clustering: 5→7 세부 그라데이션·cool→warm perceptual) */
   --t1: #3a86c8;
-  --t2: #4a9e8a;
-  --t3: #c49a3a;
-  --t4: #d06a3a;
-  --t5: #c4452f;
+  --t2: #4a9eb0;
+  --t3: #4a9e8a;
+  --t4: #8aa84e;
+  --t5: #c49a3a;
+  --t6: #d06a3a;
+  --t7: #c4452f;
   --sh: 0 1px 2px rgba(22, 25, 28, 0.05), 0 10px 30px -14px rgba(22, 25, 28, 0.2);
   --sh-lg: 0 2px 8px rgba(22, 25, 28, 0.06), 0 28px 64px -26px rgba(22, 25, 28, 0.34);
 }

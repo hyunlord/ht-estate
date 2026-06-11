@@ -72,28 +72,28 @@ export function markerLabelAmount(price: number | null): string | null {
   return price != null ? wonToShort(price) : null;
 }
 
-/** 뷰포트 결과 평당가의 분위수(20/40/60/80%) 경계 4개 → 적응적 5-tier. 비면 빈 배열. */
+// region-clustering: tier 입자도 5→7(세부 그라데이션). 평당가 색을 더 잘게 구별(클러스터·마커 공용).
+export const TIER_COUNT = 7;
+
+/** 뷰포트 결과 평당가의 적응적 분위수 경계(k/N, k=1..N-1) → N-tier. 표본 부족이면 빈 배열. */
 export function tierBoundaries(values: number[]): number[] {
   const xs = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
   if (xs.length < 2) return [];
   const q = (p: number) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))];
-  return [q(0.2), q(0.4), q(0.6), q(0.8)];
+  return Array.from({ length: TIER_COUNT - 1 }, (_, i) => q((i + 1) / TIER_COUNT));
 }
 
-/** 평당가 → tier 1..5(낮음→높음), 데이터 없으면 0(중립). boundaries 비면 3(중간). */
-export function tierOf(ppp: number | null, boundaries: number[]): 0 | 1 | 2 | 3 | 4 | 5 {
+/** 평당가 → tier 1..N(낮음→높음), 데이터 없으면 0(중립). boundaries 부족이면 중앙 tier. */
+export function tierOf(ppp: number | null, boundaries: number[]): number {
   if (ppp == null) return 0;
-  if (boundaries.length < 4) return 3;
-  if (ppp < boundaries[0]) return 1;
-  if (ppp < boundaries[1]) return 2;
-  if (ppp < boundaries[2]) return 3;
-  if (ppp < boundaries[3]) return 4;
-  return 5;
+  if (boundaries.length < TIER_COUNT - 1) return Math.ceil(TIER_COUNT / 2);
+  for (let i = 0; i < boundaries.length; i++) if (ppp < boundaries[i]) return i + 1;
+  return TIER_COUNT;
 }
 
-/** tier → CSS 색 변수. 0=중립(ink2). */
+/** tier → CSS 색 변수(--t1..--tN). 0/범위밖=중립(ink2). */
 export function tierColor(tier: number): string {
-  return tier >= 1 && tier <= 5 ? `var(--t${tier})` : "var(--ink2)";
+  return tier >= 1 && tier <= TIER_COUNT ? `var(--t${tier})` : "var(--ink2)";
 }
 
 // ── 아웃링크 (크롤링 아님 — 새 탭으로 그쪽 검색을 연다) ──────────────────────

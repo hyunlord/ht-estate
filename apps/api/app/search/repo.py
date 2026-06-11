@@ -111,10 +111,15 @@ class MarkerCandidate(BaseModel):
 
 # 마커 피드 서버 캡(degenerate 무-bbox 안전망 — 정상 경로는 COUNT 스위치가 처리).
 MARKER_CAP = 2500
-# server-marker-clustering: COUNT 스위치 — 매칭 ≤MAX면 전부 개별 마커(절단 0), 초과면 grid 집계.
+# server-marker-clustering: COUNT 스위치 — 매칭 ≤MAX면 전부 개별 마커(절단 0), 초과면 행정구역 집계.
 MARKER_INDIVIDUAL_MAX = 1200  # 이하 = 개별(완전·편향 ORDER BY 컷 없음)
-# cluster-ux-polish: GRID_N 하향(24→10) — 저줌서 적고 큰 병합 클러스터(겹침↓·가독↑). ≤(N+1)² 셀.
-GRID_N = 10
+# region-clustering: 줌 레벨 → 행정단위. Kakao map level은 클수록 줌아웃(넓음). 이 임계 이상이면
+# 시군구(구) 집계, 미만이면 동 집계. COUNT 스위치가 줌인 시 개별로 떨구므로 동 집계는 중밀도 구간만.
+# 라이브 튜닝 대상(라벨 입자도). level 미지정(None)이면 가장 거친 시군구로(안전 기본).
+REGION_SIGUNGU_MIN_LEVEL = 7
+
+# 평당가(만원/평) = 금액(만원) / (전용㎡ / SQM_PER_PYEONG). 프론트 SQM_PER_PYEONG와 동일 상수.
+SQM_PER_PYEONG = 3.3058
 
 # 지역명(시군구) 라벨 — initial-load-perf: init_db가 백필한 complex.sigungu 컬럼 우선(핫 쿼리 가속),
 # 비어있으면 road_addr(없으면 legal_addr) 2번째 토큰 파싱 폴백("서울 강남구 …"→"강남구"·라벨 동일).
@@ -125,19 +130,23 @@ _SIGUNGU_PARSE = (
     f"instr(substr({_ADDR}, instr({_ADDR}, ' ') + 1) || ' ', ' ') - 1)"
 )
 _SIGUNGU = f"COALESCE(NULLIF(c.sigungu, ''), {_SIGUNGU_PARSE})"
+# region-clustering: 동 — init_db가 extract_dong으로 백필한 complex.dong 컬럼(99%+). 빈 행은 ''로
+# 두어 시군구로 폴백(완전성 보존). SQL 동 파싱은 정규식이라 컬럼 의존(백필이 라벨 정확성 담보).
+_DONG = "COALESCE(NULLIF(c.dong, ''), '')"
 
 
 class Cluster(BaseModel):
-    """서버 grid 클러스터 — 셀 중심(AVG) + 카운트 + 지배 시군구(라벨용). price 없음(집계)."""
+    """서버 행정구역 클러스터 — 구역 중심(AVG) + 카운트 + 지역명(구 or 동) + 평균 평당가(색용)."""
 
     lat: float
     lng: float
     count: int
-    region: str | None = None  # 셀 내 최빈 시군구(road_addr 파싱) — 라벨. 없으면 카운트만.
+    region: str | None = None  # 구역명(시군구 or "시군구 동") — 라벨. 없으면 카운트만.
+    ppp: float | None = None  # 구역 대표거래 평균 평당가(만원/평) — tier 색용. 거래 0이면 None.
 
 
 class MarkerFeed(BaseModel):
-    """마커 피드 — 서버가 밀도로 모드 결정. mode='markers'(개별·≤MAX) 또는 'clusters'(grid 집계).
+    """마커 피드 — 서버가 밀도로 모드 결정. markers(개별·≤MAX) 또는 clusters(행정구역 집계).
 
     한 모드의 리스트만 채운다. clusters는 편향 `ORDER BY complex_id LIMIT` 절단을 대체 —
     뷰포트 전 구역(부천 포함) 무편향·완전 표현. read-only(COUNT+GROUP BY) → 지문/counts 불변.
@@ -560,49 +569,70 @@ def _fetch_markers(
     return markers
 
 
-def _grid_clusters(
+def _admin_level(spec: HardFilterSpec) -> Literal["sigungu", "dong"]:
+    """줌 레벨 → 행정단위. 레벨 미지정이거나 충분히 줌아웃(≥임계)이면 시군구(구), 아니면 동."""
+    zoomed_in = spec.level is not None and spec.level < REGION_SIGUNGU_MIN_LEVEL
+    return "dong" if zoomed_in else "sigungu"
+
+
+def _ppp_subquery(spec: HardFilterSpec) -> tuple[str, list[object]]:
+    """구역 단지의 **대표거래 평당가** 스칼라 서브쿼리(상관). 마커와 동일 거래(최근·동일 txn 필터).
+
+    idx_*_complex_date(복합)로 `complex_id=? … ORDER BY deal_date DESC LIMIT 1`은 인덱스 시크 1건
+    → 구역당 N+1 파이썬 루프 없이 단일 GROUP BY 쿼리 안에서 AVG(평당가)로 집계(전용㎡>0만).
+    """
+    table = _TRADE_TABLE[spec.deal_type]
+    amount_col = "price" if spec.deal_type == "sale" else "deposit"
+    twhere, tparams = _txn_where(spec)
+    txn_cond = (" AND " + " AND ".join(twhere)) if twhere else ""
+    sub = (
+        f"(SELECT (t.{amount_col} * {SQM_PER_PYEONG}) / t.net_area "
+        f'FROM "{table}" t WHERE t.complex_id = c.complex_id '
+        f"AND t.net_area IS NOT NULL AND t.net_area > 0 AND t.{amount_col} IS NOT NULL{txn_cond} "
+        "ORDER BY t.deal_date DESC LIMIT 1)"
+    )
+    return sub, list(tparams)
+
+
+def _region_clusters(
     conn: sqlite3.Connection,
     spec: HardFilterSpec,
     where: str,
     params: list[object],
-    grid_n: int,
+    admin: Literal["sigungu", "dong"],
 ) -> list[Cluster]:
-    """bbox를 grid_n×grid_n 셀로 GROUP BY → 셀당 {중심(AVG)·카운트·지배 시군구}. **무편향·완전**.
+    """행정구역(구 or 동) GROUP BY → 구역당 {중심(AVG)·카운트·라벨·평균 평당가}. 무편향·완전·unique.
 
-    (셀, 시군구) GROUP BY로 서브카운트를 받아 파이썬서 셀 단위 합산(완전성 불변·셀 합=총 매칭) +
-    지배 시군구(최빈) + 가중평균 중심. 셀 인덱스 = floor((lat-min)/cell). 결과 ≤(셀×셀당시군구수)로
-    바운드(셀은 작아 보통 1~2 시군구). idx_complex_latlng 레인지 스캔. 0폭 bbox는 epsilon 단일셀.
+    격자(grid)를 대체: 한 구를 여러 셀로 쪼개던 라벨 중복(강남구 ×7) 제거. GROUP BY가 뷰포트 행을
+    빠짐없이 분할 → 셀 합=총(완전)·구역당 1행(라벨 unique)·ORDER BY/LIMIT 없음(부천 non-starved).
+    구 레벨=시군구 GROUP, 동 레벨=(시군구,동) GROUP·라벨 "시군구 동"(동명 충돌 방지·unique).
+    평당가는 상관 서브쿼리(idx 시크)를 AVG — N+1 없음. region 빈 행도 '' 그룹으로 카운트(완전).
     """
-    cell_lat = max((spec.max_lat - spec.min_lat) / grid_n, 1e-9)  # type: ignore[operator]
-    cell_lng = max((spec.max_lng - spec.min_lng) / grid_n, 1e-9)  # type: ignore[operator]
+    ppp_sub, ppp_params = _ppp_subquery(spec)
+    # ★ 별칭은 컬럼명(c.sigungu·c.dong)과 충돌 않게 rsgg/rdong — SQLite GROUP BY가 별칭 대신 실
+    # 컬럼에 바인딩하면 시군구 레벨도 동으로 묶이는 버그(라벨 중복·레벨 무시). rdong은 컬럼 아님.
+    if admin == "sigungu":
+        group_keys = f"{_SIGUNGU} AS rsgg, '' AS rdong"
+    else:
+        group_keys = f"{_SIGUNGU} AS rsgg, {_DONG} AS rdong"
     sql = (
-        "SELECT CAST((c.lat - ?) / ? AS INTEGER) AS gy, "
-        "CAST((c.lng - ?) / ? AS INTEGER) AS gx, "
-        f"{_SIGUNGU} AS region, "
-        "AVG(c.lat) AS clat, AVG(c.lng) AS clng, COUNT(*) AS n "
-        f"FROM complex c WHERE {where} GROUP BY gy, gx, region"
+        f"SELECT {group_keys}, "
+        "AVG(c.lat) AS clat, AVG(c.lng) AS clng, COUNT(*) AS n, "
+        f"AVG({ppp_sub}) AS ppp "
+        f"FROM complex c WHERE {where} GROUP BY rsgg, rdong"
     )
-    p: list[object] = [spec.min_lat, cell_lat, spec.min_lng, cell_lng, *params]
-    # 셀 단위 집계: 총 카운트(완전) + 가중평균 중심 + 지배 시군구(최빈).
-    cells: dict[tuple[int, int], dict] = {}
-    for r in conn.execute(sql, p).fetchall():
-        cell = cells.setdefault(
-            (r["gy"], r["gx"]), {"total": 0, "lat_sum": 0.0, "lng_sum": 0.0, "regions": {}}
-        )
-        n = int(r["n"])
-        cell["total"] += n
-        cell["lat_sum"] += r["clat"] * n
-        cell["lng_sum"] += r["clng"] * n
-        region = (r["region"] or "").strip()
-        if region:
-            cell["regions"][region] = cell["regions"].get(region, 0) + n
+    p: list[object] = [*ppp_params, *params]  # ppp_sub는 SELECT라 WHERE보다 먼저 바인드
     out: list[Cluster] = []
-    for cell in cells.values():
-        regions = cell["regions"]
-        dominant = max(regions, key=regions.__getitem__) if regions else None
+    for r in conn.execute(sql, p).fetchall():
+        sgg = (r["rsgg"] or "").strip()
+        dong = (r["rdong"] or "").strip()
+        if admin == "dong":
+            label = f"{sgg} {dong}".strip() if dong else (sgg or None)
+        else:
+            label = sgg or None
         out.append(Cluster(
-            lat=cell["lat_sum"] / cell["total"], lng=cell["lng_sum"] / cell["total"],
-            count=cell["total"], region=dominant,
+            lat=r["clat"], lng=r["clng"], count=int(r["n"]),
+            region=label, ppp=r["ppp"],
         ))
     return out
 
@@ -620,12 +650,12 @@ def search_marker_feed(
     spec: HardFilterSpec,
     *,
     individual_max: int = MARKER_INDIVIDUAL_MAX,
-    grid_n: int = GRID_N,
 ) -> MarkerFeed:
-    """★ 무편향 마커 피드 — COUNT 스위치. ≤MAX면 개별 전부(절단 0)·초과면 grid 집계(완전·무편향).
+    """★ 무편향 마커 피드 — COUNT 스위치. ≤MAX면 개별 전부(절단 0)·초과면 행정구역 집계(완전).
 
-    편향 `ORDER BY complex_id LIMIT 2500`(부천-굶김 원인) 제거: 밀집 뷰포트는 자르는 대신 grid로
-    집계해 **전 구역 표현**. hard 필터(bbox+criteria+assigned+txn)는 두 경로 모두 적용. read-only.
+    편향 `ORDER BY complex_id LIMIT 2500`(부천-굶김 원인) 제거: 밀집 뷰포트는 자르는 대신 행정구역
+    (줌별 구/동)으로 집계해 **전 구역 표현·라벨 unique**. hard 필터(bbox+criteria+assigned+txn)는 두
+    경로 모두 적용. read-only(COUNT+GROUP BY) → 지문/counts 불변.
     """
     parts, params = _marker_where(conn, spec)
     where = " AND ".join(parts)
@@ -635,4 +665,5 @@ def search_marker_feed(
         limit = None if total <= individual_max else MARKER_CAP
         markers = _fetch_markers(conn, spec, parts, params, limit=limit)
         return MarkerFeed(mode="markers", markers=markers)
-    return MarkerFeed(mode="clusters", clusters=_grid_clusters(conn, spec, where, params, grid_n))
+    clusters = _region_clusters(conn, spec, where, params, _admin_level(spec))
+    return MarkerFeed(mode="clusters", clusters=clusters)

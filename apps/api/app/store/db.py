@@ -91,6 +91,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     # 비-아파트 행은 적재 시 명시 type으로 들어와 NULL이 아니므로 영향 없음.
     conn.execute("UPDATE complex SET property_type = 'apartment' WHERE property_type IS NULL")
     _backfill_sigungu(conn)  # initial-load-perf: 클러스터 라벨 시군구 — 주소 파싱→컬럼(핫쿼리 가속)
+    _backfill_dong(conn)  # region-clustering: 동 레벨 클러스터 키 — legal_addr→dong(extract_dong)
     conn.commit()
 
 
@@ -112,3 +113,24 @@ def _backfill_sigungu(conn: sqlite3.Connection) -> int:
         "AND COALESCE(NULLIF(road_addr, ''), legal_addr) IS NOT NULL"
     )
     return cur.rowcount
+
+
+# region-clustering: 동 백필 — 동 레벨 클러스터의 GROUP BY 키 + 라벨. sigungu와 동일 패턴(멱등·빈
+# 행만·좌표/행 무접촉)이나 동 추출은 정규식(`extract_dong`)이라 순수 SQL이 아닌 파이썬 루프로 채운다
+# ("…강남구 역삼동 711"→"역삼동"). legal_addr 우선(지번주소 — 동 토큰 신뢰), 없으면 road_addr.
+# dong만 UPDATE → 지문(lat/lng) 보존 · counts 불변. 첫 실행 후엔 빈-dong SELECT가 ~0행이라 빠름.
+def _backfill_dong(conn: sqlite3.Connection) -> int:
+    """빈 dong을 legal_addr(없으면 road_addr) → extract_dong으로 채운다. 채운 행 수 반환."""
+    from app.match.normalize import extract_dong
+
+    rows = conn.execute(
+        "SELECT complex_id, COALESCE(NULLIF(legal_addr, ''), road_addr) AS addr FROM complex "
+        "WHERE (dong IS NULL OR dong = '') "
+        "AND COALESCE(NULLIF(legal_addr, ''), road_addr) IS NOT NULL"
+    ).fetchall()
+    updates = [
+        (dong, r["complex_id"]) for r in rows if (dong := extract_dong(r["addr"])) is not None
+    ]
+    if updates:
+        conn.executemany("UPDATE complex SET dong = ? WHERE complex_id = ?", updates)
+    return len(updates)

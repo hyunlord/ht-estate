@@ -66,6 +66,7 @@ export interface HardFilterSpec {
   min_lng?: number | null;
   max_lng?: number | null;
   limit?: number;
+  level?: number | null; // region-clustering: 지도 줌 레벨 — 클러스터 행정단위(구/동) 선택용(조회 불변).
   soft?: SoftSpec; // 랭킹 전용. 생략/none → 중립 정렬.
 }
 
@@ -280,12 +281,13 @@ export interface MarkerCandidate {
   net_area: number | null;
 }
 
-// server-marker-clustering — 서버 grid 클러스터(셀 중심+카운트). 저줌/고밀도서 무편향·완전 집계.
+// region-clustering — 서버 행정구역 클러스터(구역 중심+카운트). 저줌/고밀도서 무편향·완전·unique 집계.
 export interface Cluster {
   lat: number;
   lng: number;
   count: number;
-  region?: string | null; // 셀 지배 시군구(라벨) — cluster-ux-polish. 없으면 카운트만.
+  region?: string | null; // 구역명(시군구 or "시군구 동") — 라벨. 없으면 카운트만.
+  ppp?: number | null; // 구역 평균 평당가(만원/평) — 프론트 tier 색용. 거래 0이면 null(중립색).
 }
 // 마커 피드 — 서버가 밀도로 모드 결정. markers(개별·≤MAX·price) 또는 clusters(grid 집계). 한쪽만 채움.
 export interface MarkerFeed {

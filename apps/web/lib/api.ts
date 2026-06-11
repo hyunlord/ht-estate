@@ -87,13 +87,16 @@ export async function searchComplexes(
   return (await res.json()) as Candidate[];
 }
 
-/** 지도 마커 피드 — 뷰포트 내 전체 단지(경량). 동일 hard 필터 존중, 랭킹·criteria_eval 없음. */
+/** 지도 마커 피드 — 뷰포트 내 전체 단지(경량). 동일 hard 필터 존중, 랭킹·criteria_eval 없음.
+ *  level=지도 줌(클러스터 행정단위 구/동 선택용·조회 결과엔 무영향). */
 export async function fetchMarkers(
   spec: HardFilterSpec,
   bbox?: Bbox,
+  level?: number,
   signal?: AbortSignal,
 ): Promise<MarkerFeed> {
-  const body: HardFilterSpec = bbox ? { ...spec, ...bbox } : spec;
+  const base: HardFilterSpec = bbox ? { ...spec, ...bbox } : spec;
+  const body: HardFilterSpec = level != null ? { ...base, level } : base;
   const res = await fetch(`${API_BASE}/complexes/markers`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

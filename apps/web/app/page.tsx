@@ -78,6 +78,7 @@ export default function Home() {
 
   const specRef = useRef<HardFilterSpec>({ limit: 100 });
   const bboxRef = useRef<Bbox>(DEFAULT_BBOX);
+  const levelRef = useRef<number>(5); // 지도 줌(MapView 초기 level=5) — 마커 클러스터 행정단위 선택
   const feedRef = useRef<MarkerFeed>({ mode: "markers", markers: [], clusters: [] });
   const candidatesRef = useRef<Candidate[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -102,7 +103,7 @@ export default function Home() {
     try {
       const [list, feed] = await Promise.all([
         searchComplexes(spec, bbox, ctrl.signal),
-        fetchMarkers(spec, bbox, ctrl.signal),
+        fetchMarkers(spec, bbox, levelRef.current, ctrl.signal),
       ]);
       setCandidates(list);
       setFeed(feed);
@@ -154,8 +155,9 @@ export default function Home() {
   );
 
   const onBoundsChange = useCallback(
-    (bbox: Bbox) => {
+    (bbox: Bbox, level: number) => {
       bboxRef.current = bbox;
+      levelRef.current = level; // 줌 갱신 → 다음 마커 조회의 클러스터 행정단위(구/동) 결정
       void runSearch(specRef.current, bbox);
     },
     [runSearch],
