@@ -61,7 +61,9 @@ export default function Home() {
   const [feed, setFeed] = useState<MarkerFeed>({ mode: "markers", markers: [], clusters: [] });
   const [selected, setSelected] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // instant-perf: 로딩 분리 — 맵(/markers)·리스트(/search)가 독립 렌더(먼저 보는 맵이 빠른 쪽으로 paint).
+  const [mapLoading, setMapLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [unit, setUnit] = useState<AreaUnit>("pyeong");
 
   // #3b NL 검색 — 감지칩 + 칩별 강/약/제외 가중치. baseSpec(=NL 확정 spec)에서 칩 조정 spec 재구성.
@@ -94,26 +96,39 @@ export default function Home() {
     chipLevelsRef.current = chipLevels;
   });
 
-  // auto-viewport: (mount | 필터변경 | 지도 idle) → 리스트(/search) + 마커(/markers) 동시 조회.
-  const runSearch = useCallback(async (spec: HardFilterSpec, bbox: Bbox) => {
+  // auto-viewport: (mount | 필터변경 | 지도 idle) → 리스트(/search) + 마커(/markers) 병렬 조회.
+  // instant-perf: **분리 렌더** — 둘은 병렬이되 각자 끝나는 즉시 렌더(단일 loading로 max(둘) 블록 안 함).
+  // 맵(먼저 보는 화면)은 /markers 끝나면 바로 paint(/search 안 기다림)·리스트는 /search 끝나면 채움.
+  const runSearch = useCallback((spec: HardFilterSpec, bbox: Bbox) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setLoading(true);
-    try {
-      const [list, feed] = await Promise.all([
-        searchComplexes(spec, bbox, ctrl.signal),
-        fetchMarkers(spec, bbox, levelRef.current, ctrl.signal),
-      ]);
-      setCandidates(list);
-      setFeed(feed);
-      setError(null);
-    } catch (e) {
-      if ((e as Error)?.name === "AbortError") return;
-      setError("검색 실패 — API 서버를 확인하세요.");
-    } finally {
-      if (abortRef.current === ctrl) setLoading(false);
-    }
+    setMapLoading(true);
+    setListLoading(true);
+    fetchMarkers(spec, bbox, levelRef.current, ctrl.signal)
+      .then((feed) => {
+        if (ctrl.signal.aborted) return;
+        setFeed(feed);
+        setError(null);
+      })
+      .catch((e) => {
+        if ((e as Error)?.name !== "AbortError") setError("검색 실패 — API 서버를 확인하세요.");
+      })
+      .finally(() => {
+        if (abortRef.current === ctrl) setMapLoading(false);
+      });
+    searchComplexes(spec, bbox, ctrl.signal)
+      .then((list) => {
+        if (ctrl.signal.aborted) return;
+        setCandidates(list);
+        setError(null);
+      })
+      .catch((e) => {
+        if ((e as Error)?.name !== "AbortError") setError("검색 실패 — API 서버를 확인하세요.");
+      })
+      .finally(() => {
+        if (abortRef.current === ctrl) setListLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -170,7 +185,7 @@ export default function Home() {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      setLoading(true);
+      setListLoading(true); // NL 파싱(LLM) 동안 리스트 인디케이터(맵은 기존 마커 유지)
       try {
         const parsed = await searchNl(query, ctrl.signal);
         const levels = initialLevels(parsed.spec, parsed.detected);
@@ -183,11 +198,11 @@ export default function Home() {
         setChipLevels(levels);
         setReputationQuery(parsed.reputation_query ?? null); // 평판 의도 → detail pre-seed
         setError(null);
-        await runSearch(parsed.spec, bboxRef.current);
+        runSearch(parsed.spec, bboxRef.current); // 맵+리스트 독립 갱신(분리 렌더)
       } catch (e) {
         if ((e as Error)?.name === "AbortError") return;
         setError("NL 검색 실패 — 질의를 바꾸거나 API 서버를 확인하세요.");
-        setLoading(false);
+        setListLoading(false);
       }
     },
     [runSearch],
@@ -236,7 +251,7 @@ export default function Home() {
         onChange={onFilterChange}
         onUnitChange={setUnit}
         onNlSearch={onNlSearch}
-        nlLoading={loading}
+        nlLoading={listLoading}
         quickFilters={quickFilters}
       />
       <DetectedChips
@@ -251,7 +266,7 @@ export default function Home() {
         <ResultList
           candidates={candidates}
           selectedId={selectedId}
-          loading={loading}
+          loading={listLoading}
           unit={unit}
           onSelect={onSelect}
           catalog={criteriaCatalog}
@@ -260,7 +275,7 @@ export default function Home() {
           <MapView
             feed={feed}
             selectedId={selectedId}
-            loading={loading}
+            loading={mapLoading}
             onBoundsChange={onBoundsChange}
             onSelectId={onSelectId}
           />
