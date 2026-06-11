@@ -96,5 +96,41 @@ def test_threshold_boundary() -> None:
     assert search_marker_feed(conn, _spec(), individual_max=9, grid_n=4).mode == "clusters"  # > MAX
 
 
-def test_grid_n_default_is_sane() -> None:
-    assert GRID_N >= 8  # 충분한 해상도
+def test_grid_n_default_coarse() -> None:
+    assert 6 <= GRID_N <= 14  # cluster-ux-polish: 적고 큰 병합(과밀 아님)
+
+
+# ── cluster-ux-polish: 지역명(시군구) 라벨 ──
+def test_cluster_region_label_from_address() -> None:
+    # road_addr 2번째 토큰(시군구)을 셀 지배 지역명으로. 컬럼 백필 0(read-only 파싱).
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.executemany(
+        "INSERT INTO complex (complex_id, name, property_type, lat, lng, road_addr) "
+        "VALUES (?, ?, 'apartment', ?, ?, ?)",
+        [(f"A{i}", f"A{i}", 37.50, 127.05, "서울특별시 강남구 테헤란로 1") for i in range(30)],
+    )
+    conn.commit()
+    feed = search_marker_feed(conn, _spec(), individual_max=5, grid_n=4)
+    assert feed.mode == "clusters"
+    assert all(c.region == "강남구" for c in feed.clusters)  # 지배 시군구
+    assert sum(c.count for c in feed.clusters) == 30  # 완전성 불변
+
+
+def test_cluster_region_dominant_when_mixed() -> None:
+    # 한 셀에 두 시군구 섞이면 최빈이 라벨. legal_addr 폴백도 동작.
+    conn = get_connection(":memory:")
+    init_db(conn)
+    rows = [(f"G{i}", 37.50, 127.05, "서울특별시 강남구 x", None) for i in range(20)]
+    rows += [(f"S{i}", 37.50, 127.05, None, "서울특별시 송파구 y 1-1") for i in range(8)]
+    conn.executemany(
+        "INSERT INTO complex (complex_id, name, property_type, lat, lng, road_addr, legal_addr) "
+        "VALUES (?, ?, 'apartment', ?, ?, ?, ?)",
+        [(cid, cid, lat, lng, ra, la) for cid, lat, lng, ra, la in rows],
+    )
+    conn.commit()
+    feed = search_marker_feed(conn, _spec(), individual_max=5, grid_n=2)
+    assert feed.mode == "clusters"
+    big = max(feed.clusters, key=lambda c: c.count)
+    assert big.region == "강남구"  # 20 > 8 → 최빈
+    assert sum(c.count for c in feed.clusters) == 28  # 완전(강남 20 + 송파 8)

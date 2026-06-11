@@ -643,6 +643,20 @@ body {
   opacity: 0.9;
   margin-top: 2px;
 }
+/* cluster-ux-polish: 서버 클러스터 지역명 라벨(시군구) — 카운트 위 작은 텍스트("단지" 대체). */
+.cluster.srv .r {
+  font-size: 9.5px;
+  font-weight: 600;
+  opacity: 0.95;
+  margin-bottom: 1px;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cluster.srv .n {
+  font-size: 13px;
+}
 
 /* ── detail panel (차별점 hero) ── */
 .detail {

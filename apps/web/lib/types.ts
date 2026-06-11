@@ -285,6 +285,7 @@ export interface Cluster {
   lat: number;
   lng: number;
   count: number;
+  region?: string | null; // 셀 지배 시군구(라벨) — cluster-ux-polish. 없으면 카운트만.
 }
 // 마커 피드 — 서버가 밀도로 모드 결정. markers(개별·≤MAX·price) 또는 clusters(grid 집계). 한쪽만 채움.
 export interface MarkerFeed {

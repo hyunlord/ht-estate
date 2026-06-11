@@ -113,15 +113,25 @@ class MarkerCandidate(BaseModel):
 MARKER_CAP = 2500
 # server-marker-clustering: COUNT 스위치 — 매칭 ≤MAX면 전부 개별 마커(절단 0), 초과면 grid 집계.
 MARKER_INDIVIDUAL_MAX = 1200  # 이하 = 개별(완전·편향 ORDER BY 컷 없음)
-GRID_N = 24  # 초과 = bbox를 N×N 셀로 GROUP BY → 비어있지 않은 셀당 1 클러스터(≤N²·무편향·완전)
+# cluster-ux-polish: GRID_N 하향(24→10) — 저줌서 적고 큰 병합 클러스터(겹침↓·가독↑). ≤(N+1)² 셀.
+GRID_N = 10
+
+# 지역명(시군구) 추출 — complex.sigungu 컬럼 공백이라 road_addr(없으면 legal_addr) 2번째 토큰을 읽음
+# ("서울특별시 강남구 …" → "강남구"). read-only(기존 주소 파싱·백필 0). 끝토큰 방어로 ||' '.
+_ADDR = "COALESCE(NULLIF(c.road_addr, ''), c.legal_addr, '')"
+_SIGUNGU = (
+    f"substr(substr({_ADDR}, instr({_ADDR}, ' ') + 1), 1, "
+    f"instr(substr({_ADDR}, instr({_ADDR}, ' ') + 1) || ' ', ' ') - 1)"
+)
 
 
 class Cluster(BaseModel):
-    """서버 grid 클러스터 — 셀 중심(좌표 AVG) + 카운트. price 없음(순수 집계·무편향·전 구역)."""
+    """서버 grid 클러스터 — 셀 중심(AVG) + 카운트 + 지배 시군구(라벨용). price 없음(집계)."""
 
     lat: float
     lng: float
     count: int
+    region: str | None = None  # 셀 내 최빈 시군구(road_addr 파싱) — 라벨. 없으면 카운트만.
 
 
 class MarkerFeed(BaseModel):
@@ -549,24 +559,44 @@ def _grid_clusters(
     params: list[object],
     grid_n: int,
 ) -> list[Cluster]:
-    """bbox를 grid_n×grid_n 셀로 GROUP BY → 비어있지 않은 셀당 {중심(AVG), 카운트}. **무편향·완전**.
+    """bbox를 grid_n×grid_n 셀로 GROUP BY → 셀당 {중심(AVG)·카운트·지배 시군구}. **무편향·완전**.
 
-    셀 인덱스 = floor((lat-min)/cell). 출력 ≤(grid_n+1)²(경계행) — 172k 무관. idx_complex_latlng
-    레인지 스캔 + 인메모리 집계. bbox 필수(has_bbox 호출부 보장). 0폭 bbox는 epsilon으로 단일셀화.
+    (셀, 시군구) GROUP BY로 서브카운트를 받아 파이썬서 셀 단위 합산(완전성 불변·셀 합=총 매칭) +
+    지배 시군구(최빈) + 가중평균 중심. 셀 인덱스 = floor((lat-min)/cell). 결과 ≤(셀×셀당시군구수)로
+    바운드(셀은 작아 보통 1~2 시군구). idx_complex_latlng 레인지 스캔. 0폭 bbox는 epsilon 단일셀.
     """
     cell_lat = max((spec.max_lat - spec.min_lat) / grid_n, 1e-9)  # type: ignore[operator]
     cell_lng = max((spec.max_lng - spec.min_lng) / grid_n, 1e-9)  # type: ignore[operator]
     sql = (
         "SELECT CAST((c.lat - ?) / ? AS INTEGER) AS gy, "
         "CAST((c.lng - ?) / ? AS INTEGER) AS gx, "
+        f"{_SIGUNGU} AS region, "
         "AVG(c.lat) AS clat, AVG(c.lng) AS clng, COUNT(*) AS n "
-        f"FROM complex c WHERE {where} GROUP BY gy, gx"
+        f"FROM complex c WHERE {where} GROUP BY gy, gx, region"
     )
     p: list[object] = [spec.min_lat, cell_lat, spec.min_lng, cell_lng, *params]
-    return [
-        Cluster(lat=r["clat"], lng=r["clng"], count=int(r["n"]))
-        for r in conn.execute(sql, p).fetchall()
-    ]
+    # 셀 단위 집계: 총 카운트(완전) + 가중평균 중심 + 지배 시군구(최빈).
+    cells: dict[tuple[int, int], dict] = {}
+    for r in conn.execute(sql, p).fetchall():
+        cell = cells.setdefault(
+            (r["gy"], r["gx"]), {"total": 0, "lat_sum": 0.0, "lng_sum": 0.0, "regions": {}}
+        )
+        n = int(r["n"])
+        cell["total"] += n
+        cell["lat_sum"] += r["clat"] * n
+        cell["lng_sum"] += r["clng"] * n
+        region = (r["region"] or "").strip()
+        if region:
+            cell["regions"][region] = cell["regions"].get(region, 0) + n
+    out: list[Cluster] = []
+    for cell in cells.values():
+        regions = cell["regions"]
+        dominant = max(regions, key=regions.__getitem__) if regions else None
+        out.append(Cluster(
+            lat=cell["lat_sum"] / cell["total"], lng=cell["lng_sum"] / cell["total"],
+            count=cell["total"], region=dominant,
+        ))
+    return out
 
 
 def search_markers(

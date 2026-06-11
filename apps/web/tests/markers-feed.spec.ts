@@ -71,8 +71,8 @@ test("marker feed clusters mode handled without crash", async ({ page }) => {
       json: {
         mode: "clusters", markers: [],
         clusters: [
-          { lat: 37.47, lng: 126.82, count: 1200 }, // 부천 — 편향 제거로 표현됨
-          { lat: 37.50, lng: 127.05, count: 800 }, // 강남
+          { lat: 37.47, lng: 126.82, count: 1200, region: "부천오정구" }, // 부천 — 편향 제거+지역명
+          { lat: 37.50, lng: 127.05, count: 800, region: "강남구" }, // 강남
         ],
       },
     }),

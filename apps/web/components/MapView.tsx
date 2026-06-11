@@ -108,20 +108,27 @@ export function MapView({
     });
   }
 
-  // 서버 클러스터(grid 집계) 오버레이 — 카운트 서클·클릭→줌인+중심 recenter. price 없음(순수 카운트).
+  // 서버 클러스터(grid 집계) 오버레이 — 지역명+카운트 서클(원 크기 ∝ 카운트)·클릭→줌인+recenter.
   function serverCluster(
     maps: KakaoMaps,
     map: KakaoMap,
-    cl: { lat: number; lng: number; count: number },
+    cl: { lat: number; lng: number; count: number; region?: string | null },
     level: number,
   ): KakaoCustomOverlay {
+    // 카운트로 원 반경 스케일(sqrt·캡) — 큰 병합이 시각적으로 지배(겹침 인상 완화).
+    const size = Math.round(Math.min(86, 42 + Math.sqrt(cl.count) * 2));
     const el = document.createElement("div");
     el.className = "cluster srv";
     el.style.background = "var(--brand)";
-    el.innerHTML = `<span class="n">${cl.count}</span><span class="t">단지</span>`;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    const region = cl.region ?? "";
+    el.innerHTML =
+      `${region ? `<span class="r">${region}</span>` : ""}` +
+      `<span class="n">${cl.count.toLocaleString()}</span>`;
     el.addEventListener("click", () => {
-      map.setLevel(Math.max(1, level - 2));
-      map.panTo(new maps.LatLng(cl.lat, cl.lng));
+      map.setLevel(Math.max(1, level - 3)); // 결정적 줌인
+      map.setCenter(new maps.LatLng(cl.lat, cl.lng)); // 그 구역 중심으로
     });
     return new maps.CustomOverlay({
       position: new maps.LatLng(cl.lat, cl.lng),
