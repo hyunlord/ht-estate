@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS "transaction" (
 
 -- 실거래↔단지 조인 조회용 인덱스 (T0-4·T0-6에서 쓰임, 지금 박아둠)
 CREATE INDEX IF NOT EXISTS idx_transaction_complex ON "transaction"(complex_id);
+-- initial-load-perf: 복합(complex_id, deal_date) — search_complexes의 최근일 MAX(deal_date) 정렬키를
+-- 인덱스 시크로(7만 후보 상관 서브쿼리 가속). additive·메타데이터만(행/좌표 무변경 → 지문/counts 불변).
+CREATE INDEX IF NOT EXISTS idx_txn_complex_date ON "transaction"(complex_id, deal_date);
 
 -- 전월세 실거래 (MOLIT, 매매와 별도 데이터셋 — P2-1). 거래유형 축 확장(설계 §2).
 -- 매매 transaction과 분리해 매매 회귀 0(별도 테이블). 조인 컬럼(complex_id·match_confidence·
@@ -144,6 +147,8 @@ CREATE TABLE IF NOT EXISTS rent_transaction (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rent_transaction_complex ON rent_transaction(complex_id);
+-- initial-load-perf: 전월세도 복합(complex_id, deal_date) — 최근일 정렬키 시크. additive·메타데이터만.
+CREATE INDEX IF NOT EXISTS idx_rent_complex_date ON rent_transaction(complex_id, deal_date);
 
 -- 적재 진행 원장 (C20) — 멀티데이 재개용. (stage, region, month) 완료분을 기록해 재개 시
 -- 이미 fetch한 region×월을 일일캡 소모 없이 skip한다. 코어 적재(transaction/rent)와 별도 테이블이라

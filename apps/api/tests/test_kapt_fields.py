@@ -155,9 +155,10 @@ def test_init_db_migrates_preexisting_complex_without_new_columns() -> None:
     # 실행 중 적재가 만든 '구' complex 테이블(P4-1 컬럼 없음)을 시뮬레이트.
     conn = get_connection(":memory:")
     conn.execute(
-        # lat/lng는 T0-5 base 컬럼 — idx_complex_latlng가 둘 요구라 실DB 동형으로 lng 포함.
+        # lat/lng·road_addr/legal_addr는 base 컬럼(인덱스·sigungu 백필이 요구) — 실DB 동형 포함.
         "CREATE TABLE complex "
-        "(complex_id TEXT PRIMARY KEY, name TEXT, lat REAL, lng REAL, has_gym BOOLEAN)"
+        "(complex_id TEXT PRIMARY KEY, name TEXT, sigungu TEXT, lat REAL, lng REAL, "
+        "road_addr TEXT, legal_addr TEXT, has_gym BOOLEAN)"
     )
     conn.execute(
         "INSERT INTO complex (complex_id, name, lat, has_gym) VALUES ('A', '단지', 37.5, 1)"

@@ -117,6 +117,31 @@ def test_cluster_region_label_from_address() -> None:
     assert sum(c.count for c in feed.clusters) == 30  # 완전성 불변
 
 
+def test_sigungu_backfill_matches_parse_label() -> None:
+    # initial-load-perf: 백필이 sigungu를 주소 파싱과 동일하게 채운다(라벨 불변·핫쿼리 가속).
+    from app.store.db import _backfill_sigungu
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, property_type, lat, lng, road_addr) "
+        "VALUES ('A', 'A', 'apartment', 37.5, 127.05, '서울특별시 강남구 테헤란로 1')"
+    )
+    conn.commit()
+    n = _backfill_sigungu(conn)  # 시드 후 백필
+    assert n == 1
+    row = conn.execute("SELECT sigungu FROM complex WHERE complex_id='A'").fetchone()
+    assert row[0] == "강남구"
+    # legal_addr 폴백
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, property_type, lat, lng, legal_addr) "
+        "VALUES ('B', 'B', 'apartment', 37.5, 127.05, '서울특별시 송파구 잠실동 1-1')"
+    )
+    conn.commit()
+    _backfill_sigungu(conn)
+    rb = conn.execute("SELECT sigungu FROM complex WHERE complex_id='B'").fetchone()
+    assert rb[0] == "송파구"
+
+
 def test_cluster_region_dominant_when_mixed() -> None:
     # 한 셀에 두 시군구 섞이면 최빈이 라벨. legal_addr 폴백도 동작.
     conn = get_connection(":memory:")

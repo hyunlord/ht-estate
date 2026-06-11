@@ -90,4 +90,25 @@ def init_db(conn: sqlite3.Connection) -> None:
     # P5-1: 기존 complex(전부 K-apt 아파트)는 property_type NULL → apartment 백필. 멱등(NULL만).
     # 비-아파트 행은 적재 시 명시 type으로 들어와 NULL이 아니므로 영향 없음.
     conn.execute("UPDATE complex SET property_type = 'apartment' WHERE property_type IS NULL")
+    _backfill_sigungu(conn)  # initial-load-perf: 클러스터 라벨 시군구 — 주소 파싱→컬럼(핫쿼리 가속)
     conn.commit()
+
+
+# initial-load-perf: 시군구 백필 — road_addr(없으면 legal_addr) 2번째 토큰("서울 강남구"→"강남구").
+# _grid_clusters 핫쿼리가 행마다 파싱하던 걸 저장 컬럼으로(라벨 동일·더 빠름). 좌표 무접촉(sigungu만
+# UPDATE → 지문 보존)·멱등(빈 행만). 좌표 무관이라 지역명을 카드/검색서도 쓰는 부수익.
+_BF_ADDR = "COALESCE(NULLIF(road_addr, ''), legal_addr, '')"
+_BF_SIGUNGU = (
+    f"substr(substr({_BF_ADDR}, instr({_BF_ADDR}, ' ') + 1), 1, "
+    f"instr(substr({_BF_ADDR}, instr({_BF_ADDR}, ' ') + 1) || ' ', ' ') - 1)"
+)
+
+
+def _backfill_sigungu(conn: sqlite3.Connection) -> int:
+    """빈 sigungu를 주소 파싱으로 채운다(멱등·좌표/행 무접촉). 채운 행 수 반환."""
+    cur = conn.execute(
+        f"UPDATE complex SET sigungu = {_BF_SIGUNGU} "
+        "WHERE (sigungu IS NULL OR sigungu = '') "
+        "AND COALESCE(NULLIF(road_addr, ''), legal_addr) IS NOT NULL"
+    )
+    return cur.rowcount
