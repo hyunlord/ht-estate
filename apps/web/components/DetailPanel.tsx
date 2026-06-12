@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchEnrichment, fetchReputation } from "@/lib/api";
 import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/lib/format";
@@ -623,6 +623,30 @@ export function DetailPanel({
     };
   }, [cid]);
 
+  // detail-panel-sidebar: 좌측 엣지 드래그로 패널 너비 조절(clamp). 맵은 MapView ResizeObserver가
+  // relayout. 값은 컬럼 width(인라인)로 적용 → .map flex가 그만큼 줄어 맵을 덮지 않는다.
+  const [width, setWidth] = useState(460);
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const w = window.innerWidth - e.clientX;
+      setWidth(Math.max(340, Math.min(760, w)));
+    };
+    const onUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
   const rep = candidate.representative_trade;
   const low = rep?.match_confidence != null && rep.match_confidence < 0.7;
   const tags: { text: string; brand?: boolean }[] = [];
@@ -632,7 +656,20 @@ export function DetailPanel({
   if (candidate.floorplan?.orientation) tags.push({ text: candidate.floorplan.orientation });
 
   return (
-    <div className="detail" data-testid="complex-card">
+    <div className="detail" data-testid="complex-card" style={{ width }}>
+      <div
+        className="d-resize"
+        data-testid="detail-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="패널 너비 조절"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          draggingRef.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+      />
       <div className="d-head">
         <button type="button" className="close" data-testid="detail-close" onClick={onClose}>
           ✕
@@ -657,6 +694,7 @@ export function DetailPanel({
         )}
       </div>
 
+      <div className="d-scroll" data-testid="detail-scroll">
       <div className="d-price">
         <span className="big" data-testid="representative-trade">
           {repText(candidate)}
@@ -676,6 +714,11 @@ export function DetailPanel({
 
       {candidate.area_buckets && candidate.area_buckets.length > 0 && (
         <AreaBuckets buckets={candidate.area_buckets} unit={unit} />
+      )}
+      {candidate.area_buckets && candidate.area_buckets.length > 0 && (
+        <div className="abreak-note" data-testid="area-buckets-note">
+          평형은 <b>MOLIT 실거래</b> 기반(거래된 평형만). 미거래 세대타입은 포함되지 않습니다.
+        </div>
       )}
 
       <div className="evhead">근거 · 출처</div>
@@ -722,6 +765,7 @@ export function DetailPanel({
         >
           호갱노노 ↗
         </a>
+      </div>
       </div>
     </div>
   );

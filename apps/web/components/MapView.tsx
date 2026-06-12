@@ -255,6 +255,30 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // detail-panel-sidebar: 패널 open/close/resize로 맵 컨테이너 폭이 바뀌면 Kakao relayout(타일/마커
+  // 재적합·블랭크/깨짐 방지). 중심 보존(relayout이 시프트할 수 있어 전후 center 복원). ResizeObserver로
+  // 모든 폭 변화(패널·윈도) 일괄 처리. idle 재조회는 사용자 팬/줌만 — 프로그램 relayout은 bounds 미발화.
+  useEffect(() => {
+    if (!ready) return;
+    const el = containerRef.current;
+    const map = mapRef.current;
+    if (!el || !map || typeof ResizeObserver === "undefined") return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const c = map.getCenter();
+        map.relayout();
+        map.setCenter(c); // 폭 변화로 인한 중심 시프트 복원
+      });
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [ready]);
+
   useEffect(() => {
     renderMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps

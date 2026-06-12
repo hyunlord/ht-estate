@@ -284,16 +284,18 @@ export default function Home() {
               {error}
             </div>
           )}
-          {selected && (
-            <DetailPanel
-              key={selected.complex_id}
-              candidate={selected}
-              unit={unit}
-              reputationQuery={reputationQuery}
-              onClose={() => setSelected(null)}
-            />
-          )}
         </div>
+        {/* detail-panel-sidebar: 우측 docked 컬럼(좌 ResultList 미러) — 맵을 덮지 않고 컨테인드.
+            맵은 .map flex가 줄어들며 relayout(MapView ResizeObserver). */}
+        {selected && (
+          <DetailPanel
+            key={selected.complex_id}
+            candidate={selected}
+            unit={unit}
+            reputationQuery={reputationQuery}
+            onClose={() => setSelected(null)}
+          />
+        )}
       </div>
     </div>
   );

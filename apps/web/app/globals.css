@@ -82,11 +82,16 @@ body {
 .app {
   display: grid;
   grid-template-rows: 60px 1fr;
+  /* detail-panel-sidebar: 컬럼을 minmax(0,1fr)로 container 폭에 고정 — 기본 auto면 .body flex 내용
+     크기로 grid가 가로로 늘어나(패널이 뷰포트 밖) 클립. 0 하한이 map flex 수축을 허용. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
 }
 .body {
-  display: grid;
-  grid-template-columns: 316px 1fr;
+  /* detail-panel-sidebar: flex 행 [ResultList(좌·고정) | MapView(flex-1) | DetailPanel(우·docked)].
+     DetailPanel 열리면 .map flex가 줄어 맵을 덮지 않고 컨테인드(오버레이/클립 아님). */
+  display: flex;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -399,6 +404,8 @@ body {
 .list {
   background: var(--paper);
   border-right: 1px solid var(--line);
+  width: 316px;
+  flex: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -519,6 +526,8 @@ body {
   position: relative;
   overflow: hidden;
   background: #e9ece7;
+  flex: 1 1 0; /* detail-panel-sidebar: 패널 열리면 줄어듦. min-width:0로 flex 수축 허용(맵 안 잘림). */
+  min-width: 0;
 }
 .map-placeholder {
   position: absolute;
@@ -660,30 +669,52 @@ body {
   font-size: 13px;
 }
 
-/* ── detail panel (차별점 hero) ── */
+/* ── detail panel — detail-panel-sidebar: 우측 docked 컬럼(좌 ResultList 미러·오버레이 아님) ── */
 .detail {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 352px;
-  max-height: calc(100% - 32px);
+  position: relative; /* docked 컬럼(absolute/floating 아님) → 뷰포트 밖 클립 0 */
+  flex: none;
+  width: 460px; /* 인라인 style이 리사이즈로 override */
+  min-width: 340px;
+  max-width: 760px;
+  height: 100%;
+  min-height: 0;
   background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--sh-lg);
-  z-index: 30;
-  overflow: hidden;
+  border-left: 1px solid var(--line); /* 좌 보더로 맵과 명확 구분(좌 사이드바 border-right 미러) */
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* 헤더 고정 + .d-scroll만 스크롤 */
+}
+/* 좌측 엣지 드래그 핸들 — 너비 리사이즈 */
+.d-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+}
+.d-resize:hover {
+  background: var(--brand-soft);
+}
+/* 헤더 아래 전 내용 = 스크롤 영역(화면 밖 클립 0·전 섹션·전 평형 버킷 노출) */
+.d-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .d-head {
   padding: 17px 20px 14px;
   border-bottom: 1px solid var(--line2);
+  flex: none;
 }
 .d-head .nm {
   font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.025em;
+  overflow-wrap: anywhere; /* 긴 단지명 wrap(잘림 0·close 버튼과 겹침 방지) */
+  padding-right: 24px;
 }
 .d-head .addr {
   font-size: 12px;
@@ -778,6 +809,18 @@ body {
 .abreak-r .ab-n {
   flex: 0 0 auto;
   color: var(--faint);
+}
+/* detail-panel-sidebar: 평형 데이터 출처 안내(MOLIT 실거래 기반·미거래 세대타입 제외) */
+.abreak-note {
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+.abreak-note b {
+  color: var(--ink2);
+  font-weight: 600;
 }
 .evhead {
   font-size: 11px;

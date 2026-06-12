@@ -14,8 +14,10 @@ export interface KakaoMap {
   getBounds(): KakaoBounds;
   getLevel(): number; // 줌 레벨(작을수록 확대) — 클러스터/개별 마커 전환 기준
   setLevel(level: number): void;
+  getCenter(): KakaoLatLng;
   setCenter(latlng: KakaoLatLng): void;
   panTo(latlng: KakaoLatLng): void;
+  relayout(): void; // detail-panel-sidebar: 컨테이너 리사이즈(패널 open/close/resize) 후 타일/마커 재적합
 }
 
 export interface KakaoMarker {
