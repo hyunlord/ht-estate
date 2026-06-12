@@ -2,14 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import {
-  markerLabelAmount,
-  ppp,
-  TIER_COUNT,
-  tierBoundaries,
-  tierColor,
-  tierOf,
-} from "@/lib/format";
+import { ppp, TIER_COUNT, tierBoundaries, tierColor, tierOf } from "@/lib/format";
+import { clusterMarkers, markerFeedLabel } from "@/lib/markers";
 import {
   KAKAO_JS_KEY,
   loadKakaoMaps,
@@ -21,35 +15,8 @@ import type { Bbox, MarkerCandidate, MarkerFeed } from "@/lib/types";
 
 const GANGNAM = { lat: 37.4979, lng: 127.0476 };
 const DEBOUNCE_MS = 280; // spec §5.1 — idle 후 250~300ms 디바운스
-const CLUSTER_LEVEL = 6; // 도시/광역 줌 → 클러스터
-const MARKER_CAP = 60; // 뷰포트 마커 캡 초과 시 줌 무관 클러스터 강제(폭주 방지)
-
-interface Cell {
-  lat: number;
-  lng: number;
-  members: MarkerCandidate[];
-}
-
-function cellSize(level: number): number {
-  return 0.0025 * Math.pow(2, Math.max(0, level - 3));
-}
-
-function clusterMarkers(markers: MarkerCandidate[], level: number): Cell[] {
-  const size = cellSize(level);
-  const cells = new Map<string, MarkerCandidate[]>();
-  for (const m of markers) {
-    if (m.lat == null || m.lng == null) continue;
-    const key = `${Math.floor(m.lat / size)}:${Math.floor(m.lng / size)}`;
-    const bucket = cells.get(key);
-    if (bucket) bucket.push(m);
-    else cells.set(key, [m]);
-  }
-  return Array.from(cells.values()).map((members) => ({
-    lat: members.reduce((s, m) => s + (m.lat ?? 0), 0) / members.length,
-    lng: members.reduce((s, m) => s + (m.lng ?? 0), 0) / members.length,
-    members,
-  }));
-}
+// marker-zoom-rent ①: cellSize/clusterMarkers는 lib/markers(줌-aware 건물스케일)로 이동. 개별 모드는
+// 항상 격자 클러스터 — 단일셀=개별 price 마커, 겹치는 건물만 병합(MARKER_CAP 강제클러스터 제거).
 
 export function MapView({
   feed,
@@ -101,7 +68,7 @@ export function MapView({
     const body = document.createElement("div");
     body.className = "body";
     body.style.setProperty("--mk-bg", tierColor(tierOf(ppp(m.price, m.net_area), bnd)));
-    body.textContent = markerLabelAmount(m.price) ?? m.name ?? m.complex_id;
+    body.textContent = markerFeedLabel(m) ?? m.name ?? m.complex_id; // ② 월세=보증금/월세
     wrap.appendChild(body);
     wrap.addEventListener("click", () => selectCb.current(m.complex_id));
     return new maps.CustomOverlay({
@@ -170,45 +137,39 @@ export function MapView({
       return;
     }
 
-    // 개별 모드(≤MAX) — 기존 개별 마커 + 클라 클러스터(시각 밀도용).
+    // 개별 모드 — marker-zoom-rent ①: **항상** 줌-aware 격자 클러스터. 단일셀=개별 price 마커
+    // (깊은 줌서 건물별), 겹치는 건물만 "N단지"로 병합(폭주 방지). 강제 캡(coordCount>60) 제거 →
+    // street줌서 거친 "33단지" 대신 건물별 마커. 셀 크기는 lib/markers.cellSize(level)가 줌별 결정.
     const list = fd.markers;
     const bnd = boundaries(list);
-    const coordCount = list.filter((m) => m.lat != null && m.lng != null).length;
 
-    if (level >= CLUSTER_LEVEL || coordCount > MARKER_CAP) {
-      for (const cell of clusterMarkers(list, level)) {
-        if (cell.members.length === 1) {
-          next.push(priceOverlay(maps, map, cell.members[0], selId, bnd));
-          continue;
-        }
-        const avgTier = Math.round(
-          cell.members.reduce((s, m) => s + tierOf(ppp(m.price, m.net_area), bnd), 0) /
-            cell.members.length,
-        );
-        const el = document.createElement("div");
-        el.className = "cluster";
-        el.style.background = tierColor(avgTier);
-        el.innerHTML = `<span class="n">${cell.members.length}</span><span class="t">단지</span>`;
-        el.addEventListener("click", () => {
-          map.setLevel(Math.max(1, level - 2));
-          map.panTo(new maps.LatLng(cell.lat, cell.lng));
-        });
-        next.push(
-          new maps.CustomOverlay({
-            position: new maps.LatLng(cell.lat, cell.lng),
-            content: el,
-            map,
-            xAnchor: 0.5,
-            yAnchor: 0.5,
-            clickable: true,
-          }),
-        );
+    for (const cell of clusterMarkers(list, level)) {
+      if (cell.members.length === 1) {
+        next.push(priceOverlay(maps, map, cell.members[0], selId, bnd));
+        continue;
       }
-    } else {
-      for (const m of list) {
-        if (m.lat == null || m.lng == null) continue;
-        next.push(priceOverlay(maps, map, m, selId, bnd));
-      }
+      const avgTier = Math.round(
+        cell.members.reduce((s, m) => s + tierOf(ppp(m.price, m.net_area), bnd), 0) /
+          cell.members.length,
+      );
+      const el = document.createElement("div");
+      el.className = "cluster";
+      el.style.background = tierColor(avgTier);
+      el.innerHTML = `<span class="n">${cell.members.length}</span><span class="t">단지</span>`;
+      el.addEventListener("click", () => {
+        map.setLevel(Math.max(1, level - 2));
+        map.panTo(new maps.LatLng(cell.lat, cell.lng));
+      });
+      next.push(
+        new maps.CustomOverlay({
+          position: new maps.LatLng(cell.lat, cell.lng),
+          content: el,
+          map,
+          xAnchor: 0.5,
+          yAnchor: 0.5,
+          clickable: true,
+        }),
+      );
     }
     overlaysRef.current = next;
   }

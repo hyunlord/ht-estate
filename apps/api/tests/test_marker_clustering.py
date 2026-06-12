@@ -45,6 +45,37 @@ def _addr_rows(rows: list[tuple[str, float, float, str]]) -> list[tuple]:
     return [(cid, cid, "apartment", lat, lng, ra) for cid, lat, lng, ra in rows]
 
 
+# ── marker-zoom-rent ②: 월세 마커에 보증금/월세/타입 ──
+def test_marker_carries_rent_fields_for_monthly() -> None:
+    # 월세 deal_type → 마커가 deposit·monthly_rent·rent_type을 실어 라벨이 보증금/월세 둘 다 보이게.
+    conn = _conn()
+    _insert(conn, [("A0", "A0", "apartment", 37.50, 127.05)])
+    conn.execute(
+        "INSERT INTO rent_transaction (txn_id, complex_id, net_area, deposit, monthly_rent, "
+        "rent_type, deal_date) VALUES ('r0','A0', 84.9, 30000, 100, 'monthly', '2026-05-01')"
+    )
+    conn.commit()
+    feed = search_marker_feed(conn, _spec(deal_type="monthly"), individual_max=10)
+    assert feed.mode == "markers"
+    m = next(x for x in feed.markers if x.complex_id == "A0")
+    assert m.rent_type == "monthly" and m.deposit == 30000 and m.monthly_rent == 100
+    assert m.price == 30000  # 가격축=보증금(전월세)
+
+
+def test_marker_no_rent_fields_for_sale() -> None:
+    # 매매면 rent 필드 None(매매 라벨은 price). 회귀 0.
+    conn = _conn()
+    _insert(conn, [("A0", "A0", "apartment", 37.50, 127.05)])
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, complex_id, net_area, price, deal_date) '
+        "VALUES ('t0','A0', 84.9, 142000, '2026-05-01')"
+    )
+    conn.commit()
+    feed = search_marker_feed(conn, _spec(), individual_max=10)  # deal_type=sale(기본)
+    m = next(x for x in feed.markers if x.complex_id == "A0")
+    assert m.price == 142000 and m.rent_type is None and m.deposit is None
+
+
 # ── 모드 스위치 ──
 def test_small_bbox_individual_all_returned() -> None:
     # ≤MAX → mode='markers'·전부 반환(절단 0·직접 카운트와 일치).

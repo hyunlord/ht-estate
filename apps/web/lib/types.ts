@@ -279,6 +279,10 @@ export interface MarkerCandidate {
   lng: number | null;
   price: number | null;
   net_area: number | null;
+  // marker-zoom-rent ②: 월세 마커 라벨용 — 보증금/월세 둘 다(전월세만·매매=null).
+  deposit?: number | null;
+  monthly_rent?: number | null;
+  rent_type?: string | null;
 }
 
 // region-clustering — 서버 행정구역 클러스터(구역 중심+카운트). 저줌/고밀도서 무편향·완전·unique 집계.

@@ -35,8 +35,12 @@ def test_markers_returns_viewport_complexes_minimal(client: TestClient) -> None:
     markers = body["markers"]
     assert {m["complex_id"] for m in markers} == {"C1", "C2", "C3"}
     m = markers[0]
-    # 최소 필드만 — criteria_eval/랭킹/enrichment 없음(경량).
-    assert set(m.keys()) == {"complex_id", "name", "lat", "lng", "price", "net_area"}
+    # 최소 필드만 — criteria_eval/랭킹/enrichment 없음(경량). marker-zoom-rent ②: 월세 라벨용
+    # deposit/monthly_rent/rent_type 추가(매매면 None).
+    assert set(m.keys()) == {
+        "complex_id", "name", "lat", "lng", "price", "net_area",
+        "deposit", "monthly_rent", "rent_type",
+    }
     assert m["lat"] is not None and m["lng"] is not None
 
 

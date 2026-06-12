@@ -105,8 +105,12 @@ class MarkerCandidate(BaseModel):
     name: str | None
     lat: float | None
     lng: float | None
-    price: int | None  # 만원 — 대표 거래 금액(거래유형별)
+    price: int | None  # 만원 — 대표 거래 금액(거래유형별: 매매=price / 전월세=deposit)
     net_area: float | None  # 전용(㎡)
+    # marker-zoom-rent ②: 월세 마커 라벨용 — 보증금/월세 둘 다(현 deal_type 대표거래). read-only.
+    deposit: int | None = None  # 만원 (전세·월세 보증금)
+    monthly_rent: int | None = None  # 만원 (월세)
+    rent_type: str | None = None  # 'jeonse' | 'monthly' (전월세만·매매=None)
 
 
 # 마커 피드 서버 캡(degenerate 무-bbox 안전망 — 정상 경로는 COUNT 스위치가 처리).
@@ -554,16 +558,21 @@ def _fetch_markers(
     if limit is not None:
         sql += " LIMIT ?"
         p.append(limit)
+    is_rent = spec.deal_type != "sale"
     markers: list[MarkerCandidate] = []
     for row in conn.execute(sql, p).fetchall():
         trades = _matching_trades(conn, spec, row["complex_id"], twhere, tparams)
         rep = trades[0] if trades else None
+        # marker-zoom-rent ②: 전월세면 보증금/월세/타입을 마커에 실어 라벨이 둘 다 보이게.
         markers.append(
             MarkerCandidate(
                 complex_id=row["complex_id"], name=row["name"],
                 lat=row["lat"], lng=row["lng"],
                 price=(rep[amount_col] if rep is not None else None),
                 net_area=(rep["net_area"] if rep is not None else None),
+                deposit=(rep["deposit"] if (rep is not None and is_rent) else None),
+                monthly_rent=(rep["monthly_rent"] if (rep is not None and is_rent) else None),
+                rent_type=(rep["rent_type"] if (rep is not None and is_rent) else None),
             )
         )
     return markers
