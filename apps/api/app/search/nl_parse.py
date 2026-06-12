@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -268,16 +269,59 @@ def _build_parsed(payload: dict[str, object]) -> ParsedQuery:
     )
 
 
+# nl-fast-parse: 파싱 캐시 — 정규화 쿼리 → ParsedQuery. 파싱은 REGISTRY+지역 어휘에만 의존(거래
+# 데이터 무관)이라 단순 바운드 LRU(키=쿼리). 재시작(배포/레지스트리 변경)시 비워짐·ingest 무관.
+_PARSE_CACHE: OrderedDict[str, ParsedQuery] = OrderedDict()
+_PARSE_CACHE_MAX = 512
+
+
+def _norm_query(nl: str) -> str:
+    return " ".join(nl.lower().split())
+
+
+def _parse_cache_put(norm: str, parsed: ParsedQuery) -> None:
+    _PARSE_CACHE[norm] = parsed
+    _PARSE_CACHE.move_to_end(norm)
+    while len(_PARSE_CACHE) > _PARSE_CACHE_MAX:
+        _PARSE_CACHE.popitem(last=False)
+
+
+def clear_parse_cache() -> None:
+    """파싱 캐시 비우기 — 테스트·수동 무효화용."""
+    _PARSE_CACHE.clear()
+
+
 def parse_query(
     nl: str, *, runner: ClaudeRunner = _default_runner, max_turns: int = 2
 ) -> ParsedQuery:
     """자연어 질의 → 레지스트리-grounded ParsedQuery(spec + 감지 + unsupported).
 
+    nl-fast-parse: **프로덕션 경로(runner=_default_runner)는 룰 선파싱 + 파싱 캐시 먼저** — 흔한
+    쿼리는 claude -p(6-7s) 없이 즉시. 룰이 저신뢰(None)면 LLM 폴백(미파싱 0). 테스트(mock runner)는
+    룰/캐시 우회 → 기존 거동·키리스 보존. 룰/LLM 모두 _build_parsed로 동일 grounding·감지 역산.
+
     runner로 claude -p(구독)에 NL+카탈로그 프롬프트를 던져 JSON을 받고, 결정론 검증으로 grounding.
-    빈 응답/JSON 아님/모순 범위 → QueryParseError. 테스트는 runner mock으로 키리스.
+    빈 응답/JSON 아님/모순 범위 → QueryParseError.
     """
+    prod = runner is _default_runner  # 프로덕션 경로에서만 룰/캐시(테스트 mock은 LLM 경로 유지)
+    if prod:
+        from app.search.rule_parse import try_rule_parse
+
+        norm = _norm_query(nl)
+        cached = _PARSE_CACHE.get(norm)
+        if cached is not None:
+            _PARSE_CACHE.move_to_end(norm)
+            return cached
+        fast = try_rule_parse(nl)
+        if fast is not None:
+            _parse_cache_put(norm, fast)
+            return fast
+
     text = runner(build_parse_prompt(nl), max_turns)
     payload = _extract_json_object(text)
     if payload is None:
         raise QueryParseError("모델 출력에서 JSON 객체를 찾지 못함")
-    return _build_parsed(payload)
+    parsed = _build_parsed(payload)
+    if prod:
+        _parse_cache_put(_norm_query(nl), parsed)
+    return parsed
