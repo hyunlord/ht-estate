@@ -93,6 +93,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     _backfill_sigungu(conn)  # initial-load-perf: 클러스터 라벨 시군구 — 주소 파싱→컬럼(핫쿼리 가속)
     _backfill_dong(conn)  # region-clustering: 동 레벨 클러스터 키 — legal_addr→dong(extract_dong)
     conn.commit()
+    # pipeline-state: 적재기 자기서술 원장 부트스트랩(provenance서 출생/진행 유도·멱등·META만).
+    # 비치명(실패해도 init_db 무중단) — canonical 작업은 위에서 이미 커밋됨.
+    from app.store.pipeline_state import bootstrap_pipeline_state_safe
+
+    bootstrap_pipeline_state_safe(conn)
 
 
 # initial-load-perf: 시군구 백필 — road_addr(없으면 legal_addr) 2번째 토큰("서울 강남구"→"강남구").

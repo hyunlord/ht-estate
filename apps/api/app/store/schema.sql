@@ -247,3 +247,21 @@ CREATE TABLE IF NOT EXISTS review_chunk (
   embed_normalized BOOLEAN               -- ★레시피핀
 );
 CREATE INDEX IF NOT EXISTS idx_review_chunk_complex ON review_chunk(complex_id);
+
+-- pipeline_state: 적재기 자기서술 원장(pipeline-state). 각 파이프라인이 자기 상태(출생·목표·진행·
+-- 마지막 실행·정상 여부)를 1행으로 기록 → 한 쿼리로 "얼마나 됐지/정상인지/언제 시작" 자기서술
+-- (git 고고학·메모리 불요). **META 테이블 — 유일 write는 이 테이블 자신**(canonical 무접촉·read-only
+-- COUNT/MIN으로만 진행 유도) → 지문/counts 불변. introduced_at은 write-once(출생일 보존·birth-vs-wipe
+-- 혼동 차단). metric은 current/target가 무엇을 세는지 자가문서(rows-vs-distinct 모호 해소).
+CREATE TABLE IF NOT EXISTS pipeline_state (
+  name                 TEXT PRIMARY KEY,   -- 'poi_proximity'|'ledger_enrich'|'ingest_txn'|...
+  introduced_at        TIMESTAMP,          -- ★최초 데이터 산출 시점(출생·write-once·provenance 유도)
+  target_count         INTEGER,            -- 분모(예 172,879·POI는 지오코딩 수). 무경계면 NULL
+  current_count        INTEGER,            -- metric 기준 진행
+  metric               TEXT,               -- ★current/target가 세는 대상(예 "distinct complex_id with POI")
+  last_run_at          TIMESTAMP,
+  last_run_added       INTEGER,            -- 직전 기록 이후 증분
+  status               TEXT,               -- 'filling'|'complete'|'on_demand'|'idle'|'error'
+  expected_complete_at TIMESTAMP,          -- ETA(rate 산출 가능시·optional)
+  updated_at           TIMESTAMP
+);

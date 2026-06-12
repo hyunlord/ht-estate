@@ -35,6 +35,7 @@ from app.sources.building_ledger import fetch_title_info, to_bun_ji
 from app.sources.errors import PublicDataError
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.ledger_repo import enrich_building, ledger_source_url, pick_match
+from app.store.pipeline_state import bootstrap_pipeline_state_safe
 from app.store.progress_repo import record_month
 from app.store.regions import bjdong_code
 from app.throttle import Throttle
@@ -220,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         inter_batch_sleep=args.inter_batch_sleep,
         log=print,
     )
+    bootstrap_pipeline_state_safe(conn)  # pipeline-state: run-end 자기서술(provenance 유도·META만)
     return 0
 
 

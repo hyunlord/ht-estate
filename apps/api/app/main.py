@@ -49,6 +49,7 @@ from app.search.repo import Candidate, MarkerFeed, search_complexes, search_mark
 from app.search.review import attach_review
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
+from app.store.pipeline_state import read_pipeline_state
 
 logger = logging.getLogger("ht-estate")
 
@@ -276,6 +277,17 @@ def criteria_endpoint() -> dict[str, list[dict[str, object]]]:
     인메모리 REGISTRY/QUICK_FILTERS 직렬화 → **DB 무접촉**(지문/counts 불변). 신규 criteria 등록 시
     프론트 토글/뱃지 자동 동기(하드코딩 드리프트 0·search-deepen-1 철학 연장)."""
     return {"criteria": criteria_catalog(), "quick_filters": quick_filters_catalog()}
+
+
+@app.get("/pipeline-state")
+def pipeline_state_endpoint(
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+) -> dict[str, list[dict[str, object]]]:
+    """적재 파이프라인 자기서술 원장(read-only·pipeline-state) — 출생/목표/진행/마지막실행/상태.
+
+    "얼마나 됐지·정상인지·언제 시작" = 한 호출 자기서술(git·메모리 불요). pipeline_state META만
+    SELECT → canonical 무접촉(지문/counts 불변). introduced_at=출생(provenance)·metric=세는 대상."""
+    return {"pipelines": read_pipeline_state(conn)}
 
 
 @app.post("/complexes/search")

@@ -29,6 +29,7 @@ from app.ingest import DEFAULT_STAGES, STAGE_ORDER, parse_months
 from app.sources._http import _is_permanent_status
 from app.sources.errors import PublicDataError
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
+from app.store.pipeline_state import bootstrap_pipeline_state_safe
 
 
 def default_is_permanent(exc: Exception) -> bool:
@@ -134,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
         _run_once, _remaining, max_runs=args.max_runs,
         run_interval=args.run_interval, retry_backoff=args.retry_backoff,
     )
+    end_conn = get_connection(args.db)  # pipeline-state: run-end 자기서술(provenance 유도·META만)
+    bootstrap_pipeline_state_safe(end_conn)
+    end_conn.close()
     return 0 if ok else 1
 
 

@@ -24,6 +24,7 @@ import app.settings  # noqa: F401  (.env 로딩)
 from app.poi.proximity import client_from_env
 from app.poi.runner import enrich_poi
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
+from app.store.pipeline_state import bootstrap_pipeline_state_safe
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,11 +67,13 @@ def main(argv: list[str] | None = None) -> int:
             # 429 또는 400 code=-10(일쿼터 초과) — 우아 중단, 다음 run resume(자가치유).
             print(f"[quota] Kakao 쿼터 초과 우아중단. complexes={total_c} "
                   f"calls={total_calls} 400-skips={total_skips}")
+            bootstrap_pipeline_state_safe(conn)  # pipeline-state: run-end 자기서술(META만·비치명)
             return 0
         if int(r["complexes"]) == 0:
             print("[done] 더 처리할 미적재 complex 없음(또는 청크 0).")
             break
         time.sleep(args.inter_batch_sleep)  # cron release 창
+    bootstrap_pipeline_state_safe(conn)  # pipeline-state: run-end 자기서술(provenance 유도·META만)
     print(f"[ok] complexes={total_c} calls={total_calls} 400-skips={total_skips}")
     return 0
 
