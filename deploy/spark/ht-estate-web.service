@@ -1,9 +1,18 @@
 # ht-estate web (Next.js 프리빌드 서빙) 상시 서비스 — Spark 주호스트 (web-service).
 # Tailscale로 macOS 도달: http://100.70.109.50:3100. /api/*는 next.config rewrite로 127.0.0.1:8000
 # (ht-estate-api) 프록시 → 같은-오리진(CORS 불요). **프리빌드 서빙**(next start — 빌드는 별도 유저
-# 스텝 `npm run build`, 매 기동 빌드 안 함). node는 systemd 최소 PATH서 못 찾는 함정 → ExecStart
-# 절대경로(/usr/bin/node) + Environment PATH 명시. NEXT_PUBLIC_KAKAO_JS_KEY는 빌드 타임 인라인
-# (.env.local·gitignored) → **유닛에 시크릿 0**. 실패 시 auto-restart·리부트 생존(enable).
+# 스텝, 매 기동 빌드 안 함). node는 systemd 최소 PATH서 못 찾는 함정 → ExecStart 절대경로
+# (/usr/bin/node) + Environment PATH 명시. NEXT_PUBLIC_KAKAO_JS_KEY는 빌드 타임 인라인
+# (.env.local·gitignored·public 도메인잠금 클라 키) → **유닛에 시크릿 0**. 실패 시 auto-restart.
+#
+# ★ 프로덕션 web 재빌드 절차 (kakao-key-build-durable — 지도 폴백 재발 방지):
+#   반드시  `make build-web-prod`  →  `sudo -n ht-estate-ctl restart-web`.
+#   - build-web-prod = `unset NEXT_PUBLIC_KAKAO_JS_KEY && npm run build` + 키 단언.
+#     게이트용 빈 export(Makefile:17·키리스 결정론)가 .env.local보다 우선 → raw `make build-web`/
+#     `gate-web`/그 export 살아있는 셸서 `npm run build` 돌리면 **빈 키 인라인 → 지도 폴백**.
+#   - 빌드 후 scripts/assert-kakao-key.sh가 번들에 실 키 인라인 단언(빈-키면 loud FAIL).
+#   ⚠ raw build-web/gate-web 산출물로 restart-web 금지(빈 export 상속 → 지도 죽음).
+#   gate-web/e2e는 키리스 유지(결정론) — prod만 실 키. 같은 .next를 덮으니 서빙 직전 build-web-prod.
 [Unit]
 Description=ht-estate web (Next.js)
 After=network-online.target ht-estate-api.service

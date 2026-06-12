@@ -18,7 +18,7 @@ export NEXT_PUBLIC_KAKAO_JS_KEY :=
 
 .PHONY: gate gate-api gate-web gate-e2e \
         ruff-api pyright-api pytest-api api-run dev \
-        lint-web build-web typecheck-web e2e-web \
+        lint-web build-web build-web-prod assert-web-key typecheck-web e2e-web \
         load-gym load-pet load-review auto-enrich enrich-cron review-cron \
         ingest-seoul ingest-nationwide clean
 
@@ -61,6 +61,18 @@ lint-web:
 
 build-web:
 	cd $(WEB_DIR) && npm run build
+
+# ★ 프로덕션 web 빌드 (kakao-key-build-durable) — 모든 ht-estate-web 재배포는 이 타겟.
+#   `unset NEXT_PUBLIC_KAKAO_JS_KEY`로 게이트용 빈 export(L17) override를 제거 → Next가 .env.local
+#   실 키를 번들에 인라인(실지도). 빌드 후 키 단언으로 빈-키(키리스) 빌드가 prod로 새지 않게 차단.
+#   gate-web/e2e는 빈 키 그대로 유지(결정론) — 두 경로가 서빙 산출물을 안 덮게 분리.
+build-web-prod:
+	cd $(WEB_DIR) && unset NEXT_PUBLIC_KAKAO_JS_KEY && npm run build
+	$(MAKE) assert-web-key
+
+# post-build 키 단언 — 번들에 non-empty Kakao 키 인라인됐는지(빈-키면 loud FAIL).
+assert-web-key:
+	$(WEB_DIR)/scripts/assert-kakao-key.sh
 
 # tsc는 next-env.d.ts(빌드 산출물)가 필요하므로 build-web 선행.
 typecheck-web: build-web
