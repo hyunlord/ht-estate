@@ -14,8 +14,6 @@ import type {
   FloorplanSummary,
   GymSection,
   GymSummary,
-  PetSection,
-  PetSummary,
   PoiNear,
   ReputationResponse,
   SchoolNear,
@@ -27,14 +25,6 @@ const POLL_MS = 3000;
 const MAX_POLLS = 25;
 
 const NONE_GYM: GymSummary = { has_gym: "none", confidence: null, evidence: null, sources: [] };
-const NONE_PET: PetSummary = {
-  pet_allowed: "none",
-  confidence: null,
-  evidence: null,
-  caveats: [],
-  confirm_with_office: true,
-  sources: [],
-};
 
 // 상세 패널 = 차별점 hero. 근거·출처(criteria_eval ✓/△/✗/○ + 출처 딥링크) + 대표거래 + Tier-2
 // 행(gym/pet/후기/평면도, 출처 보존) + 네이버/호갱노노 아웃링크. 실거래 추이 차트는 history 없어 OUT(spec §6).
@@ -128,6 +118,14 @@ function CriteriaEval({ evals, sourceUrl }: { evals: CriterionEval[]; sourceUrl:
 
 // ── Tier-2 행 (출처/상태 보존 — 기존 카드 계약) ──
 const GYM_ICON: Record<GymSummary["has_gym"], string> = { yes: "✓", no: "✗", unknown: "△", none: "" };
+// detail-panel-polish ④: 단정(✓있음/✗없음)은 신뢰 가능할 때만 — 비아파트는 K-apt amenities가 없어
+// 저신뢰 온디맨드 추출이라 단정 "없음"이 오탐(예 KCC: agent_research conf 0.31). 고신뢰(conf≥0.7) 또는
+// 신뢰 출처(official/kapt)일 때만 단정·아니면 advisory(△ "정보 없음 · 확인 권장"). 검색 필터는 무관(표시만).
+const GYM_TRUST_SOURCES = new Set(["official", "kapt"]);
+function gymDefinitive(gym: GymSummary): boolean {
+  if (gym.confidence != null && gym.confidence >= 0.7) return true;
+  return gym.sources.some((s) => GYM_TRUST_SOURCES.has(s.source_type));
+}
 function GymRow({ gym }: { gym: GymSummary }) {
   if (gym.has_gym === "none") {
     return (
@@ -141,13 +139,18 @@ function GymRow({ gym }: { gym: GymSummary }) {
       </div>
     );
   }
+  // 저신뢰 yes/no·unknown → advisory(오탐 단정 방지). 신뢰 가능 yes/no만 ✓/✗.
+  const advisory =
+    gym.has_gym === "unknown" ||
+    ((gym.has_gym === "yes" || gym.has_gym === "no") && !gymDefinitive(gym));
   return (
     <div className="r" data-testid="gym-row">
       <div className="b">
         <div className="k">
-          헬스장 <span data-testid="gym-status">{GYM_ICON[gym.has_gym]}</span>
+          헬스장 <span data-testid="gym-status">{advisory ? "△" : GYM_ICON[gym.has_gym]}</span>
         </div>
         <div className="v">
+          {advisory && <span data-testid="gym-advisory">정보 없음 · 확인 권장</span>}
           {gym.evidence && <span data-testid="gym-evidence">{gym.evidence}</span>}
           {gym.confidence != null && <span className="conf">(conf {gym.confidence.toFixed(2)})</span>}
           <SourceLinks sources={gym.sources} prefix="gym" />
@@ -157,47 +160,8 @@ function GymRow({ gym }: { gym: GymSummary }) {
   );
 }
 
-const PET_ICON: Record<PetSummary["pet_allowed"], string> = {
-  yes: "✓",
-  conditional: "△",
-  no: "✗",
-  unknown: "△",
-  none: "",
-};
-const PET_LABEL: Record<PetSummary["pet_allowed"], string> = {
-  yes: "",
-  conditional: "조건부",
-  no: "",
-  unknown: "확인 불가",
-  none: "정보 없음",
-};
-function PetRow({ pet }: { pet: PetSummary }) {
-  const label = PET_LABEL[pet.pet_allowed];
-  const status =
-    pet.pet_allowed === "none" ? label : `${PET_ICON[pet.pet_allowed]} ${label}`.trim();
-  return (
-    <div className="r" data-testid="pet-row">
-      <div className="b">
-        <div className="k">
-          강아지 <span data-testid="pet-status">{status}</span>
-          {pet.confirm_with_office && (
-            <span className="badge" data-testid="pet-confirm-badge">
-              ⚠ 관리사무소 확인 권장
-            </span>
-          )}
-        </div>
-        <div className="v">
-          {pet.evidence && <span data-testid="pet-evidence">{pet.evidence}</span>}
-          {pet.confidence != null && <span className="conf">(conf {pet.confidence.toFixed(2)})</span>}
-          {pet.caveats.length > 0 && (
-            <span data-testid="pet-caveats"> · 제한: {pet.caveats.join(" · ")}</span>
-          )}
-          <SourceLinks sources={pet.sources} prefix="pet" />
-        </div>
-      </div>
-    </div>
-  );
-}
+// detail-panel-polish ⑤: PetRow/PET_ICON/PET_LABEL/PetBlock 제거(기본 패널 표시 제거).
+// 백엔드 pet 데이터·엔드포인트·추출은 유지 — 되살리려면 이 행들과 본문 렌더만 복구하면 됨.
 
 // ── 온디맨드 pending 스피너 행 (무한 스피너 금지 — MAX_POLLS 후 none으로 귀결) ──
 function PendingRow({ label, prefix }: { label: string; prefix: string }) {
@@ -222,15 +186,6 @@ function GymBlock({ section, fallback }: { section: GymSection | null; fallback?
       ? (section.summary ?? NONE_GYM)
       : (fallback ?? (section ? NONE_GYM : null));
   return gym ? <GymRow gym={gym} /> : null;
-}
-
-function PetBlock({ section, fallback }: { section: PetSection | null; fallback?: PetSummary | null }) {
-  if (section?.status === "pending") return <PendingRow label="강아지" prefix="pet" />;
-  const pet =
-    section?.status === "ready"
-      ? (section.summary ?? NONE_PET)
-      : (fallback ?? (section ? NONE_PET : null));
-  return pet ? <PetRow pet={pet} /> : null;
 }
 
 // ── POI 근접(poi-1, 정적 eager) — computed-or-dash. 미적재(배치 안 돈 단지)는 '정보 없음'. ──
@@ -407,11 +362,12 @@ function FloorplanRow({ floorplan }: { floorplan: FloorplanSummary }) {
 function repText(c: Candidate): string {
   const rep = c.representative_trade;
   if (!rep) return "—";
+  // detail-panel-polish ①: 보증금은 raw(30,000) 대신 억 축약 + 명확 라벨(보증금/월세 둘 다 노출).
   if (rep.rent_type === "monthly" && rep.deposit != null) {
-    return `월세 ${rep.deposit.toLocaleString()}/${(rep.monthly_rent ?? 0).toLocaleString()}만원`;
+    return `보증금 ${wonToShort(rep.deposit)} · 월세 ${(rep.monthly_rent ?? 0).toLocaleString()}만원`;
   }
   if (rep.rent_type === "jeonse" && rep.deposit != null) {
-    return `전세 ${rep.deposit.toLocaleString()}만원`;
+    return `전세 ${wonToShort(rep.deposit)}`;
   }
   if (rep.price != null) return `${rep.price.toLocaleString()}만원`;
   return "—";
@@ -593,11 +549,12 @@ export function DetailPanel({
   reputationQuery?: string | null; // reputation-routing: NL 평판 의도 → 평판 섹션 자동 트리거
   onClose: () => void;
 }) {
-  // 온디맨드 gym/pet — 상세 진입 시 fetch(캐시 즉답·miss는 백그라운드+pending) 후 폴링으로 완료 픽업.
+  // 온디맨드 gym — 상세 진입 시 fetch(캐시 즉답·miss는 백그라운드+pending) 후 폴링으로 완료 픽업.
+  // detail-panel-polish ⑤: pet은 기본 패널서 표시 제거(부동산 표준 필드 아님). **백엔드 pet 데이터·
+  // 엔드포인트·추출 파이프라인은 유지**(enrichment는 gym/pet 함께 반환 — 여전히 fetch, gym만 사용).
   // 검색 경로는 무관(_run_search 캐시 그대로) — 이 패널만 단건 온디맨드. graceful: 실패 시 캐시 유지.
   const cid = candidate.complex_id;
   const [gymSec, setGymSec] = useState<GymSection | null>(null);
-  const [petSec, setPetSec] = useState<PetSection | null>(null);
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -608,9 +565,9 @@ export function DetailPanel({
         const r = await fetchEnrichment(cid, ctrl.signal);
         if (cancelled) return;
         setGymSec(r.gym);
-        setPetSec(r.pet);
-        const pending = r.gym.status === "pending" || r.pet.status === "pending";
-        if (pending && attempt < MAX_POLLS) timer = setTimeout(() => poll(attempt + 1), POLL_MS);
+        if (r.gym.status === "pending" && attempt < MAX_POLLS) {
+          timer = setTimeout(() => poll(attempt + 1), POLL_MS);
+        }
       } catch {
         /* graceful: 네트워크/엔드포인트 실패 → 검색 캐시(fallback) 유지, 스피너 안 검 */
       }
@@ -730,7 +687,7 @@ export function DetailPanel({
         <SchoolSection school={candidate.school} />
         <AssignmentSection assignment={candidate.assignment} />
         <GymBlock section={gymSec} fallback={candidate.gym} />
-        <PetBlock section={petSec} fallback={candidate.pet} />
+        {/* detail-panel-polish ⑤: PetRow 기본 패널서 제거(표시만 — 백엔드 데이터/엔드포인트 유지). */}
         {candidate.review && <ReviewRow review={candidate.review} />}
         {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
         <ReputationSection cid={cid} reputationQuery={reputationQuery} />

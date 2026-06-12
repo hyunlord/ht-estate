@@ -34,7 +34,7 @@ const READY = {
   },
 };
 
-test("detail on-demand: pending spinner → fill with provenance, pet badge+caveats", async ({
+test("detail on-demand: gym pending spinner → fill with provenance(딥링크)", async ({
   page,
 }) => {
   await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
@@ -72,8 +72,6 @@ test("detail on-demand: pending spinner → fill with provenance, pet badge+cave
     "https://blog.example/g",
   );
 
-  // pet — 조건부 + caveats + 확인 배지(advisory 정직)
-  await expect(card.getByTestId("pet-status")).toContainText("조건부");
-  await expect(card.getByTestId("pet-caveats")).toContainText("소형견만");
-  await expect(card.getByTestId("pet-confirm-badge")).toBeVisible();
+  // detail-panel-polish ⑤: pet 행은 기본 패널서 제거됨(enrichment는 여전히 gym/pet 반환·표시만 제외).
+  await expect(card.getByTestId("pet-row")).toHaveCount(0);
 });

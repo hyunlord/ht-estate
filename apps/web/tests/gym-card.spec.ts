@@ -66,10 +66,12 @@ test("gym row maps status / shows evidence+conf / http-link / urn-nonlink / none
   await expect(link).toHaveAttribute("rel", /noopener/);
   await expect(card.getByTestId("gym-source-agent")).toHaveCount(0);
 
+  // detail-panel-polish ④: no(conf 0.6·agent_research=저신뢰) → 단정 "✗ 없음" 금지·advisory(△).
   await items.nth(1).click();
   card = page.getByTestId("complex-card");
-  await expect(card.getByTestId("gym-status")).toHaveText("✗");
-  await expect(card.getByTestId("gym-source-agent")).toBeVisible();
+  await expect(card.getByTestId("gym-status")).toHaveText("△");
+  await expect(card.getByTestId("gym-advisory")).toContainText("확인 권장");
+  await expect(card.getByTestId("gym-source-agent")).toBeVisible(); // 출처는 보존
   await expect(card.getByTestId("gym-source-link")).toHaveCount(0);
 
   await items.nth(2).click();

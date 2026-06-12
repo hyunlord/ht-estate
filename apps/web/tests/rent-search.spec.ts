@@ -62,12 +62,13 @@ test("deal_type segment: request body, adaptive price label, rent card display",
   await page.getByTestId("deal-type-jeonse").click();
   await expect(page.getByTestId("fdrop-price")).toContainText("보증금");
   await page.getByTestId("result-item").first().click();
-  await expect(page.getByTestId("representative-trade")).toContainText("전세 90,000만원");
+  // detail-panel-polish ①: 보증금 억 축약(raw 아님).
+  await expect(page.getByTestId("representative-trade")).toContainText("전세 9억");
 
-  // 3) 월세: 카드 월세.
+  // 3) 월세: 보증금(억)+월세 둘 다 명확.
   await page.getByTestId("deal-type-monthly").click();
   await page.getByTestId("result-item").first().click();
-  await expect(page.getByTestId("representative-trade")).toContainText("월세 20,000/120만원");
+  await expect(page.getByTestId("representative-trade")).toContainText("보증금 2억 · 월세 120만원");
 
   // 요청 body: 매매(마운트)=deal_type 미전송, 전세/월세는 명시.
   expect(dealTypesSeen).toEqual([undefined, "jeonse", "monthly"]);

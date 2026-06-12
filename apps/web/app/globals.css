@@ -134,6 +134,8 @@ body {
   border-radius: 7px;
   cursor: pointer;
   transition: 0.15s;
+  white-space: nowrap; /* detail-panel-polish ③: "매매/전세/월세"가 세로 wrap 안 되게 한 줄 가로 */
+  flex: 0 0 auto;
 }
 .seg button.on {
   background: var(--paper);

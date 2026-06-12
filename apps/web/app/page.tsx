@@ -88,12 +88,15 @@ export default function Home() {
   const detectedRef = useRef<Detected[]>([]); // 핸들러가 최신 감지 목록 참조용
   const chipLevelsRef = useRef<Record<string, ChipLevel>>({}); // 칩 레벨 최신값(연속 클릭 합성)
 
+  const selectedRef = useRef<Candidate | null>(null); // detail-panel-polish ②: reconcile용 최신 선택
+
   // 렌더 중 ref 쓰기는 react-hooks 위반 → effect에서 동기(클릭 핸들러가 최신 목록 조회용).
   useEffect(() => {
     feedRef.current = feed;
     candidatesRef.current = candidates;
     detectedRef.current = detected;
     chipLevelsRef.current = chipLevels;
+    selectedRef.current = selected;
   });
 
   // auto-viewport: (mount | 필터변경 | 지도 idle) → 리스트(/search) + 마커(/markers) 병렬 조회.
@@ -121,6 +124,14 @@ export default function Home() {
       .then((list) => {
         if (ctrl.signal.aborted) return;
         setCandidates(list);
+        // detail-panel-polish ②: 딜타입 변경 등으로 재검색되면, 열린 패널을 새 결과의 같은 단지로
+        // reconcile → 새 deal_type 대표거래/area_buckets로 즉시 갱신(중복 검색 없이 이 검색 재사용).
+        // 새 결과에 없으면(필터 탈락) 옛 데이터 유지(닫지 않음 — 사용자가 명시 선택).
+        const cur = selectedRef.current;
+        if (cur) {
+          const updated = list.find((c) => c.complex_id === cur.complex_id);
+          if (updated) setSelected(updated);
+        }
         setError(null);
       })
       .catch((e) => {
@@ -289,7 +300,7 @@ export default function Home() {
             맵은 .map flex가 줄어들며 relayout(MapView ResizeObserver). */}
         {selected && (
           <DetailPanel
-            key={selected.complex_id}
+            key={`${selected.complex_id}-${selected.representative_trade?.rent_type ?? "sale"}`}
             candidate={selected}
             unit={unit}
             reputationQuery={reputationQuery}

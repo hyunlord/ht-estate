@@ -68,7 +68,8 @@ test("floorplan row: features / null-tolerant partial / none / link / coexist", 
     "href", "https://k-apt.example/fp/A1",
   );
   await expect(card.getByTestId("gym-row")).toBeVisible();
-  await expect(card.getByTestId("pet-row")).toBeVisible();
+  // detail-panel-polish ⑤: pet 행은 기본 패널서 제거됨(데이터는 백엔드 유지).
+  await expect(card.getByTestId("pet-row")).toHaveCount(0);
 
   await items.nth(1).click();
   card = page.getByTestId("complex-card");
