@@ -24,6 +24,7 @@ from app.corpus.ondemand import OnDemandCorpus
 from app.corpus.vec import ensure_vec_table
 from app.embed.client import EmbedClient, embed_client_from_env
 from app.enrich.extractors.gym_verify import GYM_VERIFIED
+from app.enrich.extractors.pet_verify import PET_VERIFIED
 from app.enrich.fetcher import NullFetcher, naver_fetcher_from_env
 from app.enrich.ondemand import READY, OnDemandEnricher
 from app.enrich.provider import LLMProvider, provider_from_env
@@ -386,9 +387,15 @@ def complex_enrichment_endpoint(
     ver_state, ver_facts = enricher.status(conn, complex_id, GYM_VERIFIED, now=now)  # doc 검증
     combined_gym = gym_facts + ver_facts
     gym_state = READY if combined_gym else ver_state  # Kakao 있으면 즉답·없으면 doc 검증 상태
-    pet_state, pet_facts = enricher.status(
-        conn, complex_id, "pet", alias=ALIAS_ATTRIBUTES, now=now
-    )
+    # pet(pet-evidence): 기존 pet/시드 read + doc 교차검증('pet_verified') 온디맨드 → 결합.
+    # gym 미러 — 별도 속성이라 시드가 doc 검증 단락 안 함. pet은 항상 advisory(프론트).
+    pet_facts = read_facts(conn, complex_id, "pet", now=now)
+    for a in ALIAS_ATTRIBUTES:  # 레거시 시드(pet_allowed) 폴백
+        if not pet_facts:
+            pet_facts = read_facts(conn, complex_id, a, now=now)
+    pet_ver_state, pet_ver_facts = enricher.status(conn, complex_id, PET_VERIFIED, now=now)
+    combined_pet = pet_facts + pet_ver_facts
+    pet_state = READY if combined_pet else pet_ver_state
     return EnrichmentResponse(
         complex_id=complex_id,
         gym=GymSection(
@@ -397,7 +404,7 @@ def complex_enrichment_endpoint(
         ),
         pet=PetSection(
             status=pet_state,
-            summary=synthesize_pet(pet_facts) if pet_state == READY else None,
+            summary=synthesize_pet(combined_pet) if pet_state == READY else None,
         ),
     )
 

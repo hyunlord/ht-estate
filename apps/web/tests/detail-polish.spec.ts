@@ -65,8 +65,9 @@ test("② 단지 선택 후 매매→월세 전환시 우측 패널 hero 즉시 
   await page.getByTestId("result-item").first().click();
   const card = page.getByTestId("complex-card");
   await expect(card.getByTestId("representative-trade")).toContainText("142,000만원");
-  // ⑤ pet 행 없음.
-  await expect(card.getByTestId("pet-row")).toHaveCount(0);
+  // pet-evidence: pet 행 재추가(advisory) — unavailable+무fallback → '정보 없음'·하드 ✓ 없음.
+  await expect(card.getByTestId("pet-row")).toBeVisible();
+  await expect(card.getByTestId("pet-status")).toHaveText("정보 없음 / 미조사");
 
   // 월세로 전환 — 패널을 다시 클릭하지 않아도 reconcile로 hero 갱신.
   await page.getByTestId("deal-type-monthly").click();

@@ -15,9 +15,11 @@ import sqlite3
 from collections.abc import Callable, Sequence
 
 from app.corpus.relevance import region_tokens
+from app.enrich.extractors.doc_verify import DocTarget
 from app.enrich.extractors.gym import make_gym_extractor
-from app.enrich.extractors.gym_verify import GymTarget, make_gym_verify_extractor
+from app.enrich.extractors.gym_verify import make_gym_verify_extractor
 from app.enrich.extractors.pet import make_pet_extractor
+from app.enrich.extractors.pet_verify import make_pet_verify_extractor
 from app.enrich.fetcher import NullFetcher, SourceFetcher
 from app.enrich.provider import LLMProvider, provider_from_env
 from app.enrich.runner import Extractor
@@ -35,12 +37,13 @@ def name_resolver(conn: sqlite3.Connection, ids: Sequence[str]) -> Callable[[str
     return names.get
 
 
-def gym_target_resolver(
+def doc_target_resolver(
     conn: sqlite3.Connection, ids: Sequence[str]
-) -> Callable[[str], GymTarget]:
-    """gym 추출기용 사전해소 — cid → (name, region_label, region_tokens). C86 건물게이트 입력.
+) -> Callable[[str], DocTarget]:
+    """doc 검증 추출기 공용 사전해소 — cid → (name, region_label, region_tokens). C86 게이트 입력.
 
     메인 스레드 1회 read(스레드안전). region은 sigungu/dong(건물검증 게이트 + gemma 검증 프롬프트).
+    gym_verified·pet_verified 등 구조화 검증 인스턴스가 공유(thin config는 쿼리/프롬프트만 다름).
     """
     if not ids:
         return lambda _cid: (None, "", [])
@@ -77,12 +80,12 @@ def live_extractors(
         return None  # 미구성 → 호출부가 stub 유지(현 동작·게이트 불변)
     fetcher = fetcher or NullFetcher()
     name_of = name_resolver(conn, ids)
+    resolve = doc_target_resolver(conn, ids)  # gym_verified·pet_verified 공용(name+region)
     return {
         "gym": make_gym_extractor(provider, fetcher, name_of),
-        # gym-evidence: doc 교차검증(C86 건물게이트+gemma) → 'gym_verified'(web_verified). Kakao
-        # 위치('gym')와 별도 속성이라 has_fresh/readiness가 doc 검증을 단락 안 함(둘 다 확보).
-        "gym_verified": make_gym_verify_extractor(
-            provider, fetcher, gym_target_resolver(conn, ids)
-        ),
+        # 구조화 검증(gym-evidence/pet-evidence): doc 교차검증(C86 게이트+gemma) → '<attr>_verified'
+        # (web_verified). 별도 속성이라 Kakao/시드가 'gym'/'pet'에 있어도 doc 검증을 단락 안 함.
+        "gym_verified": make_gym_verify_extractor(provider, fetcher, resolve),
         "pet": make_pet_extractor(provider, fetcher, name_of),
+        "pet_verified": make_pet_verify_extractor(provider, fetcher, resolve),
     }

@@ -72,6 +72,7 @@ test("detail on-demand: gym pending spinner → fill with provenance(딥링크)"
     "https://blog.example/g",
   );
 
-  // detail-panel-polish ⑤: pet 행은 기본 패널서 제거됨(enrichment는 여전히 gym/pet 반환·표시만 제외).
-  await expect(card.getByTestId("pet-row")).toHaveCount(0);
+  // pet-evidence: pet 행 재추가(advisory) — 2차 ready conditional → '조건부'·관리사무소 확인.
+  await expect(card.getByTestId("pet-status")).toContainText("조건부");
+  await expect(card.getByTestId("pet-advisory")).toContainText("관리사무소");
 });

@@ -68,8 +68,10 @@ test("floorplan row: features / null-tolerant partial / none / link / coexist", 
     "href", "https://k-apt.example/fp/A1",
   );
   await expect(card.getByTestId("gym-row")).toBeVisible();
-  // detail-panel-polish ⑤: pet 행은 기본 패널서 제거됨(데이터는 백엔드 유지).
-  await expect(card.getByTestId("pet-row")).toHaveCount(0);
+  // pet-evidence: pet 행 재추가(advisory) — fallback yes → '확인 권장'·하드 ✓ 없음.
+  await expect(card.getByTestId("pet-row")).toBeVisible();
+  await expect(card.getByTestId("pet-status")).toContainText("확인 권장");
+  await expect(card.getByTestId("pet-status")).not.toHaveText("✓");
 
   await items.nth(1).click();
   card = page.getByTestId("complex-card");

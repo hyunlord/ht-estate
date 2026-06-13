@@ -14,6 +14,8 @@ import type {
   FloorplanSummary,
   GymSection,
   GymSummary,
+  PetSection,
+  PetSummary,
   PoiNear,
   ReputationResponse,
   SchoolNear,
@@ -27,6 +29,10 @@ const POLL_MS = 3000;
 const MAX_POLLS = 25;
 
 const NONE_GYM: GymSummary = { has_gym: "none", confidence: null, evidence: null, sources: [] };
+const NONE_PET: PetSummary = {
+  pet_allowed: "none", confidence: null, evidence: null,
+  caveats: [], confirm_with_office: true, sources: [],
+};
 
 // 상세 패널 = 차별점 hero. 근거·출처(criteria_eval ✓/△/✗/○ + 출처 딥링크) + 대표거래 + Tier-2
 // 행(gym/pet/후기/평면도, 출처 보존) + 네이버/호갱노노 아웃링크. 실거래 추이 차트는 history 없어 OUT(spec §6).
@@ -163,8 +169,56 @@ function GymRow({ gym }: { gym: GymSummary }) {
   );
 }
 
-// detail-panel-polish ⑤: PetRow/PET_ICON/PET_LABEL/PetBlock 제거(기본 패널 표시 제거).
-// 백엔드 pet 데이터·엔드포인트·추출은 유지 — 되살리려면 이 행들과 본문 렌더만 복구하면 됨.
+// pet-evidence: PetRow 재추가(C80서 제거됨) — 이젠 gemma 검증 증거 기반(pet_verified). ★★ 안전 바닥:
+// 반려동물 허용은 관리규약·세대/견종별 가변·잘못된 "가능"이 실제 피해 → **무조건 advisory**(하드 ✓
+// "가능" 절대 금지·항상 "관리사무소 확인 권장"+견종/무게 단서+출처). 'allowed'도 definitive yes 아님.
+const PET_LABEL: Record<PetSummary["pet_allowed"], string> = {
+  yes: "가능(확인 권장)", conditional: "조건부", no: "불가", unknown: "미확인", none: "",
+};
+function PetRow({ pet }: { pet: PetSummary }) {
+  if (pet.pet_allowed === "none") {
+    return (
+      <div className="r" data-testid="pet-row">
+        <div className="b">
+          <div className="k">반려동물</div>
+          <div className="v">
+            <span data-testid="pet-status">정보 없음 / 미조사</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // ★ pet은 무조건 advisory — 하드 ✓ 아이콘 없음(텍스트 라벨)·항상 관리사무소 확인 안내.
+  return (
+    <div className="r" data-testid="pet-row">
+      <div className="b">
+        <div className="k">
+          반려동물 <span data-testid="pet-status">{PET_LABEL[pet.pet_allowed]}</span>
+        </div>
+        <div className="v">
+          <span data-testid="pet-advisory">관리규약·세대별 상이 · 확인 권장: 관리사무소</span>
+          {pet.evidence && <span data-testid="pet-evidence">{pet.evidence}</span>}
+          {pet.caveats.map((c, i) => (
+            <span key={i} data-testid="pet-caveat" className="conf">
+              {c}
+            </span>
+          ))}
+          {pet.confidence != null && <span className="conf">(conf {pet.confidence.toFixed(2)})</span>}
+          <SourceLinks sources={pet.sources} prefix="pet" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PetBlock({ section, fallback }: { section: PetSection | null; fallback?: PetSummary | null }) {
+  if (section?.status === "pending") return <PendingRow label="반려동물" prefix="pet" />;
+  const pet =
+    section?.status === "ready"
+      ? (section.summary ?? NONE_PET)
+      : (fallback ?? (section ? NONE_PET : null));
+  return pet ? <PetRow pet={pet} /> : null;
+}
 
 // ── 온디맨드 pending 스피너 행 (무한 스피너 금지 — MAX_POLLS 후 none으로 귀결) ──
 function PendingRow({ label, prefix }: { label: string; prefix: string }) {
@@ -602,6 +656,8 @@ export function DetailPanel({
   // 검색 경로는 무관(_run_search 캐시 그대로) — 이 패널만 단건 온디맨드. graceful: 실패 시 캐시 유지.
   const cid = candidate.complex_id;
   const [gymSec, setGymSec] = useState<GymSection | null>(null);
+  // pet-evidence: pet 섹션도 온디맨드(gym 미러) — doc 검증(pet_verified) 트리거·폴링. advisory 렌더.
+  const [petSec, setPetSec] = useState<PetSection | null>(null);
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -612,7 +668,9 @@ export function DetailPanel({
         const r = await fetchEnrichment(cid, ctrl.signal);
         if (cancelled) return;
         setGymSec(r.gym);
-        if (r.gym.status === "pending" && attempt < MAX_POLLS) {
+        setPetSec(r.pet);
+        const pending = r.gym.status === "pending" || r.pet.status === "pending";
+        if (pending && attempt < MAX_POLLS) {
           timer = setTimeout(() => poll(attempt + 1), POLL_MS);
         }
       } catch {
@@ -759,7 +817,8 @@ export function DetailPanel({
         <SchoolSection school={candidate.school} />
         <AssignmentSection assignment={candidate.assignment} />
         <GymBlock section={gymSec} fallback={candidate.gym} />
-        {/* detail-panel-polish ⑤: PetRow 기본 패널서 제거(표시만 — 백엔드 데이터/엔드포인트 유지). */}
+        {/* pet-evidence: pet 행 재추가 — advisory(하드 ✓ 없음·관리사무소 확인·견종/무게 단서·출처). */}
+        <PetBlock section={petSec} fallback={candidate.pet} />
         {candidate.review && <ReviewRow review={candidate.review} />}
         {candidate.floorplan && <FloorplanRow floorplan={candidate.floorplan} />}
         <ReputationSection cid={cid} reputationQuery={reputationQuery} />
