@@ -62,9 +62,11 @@ class OnDemandCorpus:
     def ensure(
         self, conn: sqlite3.Connection, complex_id: str, name: str, *, now: datetime | None = None
     ) -> str:
-        """코퍼스 상태 → READY(신선) / PENDING(build 트리거·진행) / UNAVAILABLE(fetcher 미구성).
+        """코퍼스 상태 → READY(신선 or 시도완료-무결과) / PENDING(build 진행) / UNAVAILABLE(미구성).
 
-        신선하면 즉답 READY. miss면 단건 백그라운드 build 제출 후 PENDING(디덥·쿨다운). 동기 차단 0.
+        신선하면 즉답 READY. miss면 단건 백그라운드 build 제출 후 PENDING(디덥). 직전 시도가 신선
+        코퍼스를 못 만들었으면(무결과·관련 후기 0) 쿨다운 동안 READY → 엔드포인트가 synth로 가서
+        빈 결과(요약·인용 0) → UI "후기 미수집"(정직). 재build는 안 함(storm 방지). 동기 차단 0.
         """
         now = now or datetime.now(UTC)
         if is_fresh(conn, complex_id, _recipe_of(self.embed_client), now=now):
@@ -76,7 +78,8 @@ class OnDemandCorpus:
                 return PENDING
             att = self._attempted.get(complex_id)
             if att is not None and now - att < self.negative_cooldown:
-                return PENDING  # 최근 build·무결과/defer → 쿨다운(재시도 storm 방지)
+                # 직전 build 완료·신선 코퍼스 없음(후기 0/defer) → "있는 것(없음)" 표시·재build 0.
+                return READY  # synth → READY+빈 → "후기 미수집"(perpetual 스피너 방지)
             self._inflight.add(complex_id)
         self._do_submit(lambda: self._run(complex_id, name))
         return PENDING

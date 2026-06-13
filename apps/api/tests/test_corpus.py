@@ -353,7 +353,7 @@ def test_ondemand_classifier_rejects_non_review(file_db_path: str) -> None:
 
 
 def test_ondemand_cooldown_after_attempt(file_db_path: str) -> None:
-    # 무소스 build → _attempted 기록 → 쿨다운 내 재요청은 재제출 안 함(pending·재build 0).
+    # 무소스 build → _attempted 기록 → 쿨다운 내 재요청은 재제출 안 함 + READY(미수집 표면화).
     submits: list = []
     oc = OnDemandCorpus(
         fetcher=FakeFetcher([]), embed_client=FakeEmbed(),  # 무소스
@@ -362,5 +362,6 @@ def test_ondemand_cooldown_after_attempt(file_db_path: str) -> None:
     )
     reader = get_connection(file_db_path)
     oc.ensure(reader, "C1", "가단지", now=NOW)
-    oc.ensure(reader, "C1", "가단지", now=NOW + timedelta(minutes=1))  # 쿨다운 내
-    assert len(submits) == 1  # 두 번째는 재제출 안 함
+    state = oc.ensure(reader, "C1", "가단지", now=NOW + timedelta(minutes=1))  # 쿨다운 내
+    assert len(submits) == 1  # 두 번째는 재제출 안 함(storm 방지)
+    assert state == "ready"  # 시도완료·무결과 → READY(synth서 빈 결과 → UI "후기 미수집")
