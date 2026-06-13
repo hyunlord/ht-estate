@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 from app.corpus.chunker import chunk_doc
 from app.corpus.relevance import ChunkClassifier, filter_docs, region_tokens
-from app.corpus.store import PendingChunk, is_fresh, write_chunks
+from app.corpus.store import PendingChunk, _delete_complex, is_fresh, write_chunks
 from app.embed.client import Embedder, EmbedUnavailable
 from app.enrich.fetcher import SourceFetcher
 
@@ -70,22 +70,37 @@ def build_corpus(
         return BuildResult(FRESH)
 
     # 2) 소스 fetch(graceful: fetcher가 per-source 실패 흡수 → 부분/빈).
+    fetch_ok = True
     try:
         docs = fetcher.fetch(name, kind="review")
     except Exception:  # noqa: BLE001 — 예기치 못한 fetch 실패도 defer(crash 0)
         docs = []
-    if not docs:
-        return BuildResult(NO_SOURCE, docs_fetched=0)
+        fetch_ok = False
+    # ★ transient 가드(recall): fetch 실패/쿼터/빈결과면 NO_SOURCE(기존 유지·정화 금지).
+    # "fetch 성공·진짜 후기 없음"만 clean-empty 정화. quota는 부분결과여도 transient.
+    quota = bool(getattr(fetcher, "quota_blocked", False))
+    if not docs or not fetch_ok or quota:
+        return BuildResult(NO_SOURCE, docs_fetched=len(docs))
 
-    # 2b) 건물검증(단지명+지역) + 노이즈 필터(경매/인테리어/대출) + 선택 LLM (rag-corpus-quality).
-    # 지역(sigungu/dong) complex서 read(없으면 이름만). 오염 doc(해운대 스위첸·파라곤·경매) reject.
+    # 2b) 건물검증(단지명+지역) + 노이즈 필터(경매/인테리어/대출) + 선택 LLM.
+    # 지역(sigungu/dong) complex서 read(없으면 이름만). region 강등(rag-corpus-recall): distinctive
+    # 이름은 doc에 동 불요(gemma 디스앰비)·generic만 region 하드. 오염(스위첸·파라곤)은 코어 reject.
     row = conn.execute(
         "SELECT sigungu, dong FROM complex WHERE complex_id = ?", (complex_id,)
     ).fetchone()
     rtokens = region_tokens(row["sigungu"], row["dong"]) if row else []
-    docs = filter_docs(docs, name=name, region_toks=rtokens, classifier=classifier)
-    if not docs:
-        return BuildResult(NO_RELEVANT)  # 전부 오염/무관 → 적재 안 함(빈 코퍼스·UI "후기 미수집")
+    filtered = filter_docs(docs, name=name, region_toks=rtokens, classifier=classifier)
+    if not filtered:
+        # fetch 성공·실 docs 전부 무관/오염 → 진짜 "후기 없음". 기존 청크 정화(always-delete-first·
+        # 잔존 0). transient(위 가드)는 이미 NO_SOURCE 분기 → 여긴 데이터손실 위험 없음.
+        lock_fn = lock or _null_lock
+        with lock_fn() as acquired:  # type: ignore[operator]
+            if acquired is False:
+                return BuildResult(LOCK_YIELD, docs_fetched=len(docs))
+            _delete_complex(conn, complex_id)
+            conn.commit()
+        return BuildResult(NO_RELEVANT, docs_fetched=len(docs))  # 빈 코퍼스·UI "후기 미수집"
+    docs = filtered
 
     # 3) 청킹 — chunk마다 source_type/url + span_ref(인용정밀).
     pending: list[PendingChunk] = []

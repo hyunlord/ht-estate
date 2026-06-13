@@ -3,11 +3,12 @@
 진단(diag-rag-state): 적재가 이름유사만으로 **딴 건물(해운대 케이씨씨스위첸)·딴 단지(파라곤)·경매·
 인테리어·대출 광고**를 담음. 이 모듈이 **doc 단위**로 거른다(청크는 단락이라 단지명 없을 수 있어
 doc 전체로 판정):
-- **건물검증**: doc 텍스트가 **단지명 코어**(정규화·generic 접미 제거) + **지역(dong/sigungu)** 둘
-  다 포함해야 keep. 이름만 매치(스위첸·파라곤)·딴 지역 → reject.
+- **건물검증**: doc에 **단지명 코어**(정규화·generic 접미 제거) 포함은 **하드**. region은 강등
+  (rag-corpus-recall) — distinctive 이름은 동 불요(동 없는 진짜 후기 통과·recall↑·gemma가 동명-타지
+  디스앰비), generic 짧은 이름만 region 하드. 이름만 매치(스위첸·파라곤)는 코어 불일치라 reject.
 - **노이즈 필터**: 경매/인테리어/시공/대출/매물/분양/신고가 등 비-거주후기 → drop.
 - **선택 LLM**: 룰 통과분을 gemma로 "이 텍스트가 <지역> <단지> 거주 후기냐?" 재확인(경계 precision).
-보수적(precision>recall) — 오염 청크 1개가 잘못된 인용을 만든다.
+정밀(name+noise+gemma)은 보존하고 region만 강등 — 오염 재유입 0, 진짜 후기 recall↑.
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ _NOISE_KEYWORDS = (
 # 브랜드 토큰(스테이트/시티/파크 — 힐스테이트·자이) 미포함: 정체성이라 제거하면 오매칭.
 _GENERIC_SUFFIX = re.compile(r"(타워|오피스텔|아파트|빌딩|빌라|주상복합)$")
 
+# rag-corpus-recall: 이름 distinctiveness 임계(글자수). 코어가 이 이상이면 전국 충돌 가능성 낮아
+# distinctive로 보고 doc 텍스트에 region을 더 요구 안 함(스니펫에 동 없는 진짜 후기 통과·recall↑).
+# 미만(현대·한양·주공·파라곤 등 짧고 흔한 이름)은 region 하드 요구(name-only가 느슨하니 디스앰비).
+# distinctive 이름의 동명-타지(해운대 케이씨씨엠파이어)는 gemma(프롬프트에 지역 有)가 디스앰비.
+_DISTINCTIVE_MIN_LEN = 4
+
 # doc 분류기: (text) → keep/reject. 선택(미주입이면 룰만). gemma 등 주입(경계 precision).
 ChunkClassifier = Callable[[str], bool]
 
@@ -49,17 +56,26 @@ def region_tokens(sigungu: str | None, dong: str | None) -> list[str]:
     return [t for t in (dong, sigungu) if t]
 
 
-def doc_building_relevant(text: str, name: str, region_toks: list[str]) -> bool:
-    """doc이 이 단지를 가리키나 — 단지명 코어 포함 + (지역토큰 있으면) 지역 포함. 보수적.
+def is_distinctive_name(core: str) -> bool:
+    """코어 단지명이 전국 충돌 가능성 낮은(distinctive) 이름인지 — 길이 임계(rag-corpus-recall)."""
+    return len(core) >= _DISTINCTIVE_MIN_LEN
 
-    region_toks 비면(지역 미상) 이름만으로 판정(과잉 reject 방지). 있으면 이름+지역 둘 다 요구.
+
+def doc_building_relevant(text: str, name: str, region_toks: list[str]) -> bool:
+    """doc이 이 단지를 가리키나 — 단지명 코어는 하드 게이트, region은 강등(distinctive면 불요).
+
+    rag-corpus-recall: 코어 미포함 → 항상 reject(딴 건물·스위첸·파라곤). 코어 포함 시 — distinctive
+    이름(임계 이상)은 그대로 keep(동 없는 진짜 후기 통과·gemma가 동명-타지 디스앰비). generic 짧은
+    이름은 region 토큰도 doc에 있어야 keep(name-only 느슨 보강). region_toks 비면(지역 미상) 이름만.
     """
     nt = _norm(text)
     core = building_name_core(name)
     if not core or core not in nt:
-        return False  # 단지명 코어 미포함 → 딴 건물(스위첸·파라곤) reject
-    if region_toks and not any(_norm(r) in nt for r in region_toks):
-        return False  # 지역 불일치(해운대 등) reject
+        return False  # 단지명 코어 미포함 → 딴 건물(스위첸·파라곤) reject (하드·불변)
+    if region_toks and not is_distinctive_name(core) and not any(
+        _norm(r) in nt for r in region_toks
+    ):
+        return False  # generic 이름 + 지역 불일치 → reject(distinctive면 이 조건 면제·recall↑)
     return True
 
 

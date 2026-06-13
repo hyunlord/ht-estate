@@ -277,6 +277,50 @@ def test_build_classifier_rejects_borderline(db: sqlite3.Connection) -> None:
     assert r.status == NO_RELEVANT and chunk_count(db, "C1") == 0
 
 
+# ── builder: rag-corpus-recall always-delete-first + transient 가드 ──
+@dataclass
+class _QuotaFetcher:
+    """docs는 주되 quota_blocked=True(429) — transient 가드 검증(정화 보류·기존 유지)."""
+
+    docs: list[SourceDoc] = field(default_factory=list)
+    quota_blocked: bool = True
+
+    def fetch(self, query: str, *, kind: str) -> list[SourceDoc]:
+        return list(self.docs)
+
+
+def test_build_clean_empty_purges_on_no_relevant(db: sqlite3.Connection) -> None:
+    # 기존 청크 적재 → fetch 성공·전부 무관 재적재 → always-delete-first로 기존 청크 정화(0·잔존 0).
+    _seed_build(db)
+    assert chunk_count(db, "C1") == 2
+    off = [SourceDoc(source_type="blog", source_url="u9", text="나단지 주차 넉넉")]  # 코어 불일치
+    r = build_corpus(db, "C1", "가단지", fetcher=FakeFetcher(off),
+                     embed_client=FakeEmbed(), now=NOW, force=True)
+    assert r.status == NO_RELEVANT and chunk_count(db, "C1") == 0  # fetch성공·무관 → 정화
+
+
+def test_build_transient_fetch_fail_keeps_existing(db: sqlite3.Connection) -> None:
+    # 기존 청크 적재 → 재적재서 fetch 예외(transient) → NO_SOURCE·기존 청크 유지(데이터손실 가드).
+    _seed_build(db)
+
+    class BoomFetcher:
+        def fetch(self, query: str, *, kind: str):  # type: ignore[no-untyped-def]
+            raise httpx.ConnectError("boom")
+
+    r = build_corpus(db, "C1", "가단지", fetcher=BoomFetcher(),
+                     embed_client=FakeEmbed(), now=NOW, force=True)
+    assert r.status == NO_SOURCE and chunk_count(db, "C1") == 2  # 유지(정화 금지)
+
+
+def test_build_transient_quota_keeps_existing(db: sqlite3.Connection) -> None:
+    # 기존 청크 적재 → 재적재서 docs 오나 quota_blocked(429) → NO_SOURCE·기존 유지(쿼터 가드).
+    _seed_build(db)
+    off = [SourceDoc(source_type="blog", source_url="u9", text="나단지 후기")]  # quota라 보류
+    r = build_corpus(db, "C1", "가단지", fetcher=_QuotaFetcher(off),
+                     embed_client=FakeEmbed(), now=NOW, force=True)
+    assert r.status == NO_SOURCE and chunk_count(db, "C1") == 2  # quota → 정화 보류·유지
+
+
 def test_build_source_fetch_exception_defers(db: sqlite3.Connection) -> None:
     class BoomFetcher:
         def fetch(self, query: str, *, kind: str):  # type: ignore[no-untyped-def]
