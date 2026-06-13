@@ -18,9 +18,11 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from app.enrich.extractors.gym_verify import WEB_VERIFIED
 from app.enrich.runner import Extractor, stub_extractor
 from app.enrich.store import EnrichmentFact
 from app.search.enrichment import EnrichSource, read_through_synth
+from app.search.gym_kakao import SOURCE_TYPE as KAKAO_LOCAL
 
 ATTRIBUTE = "gym"
 # enrichment 신선도 — 로더(load_gym_seed)와 동일한 분기 기본값.
@@ -64,17 +66,36 @@ def _parse(fact: EnrichmentFact) -> tuple[str, str]:
 
 
 def synthesize_gym(facts: list[EnrichmentFact]) -> GymSummary:
-    """출처별 사실 → GymSummary. 무사실 → 'none'. 다출처면 최고 confidence가 primary."""
+    """출처별 사실 → GymSummary. Kakao 위치 + doc 검증(web_verified) **결합**(gym-evidence).
+
+    규칙(precision·missing=keep):
+    - **yes-wins / no-false-flip**: 어느 소스든 has_gym=yes면 yes(doc no/unknown이 Kakao yes를
+      절대 ✗로 안 뒤집음). yes 신호 0일 때만 no/unknown으로 떨어진다(없는 gym 단정 보수).
+    - **결합 증거**: Kakao(위치) + doc(검증) 둘 다 yes면 둘 다 표시·두 독립신호 일치 시 conf
+      소폭 부스트. 한쪽만이면 그 신호.
+    - 무사실 → 'none'(미조사). sources엔 전 출처(Kakao place·검증 doc 딥링크) 보존.
+    """
     if not facts:
         return GymSummary(has_gym="none", confidence=None, evidence=None, sources=[])
 
+    sources = [EnrichSource(source_type=f.source_type, source_url=f.source_url) for f in facts]
+    parsed = [(f, *_parse(f)) for f in facts]  # (fact, has_gym, evidence)
+    yes = [(f, ev) for (f, hg, ev) in parsed if hg == "yes"]
+    if yes:
+        kakao_ev = next((ev for f, ev in yes if f.source_type == KAKAO_LOCAL and ev), None)
+        doc_ev = next((ev for f, ev in yes if f.source_type == WEB_VERIFIED and ev), None)
+        parts = [p for p in (kakao_ev, doc_ev) if p]
+        evidence = " · ".join(parts) if parts else (next((ev for _, ev in yes if ev), "") or None)
+        top = max(f.confidence for f, _ in yes)
+        both = kakao_ev is not None and doc_ev is not None  # 두 독립신호 일치 → conf 부스트
+        confidence = min(0.97, top + 0.05) if both else top
+        return GymSummary(has_gym="yes", confidence=confidence, evidence=evidence, sources=sources)
+
+    # yes 신호 0 → no/unknown 중 최고 confidence(missing=keep: 없는 gym 단정 보수).
     primary = max(facts, key=lambda f: f.confidence)
     has_gym, evidence = _parse(primary)
     return GymSummary(
-        has_gym=has_gym,
-        confidence=primary.confidence,
-        evidence=evidence,
-        sources=[EnrichSource(source_type=f.source_type, source_url=f.source_url) for f in facts],
+        has_gym=has_gym, confidence=primary.confidence, evidence=evidence or None, sources=sources
     )
 
 

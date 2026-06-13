@@ -193,7 +193,8 @@ def test_live_extractors_none_when_unconfigured(
 
 def test_live_extractors_built_with_provider(db: sqlite3.Connection) -> None:
     ext = live_extractors(db, ["C1"], provider=FakeProvider("[]"), fetcher=NullFetcher())
-    assert ext is not None and set(ext) == {"gym", "pet"}
+    # gym-evidence: gym(레거시) + gym_verified(doc 교차검증·C86 게이트) + pet.
+    assert ext is not None and set(ext) == {"gym", "gym_verified", "pet"}
 
 
 # ── PART2: 펜스 스트립 (로컬 Gemma가 ```json … ```로 감싸는 케이스 — 환각출처 drop 유지) ──

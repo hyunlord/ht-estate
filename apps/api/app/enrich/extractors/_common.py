@@ -51,8 +51,13 @@ def run_extraction(
     provider: LLMProvider,
     system: str,
     parse: Callable[[str, dict[str, SourceDoc]], list[EnrichmentFact]],
+    doc_filter: Callable[[list[SourceDoc]], list[SourceDoc]] | None = None,
 ) -> list[EnrichmentFact]:
-    """공용 추출: 소스 fetch → provider-LLM → parse(규율). 어느 단계든 실패/무결과면 [](defer)."""
+    """공용 추출: fetch → (선택)doc_filter → provider-LLM → parse(규율). 실패/무결과면 [](defer).
+
+    doc_filter(gym-evidence): fetch 후 LLM 전에 doc 거름 — gym은 C86 건물게이트
+    (relevance.filter_docs)로 딴 건물·광고 doc drop(precision·토큰 절약). 미주입이면 무필터.
+    """
     if not name:
         return []
     docs: list[SourceDoc] = []
@@ -62,8 +67,10 @@ def run_extraction(
         except Exception:  # noqa: BLE001 — 페처 실패는 graceful(이 쿼리만 skip, defer)
             continue
     docs = [d for d in docs if d.source_url and not _blocked(d.source_url)]
+    if doc_filter is not None:
+        docs = doc_filter(docs)  # C86 건물검증 게이트 재사용(딴 건물·노이즈 reject)
     if not docs:
-        return []  # 소스 없음 → miss(다음 호출 재시도)
+        return []  # 소스 없음 또는 게이트 전부 reject → miss(다음 호출 재시도)
     by_url = {d.source_url: d for d in docs}
     try:
         raw = provider.complete(system, build_user_prompt(name, docs))

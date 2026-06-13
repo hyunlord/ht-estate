@@ -14,7 +14,9 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable, Sequence
 
+from app.corpus.relevance import region_tokens
 from app.enrich.extractors.gym import make_gym_extractor
+from app.enrich.extractors.gym_verify import GymTarget, make_gym_verify_extractor
 from app.enrich.extractors.pet import make_pet_extractor
 from app.enrich.fetcher import NullFetcher, SourceFetcher
 from app.enrich.provider import LLMProvider, provider_from_env
@@ -31,6 +33,31 @@ def name_resolver(conn: sqlite3.Connection, ids: Sequence[str]) -> Callable[[str
     ).fetchall()
     names = {r["complex_id"]: r["name"] for r in rows}
     return names.get
+
+
+def gym_target_resolver(
+    conn: sqlite3.Connection, ids: Sequence[str]
+) -> Callable[[str], GymTarget]:
+    """gym 추출기용 사전해소 — cid → (name, region_label, region_tokens). C86 건물게이트 입력.
+
+    메인 스레드 1회 read(스레드안전). region은 sigungu/dong(건물검증 게이트 + gemma 검증 프롬프트).
+    """
+    if not ids:
+        return lambda _cid: (None, "", [])
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT complex_id, name, sigungu, dong FROM complex WHERE complex_id IN ({placeholders})",
+        list(ids),
+    ).fetchall()
+    by_id = {
+        r["complex_id"]: (
+            r["name"],
+            f"{r['sigungu'] or ''} {r['dong'] or ''}".strip(),
+            region_tokens(r["sigungu"], r["dong"]),
+        )
+        for r in rows
+    }
+    return lambda cid: by_id.get(cid, (None, "", []))
 
 
 def live_extractors(
@@ -52,5 +79,10 @@ def live_extractors(
     name_of = name_resolver(conn, ids)
     return {
         "gym": make_gym_extractor(provider, fetcher, name_of),
+        # gym-evidence: doc 교차검증(C86 건물게이트+gemma) → 'gym_verified'(web_verified). Kakao
+        # 위치('gym')와 별도 속성이라 has_fresh/readiness가 doc 검증을 단락 안 함(둘 다 확보).
+        "gym_verified": make_gym_verify_extractor(
+            provider, fetcher, gym_target_resolver(conn, ids)
+        ),
         "pet": make_pet_extractor(provider, fetcher, name_of),
     }

@@ -23,9 +23,11 @@ import app.settings  # noqa: F401  (루트 .env 로딩 — provider/fetcher env 
 from app.corpus.ondemand import OnDemandCorpus
 from app.corpus.vec import ensure_vec_table
 from app.embed.client import EmbedClient, embed_client_from_env
+from app.enrich.extractors.gym_verify import GYM_VERIFIED
 from app.enrich.fetcher import NullFetcher, naver_fetcher_from_env
 from app.enrich.ondemand import READY, OnDemandEnricher
 from app.enrich.provider import LLMProvider, provider_from_env
+from app.enrich.store import read_facts
 from app.poi.store import attach_poi
 from app.reputation.service import PENDING as REP_PENDING
 from app.reputation.service import UNAVAILABLE as REP_UNAVAILABLE
@@ -378,7 +380,12 @@ def complex_enrichment_endpoint(
     if row is None:
         raise HTTPException(status_code=404, detail="단지를 찾을 수 없습니다")
     now = datetime.now(UTC)
-    gym_state, gym_facts = enricher.status(conn, complex_id, "gym", now=now)
+    # gym(gym-evidence): 빠른 Kakao 위치('gym') 즉답 + doc 교차검증('gym_verified') 온디맨드 → 결합.
+    # Kakao 사실은 read만(배치 적재)·doc 검증은 status가 트리거(핫패스 밖). 둘 다 있으면 결합 표시.
+    gym_facts = read_facts(conn, complex_id, "gym", now=now)  # kakao_local(+레거시)
+    ver_state, ver_facts = enricher.status(conn, complex_id, GYM_VERIFIED, now=now)  # doc 검증
+    combined_gym = gym_facts + ver_facts
+    gym_state = READY if combined_gym else ver_state  # Kakao 있으면 즉답·없으면 doc 검증 상태
     pet_state, pet_facts = enricher.status(
         conn, complex_id, "pet", alias=ALIAS_ATTRIBUTES, now=now
     )
@@ -386,7 +393,7 @@ def complex_enrichment_endpoint(
         complex_id=complex_id,
         gym=GymSection(
             status=gym_state,
-            summary=synthesize_gym(gym_facts) if gym_state == READY else None,
+            summary=synthesize_gym(combined_gym) if gym_state == READY else None,
         ),
         pet=PetSection(
             status=pet_state,
