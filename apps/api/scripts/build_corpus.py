@@ -37,11 +37,11 @@ from app.corpus.builder import (
     NO_SOURCE,
     build_corpus,
 )
-from app.corpus.relevance import ChunkClassifier
+from app.corpus.relevance import make_doc_classifier
 from app.corpus.vec import ensure_vec_table
 from app.embed.client import embed_client_from_env
 from app.enrich.fetcher import naver_fetcher_from_env
-from app.enrich.provider import LLMProvider, ProviderError, provider_from_env
+from app.enrich.provider import LLMProvider, provider_from_env
 from app.store.db import DEFAULT_DB_PATH, get_connection, init_db
 from app.store.pipeline_state import bootstrap_pipeline_state_safe
 from app.store.progress_repo import record_month
@@ -51,33 +51,6 @@ _CORPUS_MONTH = "-"
 # 재fetch 안 하는 terminal(처리완료 → resume skip). EMBED_DEFERRED/LOCK_YIELD/quota는 재시도.
 _TERMINAL = frozenset({BUILT, FRESH, NO_SOURCE, NO_RELEVANT})
 _DEFER = frozenset({EMBED_DEFERRED, LOCK_YIELD})
-
-# gemma doc 분류기 — 룰 통과분만 도달. "이 텍스트가 <지역> <단지>의 거주 후기냐?" yes/no. 보수적이되
-# LLM down이면 keep(룰 통과분 전량 reject 방지·graceful). 경계(타지 동명·애매 광고) precision 보강.
-_CLF_SYSTEM = (
-    "너는 한국 아파트 후기 분류기다. 주어진 텍스트가 특정 단지의 '거주·생활 경험 후기/언급'인지 "
-    "판정해라. 경매·매물·분양·담보대출·인테리어/시공 광고거나 다른 단지 얘기면 아니다. "
-    "반드시 'yes' 또는 'no' 한 단어로만 답해라."
-)
-
-
-def make_classifier(
-    provider: LLMProvider | None, name: str, region_label: str
-) -> ChunkClassifier | None:
-    """단지별 gemma 분류기 — provider 없으면 None(룰만). LLM 실패는 keep(graceful)."""
-    if provider is None:
-        return None
-
-    def classify(text: str) -> bool:
-        prompt = (f"단지: {region_label} {name}\n텍스트: {text}\n"
-                  f"이 텍스트가 이 단지의 거주 후기/언급이냐? yes/no")
-        try:
-            ans = provider.complete(_CLF_SYSTEM, prompt)
-        except ProviderError:
-            return True  # LLM down → 룰 통과분 보존
-        return "yes" in ans.strip().lower()[:8]
-
-    return classify
 
 
 def bulk_targets(
@@ -144,7 +117,7 @@ def run_bulk(
             for cid, name, region in batch:
                 if interval > 0:
                     sleep(interval)
-                clf = make_classifier(provider, name, region)
+                clf = make_doc_classifier(provider, name, region)
                 r = build_corpus(
                     conn, cid, name, fetcher=fetcher, embed_client=embed_client,
                     now=now, ttl=ttl, max_chunks=max_chunks, classifier=clf,
@@ -234,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     r = build_corpus(
         conn, cid, name, fetcher=fetcher, embed_client=client,
         now=datetime.now(UTC), ttl=ttl, lock=lock, max_chunks=args.max_chunks,
-        force=args.force, classifier=make_classifier(provider, name, region),
+        force=args.force, classifier=make_doc_classifier(provider, name, region),
     )
     print(f"[{r.status}] complex={cid} name={name!r} "
           f"docs={r.docs_fetched} chunks={r.chunks_written}")

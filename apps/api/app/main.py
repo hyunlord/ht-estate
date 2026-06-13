@@ -152,7 +152,8 @@ class ReputationDeps:
 _reputation_embed = embed_client_from_env()
 _default_reputation_deps = ReputationDeps(
     corpus=OnDemandCorpus(
-        fetcher=naver_fetcher_from_env(), embed_client=_reputation_embed
+        fetcher=naver_fetcher_from_env(), embed_client=_reputation_embed,
+        provider=provider_from_env(),  # 적재시 gemma 분류기(bulk와 동형 정밀·개발기사/타지 reject)
     ),
     embed_client=_reputation_embed,
     provider=provider_from_env(),

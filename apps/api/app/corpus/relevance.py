@@ -16,6 +16,7 @@ import re
 from collections.abc import Callable
 
 from app.enrich.fetcher import SourceDoc
+from app.enrich.provider import LLMProvider, ProviderError
 from app.match.normalize import normalize_name
 
 # 비-거주후기 노이즈 — 명백한 것만(보수적 drop). 경매/매물/시공/대출/광고.
@@ -85,3 +86,34 @@ def filter_docs(
             continue  # LLM 경계 reject(precision)
         kept.append(doc)
     return kept
+
+
+# gemma doc 분류기 — 룰 통과분만 도달. "이 텍스트가 <지역> <단지> 거주 후기냐?" yes/no. 보수적이되
+# LLM down이면 keep(룰 통과분 전량 reject 방지·graceful). 경계(개발기사·동명 타지) precision 보강.
+_CLF_SYSTEM = (
+    "너는 한국 아파트 후기 분류기다. 주어진 텍스트가 특정 단지의 '거주·생활 경험 후기/언급'인지 "
+    "판정해라. 경매·매물·분양·담보대출·인테리어/시공/재개발 기사거나 다른 단지 얘기면 아니다. "
+    "반드시 'yes' 또는 'no' 한 단어로만 답해라."
+)
+
+
+def make_doc_classifier(
+    provider: LLMProvider | None, name: str, region_label: str
+) -> ChunkClassifier | None:
+    """단지별 gemma doc 분류기 — provider 없으면 None(룰만). LLM 실패는 keep(graceful).
+
+    bulk 러너와 OnDemandCorpus가 공유 — 적재 경로(스크립트·detail 트리거) 정밀도 동형 보장.
+    """
+    if provider is None:
+        return None
+
+    def classify(text: str) -> bool:
+        prompt = (f"단지: {region_label} {name}\n텍스트: {text}\n"
+                  f"이 텍스트가 이 단지의 거주 후기/언급이냐? yes/no")
+        try:
+            ans = provider.complete(_CLF_SYSTEM, prompt)
+        except ProviderError:
+            return True  # LLM down → 룰 통과분 보존
+        return "yes" in ans.strip().lower()[:8]
+
+    return classify

@@ -332,6 +332,26 @@ def test_ondemand_miss_triggers_build(file_db_path: str) -> None:
     assert chunk_count(reader, "C1") == 2  # inline build 완료(커밋 반영)
 
 
+class _RejectProvider:
+    """gemma 흉내 — 항상 'no'(거주후기 아님). OnDemandCorpus가 분류기 wiring하는지 검증."""
+
+    def complete(self, system: str, user: str, /) -> str:
+        return "no"
+
+
+def test_ondemand_classifier_rejects_non_review(file_db_path: str) -> None:
+    # provider 주입 → 적재 경로가 gemma 분류기 사용(bulk와 동형). 'no' → NO_RELEVANT·청크 0.
+    # 룰만이면 _docs()(단지명 포함)는 통과해 2청크 쓰일 것 — 분류기가 막아야 0.
+    oc = OnDemandCorpus(
+        fetcher=FakeFetcher(_docs()), embed_client=FakeEmbed(), provider=_RejectProvider(),
+        submit=lambda fn: fn(),  # inline
+        conn_factory=lambda: get_connection(file_db_path),
+    )
+    reader = get_connection(file_db_path)
+    oc.ensure(reader, "C1", "가단지", now=NOW)
+    assert chunk_count(reader, "C1") == 0  # 분류기 reject → 비-후기 적재 0(개발기사 재오염 차단)
+
+
 def test_ondemand_cooldown_after_attempt(file_db_path: str) -> None:
     # 무소스 build → _attempted 기록 → 쿨다운 내 재요청은 재제출 안 함(pending·재build 0).
     submits: list = []

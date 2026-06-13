@@ -16,10 +16,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from app.corpus.builder import DEFAULT_TTL, build_corpus
+from app.corpus.relevance import make_doc_classifier
 from app.corpus.store import is_fresh
 from app.embed.client import Embedder, embed_client_from_env
 from app.enrich.fetcher import SourceFetcher
 from app.enrich.ondemand import PENDING, READY, UNAVAILABLE
+from app.enrich.provider import LLMProvider
 from app.store.db import get_connection
 
 NEGATIVE_COOLDOWN = timedelta(hours=6)
@@ -37,6 +39,7 @@ class OnDemandCorpus:
 
     fetcher: SourceFetcher | None
     embed_client: Embedder = field(default_factory=embed_client_from_env)
+    provider: LLMProvider | None = None  # gemma doc 분류기(bulk와 동형 정밀)·미주입이면 룰만
     db_path: str | None = None
     ttl: timedelta = DEFAULT_TTL
     negative_cooldown: timedelta = NEGATIVE_COOLDOWN
@@ -86,11 +89,18 @@ class OnDemandCorpus:
             else:
                 conn = get_connection(self.db_path) if self.db_path else get_connection()
             try:
+                # 지역 read → gemma 분류기(bulk와 동형 정밀: 개발기사·타지 reject). 없으면 룰만.
+                row = conn.execute(
+                    "SELECT COALESCE(sigungu,'')||' '||COALESCE(dong,'') AS region "
+                    "FROM complex WHERE complex_id = ?", (complex_id,)
+                ).fetchone()
+                region = (row["region"] or "").strip() if row else ""
                 build_corpus(
                     conn, complex_id, name,
                     fetcher=self.fetcher,  # type: ignore[arg-type]
                     embed_client=self.embed_client,
                     now=datetime.now(UTC), ttl=self.ttl, lock=self.lock,
+                    classifier=make_doc_classifier(self.provider, name, region),
                 )
             finally:
                 conn.close()
