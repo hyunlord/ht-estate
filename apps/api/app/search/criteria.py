@@ -290,12 +290,19 @@ class QuickFilter:
     hard_field: str | None = None
     hard_value: float | None = None
     soft_key: str | None = None
+    # filter-trim: 기본 칩 노출 여부(단일 레지스트리 소스·프론트 하드코딩 0). major=True만 기본 칩
+    # 렌더(고가치 신호) · long-tail(major=False)은 registry-grounded NL로 도달(어휘 보존).
+    major: bool = False
 
 
 # TopBar 퀵 필터 카탈로그 — 거리/근접은 hard 임계 토글, 구조/enrichment는 soft 부스트.
 # 새 criteria 등록 시 여기 한 줄 추가 → 프론트 자동 등장(registry-driven·드리프트 0).
+# filter-trim: major=True만 기본 칩(흔히 쓰는 고가치: 헬스장·역세권·세대당주차). 나머지 long-tail은
+# 기본 칩 미노출(REGISTRY/NL 어휘는 그대로 — NL로 완전 도달). 메이저 셋 조정은 여기서.
 QUICK_FILTERS: tuple[QuickFilter, ...] = (
-    QuickFilter("subway_poi", "역세권 500m", "hard", "subway_max_dist_m", 500),
+    QuickFilter("subway_poi", "역세권 500m", "hard", "subway_max_dist_m", 500, major=True),
+    QuickFilter("parking_q", "세대당주차 1대+", "hard", "parking_ratio_gte", 1.0, major=True),
+    QuickFilter("gym_q", "헬스장", "soft", soft_key="gym", major=True),
     QuickFilter("elem_school", "초등 500m", "hard", "elem_max_dist_m", 500),
     QuickFilter("mid_school", "중등 1km", "hard", "mid_max_dist_m", 1000),
     QuickFilter("high_school", "고등 1.5km", "hard", "high_max_dist_m", 1500),
@@ -307,7 +314,6 @@ QUICK_FILTERS: tuple[QuickFilter, ...] = (
     QuickFilter("has_daycare", "어린이집", "soft", soft_key="has_daycare"),
     QuickFilter("elevator", "엘베", "soft", soft_key="elevator_count"),
     QuickFilter("cctv", "CCTV", "soft", soft_key="cctv_count"),
-    QuickFilter("gym_q", "헬스장", "soft", soft_key="gym"),
     QuickFilter("pet_q", "반려동물", "soft", soft_key="pet"),
 )
 
@@ -332,6 +338,7 @@ def quick_filters_catalog() -> list[dict[str, object]]:
         {
             "id": q.id, "label": q.label, "apply": q.apply,
             "hard_field": q.hard_field, "hard_value": q.hard_value, "soft_key": q.soft_key,
+            "major": q.major,  # filter-trim: 기본 칩 노출 플래그(프론트가 major만 렌더)
         }
         for q in QUICK_FILTERS
     ]

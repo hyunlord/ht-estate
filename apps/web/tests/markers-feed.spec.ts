@@ -50,10 +50,10 @@ test("marker feed (/markers) is separate from rank list (/search) + respects fil
   // 마커 피드는 bbox 바운드(뷰포트).
   expect(typeof (markerBodies[0] as Record<string, number>).min_lat).toBe("number");
 
-  // 마커 피드도 필터 존중 — 인프라 칩 → 마커 요청 spec에 반영.
-  await page.getByTestId("chip-has_daycare").click();
-  const mb = markerBodies.at(-1) as { soft?: { criteria?: { key: string; weight: number }[] } };
-  expect(mb.soft?.criteria).toContainEqual({ key: "has_daycare", weight: 1 });
+  // 마커 피드도 필터 존중 — 메이저 칩(세대당주차) → 마커 요청 spec에 반영(filter-trim).
+  await page.getByTestId("chip-parking_q").click();
+  const mb = markerBodies.at(-1) as { parking_ratio_gte?: number };
+  expect(mb.parking_ratio_gte).toBe(1.0);
 
   expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
 });

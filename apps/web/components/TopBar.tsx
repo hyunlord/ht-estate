@@ -314,7 +314,9 @@ export function TopBar({
         >
           지하주차
         </button>
-        {quickFilters.map((q) => (
+        {/* filter-trim: major 플래그된 퀵필터만 기본 칩(흔히 쓰는 고가치). long-tail은 NL로 도달
+            (registry 단일 소스 — 프론트 하드코딩 0). 행이 fit·고정 컨트롤(지하주차)과 함께. */}
+        {quickFilters.filter((q) => q.major).map((q) => (
           <button
             key={q.id}
             type="button"
@@ -336,7 +338,7 @@ export function TopBar({
         <input
           data-testid="nl-search"
           value={query}
-          placeholder="강남 역세권 신축 큰 단지, 강아지 되면 좋고"
+          placeholder="자연어로 더 많은 조건: 어린이집 가까운 · CCTV 많은 · 공원 근처 · 오피스텔"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -345,6 +347,11 @@ export function TopBar({
             }
           }}
         />
+      </div>
+      {/* filter-trim: long-tail 조건은 NL로 도달(registry-grounded 파서·어휘 손실 0) — 안내 표면화. */}
+      <div className="nl-hint" data-testid="nl-hint">
+        칩에 없는 조건은 검색창에 자연어로: <b>어린이집 가까운</b> · <b>CCTV 많은</b> · <b>공원 근처</b> ·
+        <b>병원 가까운</b> · <b>오피스텔</b>
       </div>
     </div>
   );

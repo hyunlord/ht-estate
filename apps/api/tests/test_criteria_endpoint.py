@@ -58,6 +58,30 @@ def test_quick_filters_shape(client: TestClient) -> None:
     assert "subway_poi" in qf and "mart_poi" in qf
 
 
+def test_quick_filters_major_split(client: TestClient) -> None:
+    # filter-trim: major 플래그가 registry 단일 소스(프론트 하드코딩 0). 메이저=기본 칩 노출.
+    body = client.get("/criteria").json()
+    qf = {q["id"]: q for q in body["quick_filters"]}
+    major = {qid for qid, q in qf.items() if q.get("major")}
+    # 메이저: 헬스장·역세권·세대당주차(흔히 쓰는 고가치)
+    assert major == {"gym_q", "subway_poi", "parking_q"}, major
+    # long-tail은 major=False(기본 칩 미노출·NL 도달) — 카탈로그엔 여전히 존재(드리프트 0).
+    for qid in ("elem_school", "conv_poi", "has_daycare", "cctv", "park_poi", "pet_q"):
+        assert qid in qf and qf[qid]["major"] is False, qid
+    # 신규 메이저 퀵필터 parking_q 배선(hard parking_ratio_gte=1.0)
+    assert qf["parking_q"]["apply"] == "hard"
+    assert qf["parking_q"]["hard_field"] == "parking_ratio_gte"
+    assert qf["parking_q"]["hard_value"] == 1.0
+
+
+def test_longtail_criteria_vocab_intact_for_nl(client: TestClient) -> None:
+    # ★ 바닥: long-tail 칩을 trim해도 REGISTRY 어휘는 보존 — NL 파서가 여전히 도달(어휘 손실 0).
+    # 어린이집/CCTV/공원 등 long-tail 기준이 criteria 카탈로그(파서 grounding 소스)에 그대로.
+    crit = {c["key"] for c in client.get("/criteria").json()["criteria"]}
+    for k in ("has_daycare", "cctv_count", "park", "elevator_count", "elem_dist", "property_type"):
+        assert k in crit, f"long-tail 어휘 손실: {k}"
+
+
 def test_criteria_readonly_no_db_touch(client: TestClient) -> None:
     # 두 번 호출해도 결정론·DB write 0(카탈로그는 인메모리 직렬화)
     a = client.get("/criteria").json()

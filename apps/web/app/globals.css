@@ -185,6 +185,17 @@ body {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+/* filter-trim: long-tail 조건 NL 안내(칩 trim 후 도달 경로 표면화) — 작고 옅게. */
+.nl-hint {
+  font-size: 11px;
+  color: var(--muted, #888);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.nl-hint b {
+  font-weight: 600;
+  color: var(--fg, #444);
+}
 /* 후기/평판(E3-3) 프리셋 칩 — 디테일 패널 내 작은 칩 묶음(줄바꿈 허용). */
 .rep-chips {
   display: flex;

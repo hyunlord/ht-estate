@@ -50,11 +50,12 @@ test("POI card section: computed values + dash for un-computed", async ({ page }
   await expect(card.getByTestId("poi-status")).toContainText("정보 없음"); // computed-or-dash
 });
 
-test("역세권/마트 칩이 POI hard 필터를 request body로 보낸다", async ({ page }) => {
+test("메이저 hard 칩(역세권·세대당주차)이 request body로 보낸다", async ({ page }) => {
+  // filter-trim: 마트는 long-tail(NL)·메이저 hard 칩(역세권·세대당주차)으로 hard 배선 검증.
   const cap: { body?: unknown } = {};
   await setup(page, cap);
   await page.getByText("역세권 500m").click();
   await expect.poll(() => (cap.body as { subway_max_dist_m?: number })?.subway_max_dist_m).toBe(500);
-  await page.getByText("마트 1km").click();
-  await expect.poll(() => (cap.body as { mart_count_1km_min?: number })?.mart_count_1km_min).toBe(1);
+  await page.getByText("세대당주차 1대+").click();
+  await expect.poll(() => (cap.body as { parking_ratio_gte?: number })?.parking_ratio_gte).toBe(1.0);
 });

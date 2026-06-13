@@ -61,15 +61,15 @@ test("auto-viewport: mount auto-search by bbox (no button) + chip→spec + crite
   expect(typeof first.min_lat).toBe("number");
   expect(typeof first.max_lng).toBe("number");
 
-  // 인프라 칩: 어린이집(soft) + 지하주차(hard) → 요청 spec 매핑.
-  await page.getByTestId("chip-has_daycare").click();
+  // 인프라 칩: 세대당주차(메이저 hard) + 지하주차(고정 hard) → 요청 spec 매핑(filter-trim).
+  await page.getByTestId("chip-parking_q").click();
   await page.getByTestId("chip-underground").click();
   const body = bodies.at(-1) as {
     parking_underground?: boolean;
-    soft?: { criteria?: { key: string; weight: number }[] };
+    parking_ratio_gte?: number;
   };
   expect(body.parking_underground).toBe(true);
-  expect(body.soft?.criteria).toContainEqual({ key: "has_daycare", weight: 1 });
+  expect(body.parking_ratio_gte).toBe(1.0);
 
   // 카드 클릭 → 상세 패널 criteria_eval ✓/△/○ 근거.
   await page.getByTestId("result-item").first().click();

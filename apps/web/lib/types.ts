@@ -221,6 +221,7 @@ export interface QuickFilter {
   hard_field: string | null;
   hard_value: number | null;
   soft_key: string | null;
+  major: boolean; // filter-trim: 기본 칩 노출(registry 단일 소스). false면 long-tail(NL 도달).
 }
 export interface CriteriaResponse {
   criteria: CatalogCriterion[];

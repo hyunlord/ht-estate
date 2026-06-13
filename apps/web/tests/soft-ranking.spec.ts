@@ -19,14 +19,12 @@ test("infra chip sends soft criterion and reorders without changing count", asyn
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
   page.on("pageerror", (e) => consoleErrors.push(e.message));
 
-  const softSeen: (string[] | null)[] = [];
+  const softSeen: (string | null)[] = [];
   await page.route("**/complexes/search", async (route) => {
-    const body = route.request().postDataJSON() as {
-      soft?: { criteria?: { key: string }[] };
-    };
-    const keys = body?.soft?.criteria?.map((c) => c.key) ?? null;
-    softSeen.push(keys);
-    const ranked = keys?.includes("has_daycare");
+    const body = route.request().postDataJSON() as { soft?: { gym?: string } };
+    const gym = body?.soft?.gym ?? null;
+    softSeen.push(gym);
+    const ranked = gym === "preferred";
     await route.fulfill({ json: ranked ? RANKED : NEUTRAL });
   });
   await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
@@ -37,12 +35,12 @@ test("infra chip sends soft criterion and reorders without changing count", asyn
   await expect(items).toHaveCount(2);
   await expect(items.nth(0)).toContainText("데이케어없음단지");
 
-  // 어린이집 칩 → soft 전송 + 순서 반영(어린이집단지 위) + 후보 수 동일(2).
-  await page.getByTestId("chip-has_daycare").click();
+  // filter-trim: 메이저 soft 칩(헬스장) → soft.gym=preferred + 순서 반영 + 후보 수 동일(2).
+  await page.getByTestId("chip-gym_q").click();
   await expect(items.nth(0)).toContainText("어린이집단지");
   await expect(items).toHaveCount(2); // 수 불변(demote-not-exclude)
 
-  expect(softSeen).toEqual([null, ["has_daycare"]]);
+  expect(softSeen).toEqual([null, "preferred"]);
   await page.screenshot({ path: "test-results/soft-ranking.png", fullPage: true });
   expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
 });
