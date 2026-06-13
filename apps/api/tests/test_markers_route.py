@@ -27,10 +27,10 @@ def client(search_db: sqlite3.Connection) -> Iterator[TestClient]:
 
 
 def test_markers_returns_viewport_complexes_minimal(client: TestClient) -> None:
-    resp = client.post("/complexes/markers", json={**ALL_BBOX})
+    resp = client.post("/complexes/markers", json={**ALL_BBOX, "level": 3})
     assert resp.status_code == 200
     body = resp.json()
-    # 소량(3단지·≤MAX) → mode='markers'(개별). C4 좌표 없음 → 제외.
+    # 개별 건물 밴드(level<L_DONG)·소량 → mode='markers'. C4 좌표 없음 → 제외.
     assert body["mode"] == "markers"
     markers = body["markers"]
     assert {m["complex_id"] for m in markers} == {"C1", "C2", "C3"}
@@ -45,7 +45,7 @@ def test_markers_returns_viewport_complexes_minimal(client: TestClient) -> None:
 
 
 def test_markers_have_representative_price(client: TestClient) -> None:
-    resp = client.post("/complexes/markers", json={**ALL_BBOX})
+    resp = client.post("/complexes/markers", json={**ALL_BBOX, "level": 3})
     by_id = {m["complex_id"]: m for m in resp.json()["markers"]}
     assert by_id["C1"]["price"] == 142000  # 최근 거래(2025-04-15)
     assert by_id["C1"]["net_area"] == 84.97
@@ -53,7 +53,8 @@ def test_markers_have_representative_price(client: TestClient) -> None:
 
 def test_markers_respect_hard_filter(client: TestClient) -> None:
     # parking_ratio_gte 1.3 → C1(1.5)·C3(1.8)만(C2 0.8 제외) — search와 동일 hard 필터.
-    resp = client.post("/complexes/markers", json={**ALL_BBOX, "parking_ratio_gte": 1.3})
+    resp = client.post(
+        "/complexes/markers", json={**ALL_BBOX, "parking_ratio_gte": 1.3, "level": 3})
     assert {m["complex_id"] for m in resp.json()["markers"]} == {"C1", "C3"}
 
 
@@ -61,7 +62,8 @@ def test_markers_respect_bbox(client: TestClient) -> None:
     # C1만 덮는 좁은 bbox.
     resp = client.post(
         "/complexes/markers",
-        json={"min_lat": 37.499, "max_lat": 37.501, "min_lng": 127.039, "max_lng": 127.041},
+        json={"min_lat": 37.499, "max_lat": 37.501, "min_lng": 127.039, "max_lng": 127.041,
+              "level": 3},
     )
     assert {m["complex_id"] for m in resp.json()["markers"]} == {"C1"}
 

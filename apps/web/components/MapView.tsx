@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ppp, TIER_COUNT, tierBoundaries, tierColor, tierOf } from "@/lib/format";
-import { clusterMarkers, markerFeedLabel } from "@/lib/markers";
+import { markerFeedLabel } from "@/lib/markers";
 import {
   KAKAO_JS_KEY,
   loadKakaoMaps,
@@ -15,7 +15,9 @@ import type { Bbox, MarkerCandidate, MarkerFeed } from "@/lib/types";
 
 const GANGNAM = { lat: 37.4979, lng: 127.0476 };
 const DEBOUNCE_MS = 280; // spec §5.1 — idle 후 250~300ms 디바운스
-// marker-zoom-rent ①: cellSize/clusterMarkers는 lib/markers(줌-aware 건물스케일)로 이동. 개별 모드는
+// admin-clustering: 클라 geometric 클러스터링 제거 — 클러스터링은 서버 행정 계층(시도→시군구→읍면동)이
+// 담당하고, 건물 레벨선 서버 개별 마커를 직접 렌더(grid 병합 0). 아래 옛 주석은 참조용(과거 거동).
+// marker-zoom-rent ①(과거): cellSize/clusterMarkers는 lib/markers(줌-aware 건물스케일)로 이동. 개별 모드는
 // 항상 격자 클러스터 — 단일셀=개별 price 마커, 겹치는 건물만 병합(MARKER_CAP 강제클러스터 제거).
 
 export function MapView({
@@ -87,7 +89,10 @@ export function MapView({
   function serverCluster(
     maps: KakaoMaps,
     map: KakaoMap,
-    cl: { lat: number; lng: number; count: number; region?: string | null; ppp?: number | null },
+    cl: {
+      lat: number; lng: number; count: number; region?: string | null;
+      ppp?: number | null; zoom_to?: number;
+    },
     level: number,
     bnd: number[],
   ): KakaoCustomOverlay {
@@ -103,7 +108,10 @@ export function MapView({
       `${region ? `<span class="r">${region}</span>` : ""}` +
       `<span class="n">${cl.count.toLocaleString()}</span>`;
     el.addEventListener("click", () => {
-      map.setLevel(Math.max(1, level - 3)); // 결정적 줌인
+      // admin-clustering: 클릭→다음 세부 행정 밴드로 결정적 줌인(서버가 cl.zoom_to 산정·단일 소스).
+      // 시도→시군구→읍면동→건물. zoom_to 없으면(레거시) 상대 줌(level-3) 폴백.
+      const target = cl.zoom_to ?? Math.max(1, level - 3);
+      map.setLevel(Math.max(1, target));
       map.setCenter(new maps.LatLng(cl.lat, cl.lng)); // 그 구역 중심으로
     });
     return new maps.CustomOverlay({
@@ -137,39 +145,12 @@ export function MapView({
       return;
     }
 
-    // 개별 모드 — marker-zoom-rent ①: **항상** 줌-aware 격자 클러스터. 단일셀=개별 price 마커
-    // (깊은 줌서 건물별), 겹치는 건물만 "N단지"로 병합(폭주 방지). 강제 캡(coordCount>60) 제거 →
-    // street줌서 거친 "33단지" 대신 건물별 마커. 셀 크기는 lib/markers.cellSize(level)가 줌별 결정.
+    // 개별 모드(읍면동 이하 줌인) — admin-clustering: 클라 geometric grid 병합 제거. 서버가 보낸
+    // 개별 마커(읍면동 이하·≤MAX 바운드·안전망은 서버 폴백)를 **그대로 건물별 price 마커**로 렌더.
     const list = fd.markers;
     const bnd = boundaries(list);
-
-    for (const cell of clusterMarkers(list, level)) {
-      if (cell.members.length === 1) {
-        next.push(priceOverlay(maps, map, cell.members[0], selId, bnd));
-        continue;
-      }
-      const avgTier = Math.round(
-        cell.members.reduce((s, m) => s + tierOf(ppp(m.price, m.net_area), bnd), 0) /
-          cell.members.length,
-      );
-      const el = document.createElement("div");
-      el.className = "cluster";
-      el.style.background = tierColor(avgTier);
-      el.innerHTML = `<span class="n">${cell.members.length}</span><span class="t">단지</span>`;
-      el.addEventListener("click", () => {
-        map.setLevel(Math.max(1, level - 2));
-        map.panTo(new maps.LatLng(cell.lat, cell.lng));
-      });
-      next.push(
-        new maps.CustomOverlay({
-          position: new maps.LatLng(cell.lat, cell.lng),
-          content: el,
-          map,
-          xAnchor: 0.5,
-          yAnchor: 0.5,
-          clickable: true,
-        }),
-      );
+    for (const m of list) {
+      next.push(priceOverlay(maps, map, m, selId, bnd));
     }
     overlaysRef.current = next;
   }

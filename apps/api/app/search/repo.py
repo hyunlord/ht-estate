@@ -117,10 +117,15 @@ class MarkerCandidate(BaseModel):
 MARKER_CAP = 2500
 # server-marker-clustering: COUNT 스위치 — 매칭 ≤MAX면 전부 개별 마커(절단 0), 초과면 행정구역 집계.
 MARKER_INDIVIDUAL_MAX = 1200  # 이하 = 개별(완전·편향 ORDER BY 컷 없음)
-# region-clustering: 줌 레벨 → 행정단위. Kakao map level은 클수록 줌아웃(넓음). 이 임계 이상이면
-# 시군구(구) 집계, 미만이면 동 집계. COUNT 스위치가 줌인 시 개별로 떨구므로 동 집계는 중밀도 구간만.
-# 라이브 튜닝 대상(라벨 입자도). level 미지정(None)이면 가장 거친 시군구로(안전 기본).
-REGION_SIGUNGU_MIN_LEVEL = 7
+# admin-clustering: 줌-driven 행정 계층 임계(Kakao level은 클수록 줌아웃). 3밴드:
+#   level ≥ L_SIDO            → 시도(sido)           — 전국/광역 뷰
+#   L_SIGUNGU ≤ level < L_SIDO → 시군구(sigungu)      — 시도 줌인
+#   L_DONG ≤ level < L_SIGUNGU → 읍면동(dong)         — 시군구 줌인
+#   level < L_DONG            → 개별 건물 마커        — 읍면동 줌인(안전망: >MAX면 읍면동 폴백)
+# 라이브 튜닝 상수(§9 보고). 마운트 level=5(읍면동). level 미지정(None)→시군구(안전 기본).
+L_SIDO = 10
+L_SIGUNGU = 8
+L_DONG = 5
 
 # 평당가(만원/평) = 금액(만원) / (전용㎡ / SQM_PER_PYEONG). 프론트 SQM_PER_PYEONG와 동일 상수.
 SQM_PER_PYEONG = 3.3058
@@ -134,9 +139,14 @@ _SIGUNGU_PARSE = (
     f"instr(substr({_ADDR}, instr({_ADDR}, ' ') + 1) || ' ', ' ') - 1)"
 )
 _SIGUNGU = f"COALESCE(NULLIF(c.sigungu, ''), {_SIGUNGU_PARSE})"
-# region-clustering: 동 — init_db가 extract_dong으로 백필한 complex.dong 컬럼(99%+). 빈 행은 ''로
-# 두어 시군구로 폴백(완전성 보존). SQL 동 파싱은 정규식이라 컬럼 의존(백필이 라벨 정확성 담보).
-_DONG = "COALESCE(NULLIF(c.dong, ''), '')"
+# admin-clustering: 시도 — sido 컬럼 미백필(0행)이라 주소 첫 토큰 파싱("서울특별시 …"→"서울특별시").
+# 컬럼이 후속 백필되면 COALESCE가 자동 우선(드리프트 0).
+_SIDO_PARSE = f"substr({_ADDR}, 1, instr({_ADDR} || ' ', ' ') - 1)"
+_SIDO = f"COALESCE(NULLIF(c.sido, ''), {_SIDO_PARSE})"
+# region-clustering: 읍면동 — extract_dong이 백필한 complex.dong은 동/가/**읍/면**/리 모두 포함(농촌
+# 읍/면 이미 커버). eupmyeon 컬럼(현재 미백필)도 COALESCE로 포함(후속 백필 대비·현재 no-op). 빈
+# 행은 ''로 시군구 폴백(완전성). SQL 정규식 불가라 컬럼 의존(백필이 라벨 정확성 담보).
+_DONG = "COALESCE(NULLIF(c.dong, ''), NULLIF(c.eupmyeon, ''), '')"
 
 
 class Cluster(BaseModel):
@@ -145,8 +155,11 @@ class Cluster(BaseModel):
     lat: float
     lng: float
     count: int
-    region: str | None = None  # 구역명(시군구 or "시군구 동") — 라벨. 없으면 카운트만.
+    region: str | None = None  # 구역명(시도 or 시군구 or "시군구 읍면동") — 라벨. 없으면 카운트만.
     ppp: float | None = None  # 구역 대표거래 평균 평당가(만원/평) — tier 색용. 거래 0이면 None.
+    # admin-clustering: 행정 레벨 + 클릭 시 줌인 목표 level(다음 세부 밴드로 결정적 착지·단일 소스).
+    admin: str = "sigungu"  # 'sido' | 'sigungu' | 'dong'(읍면동)
+    zoom_to: int = L_DONG - 1  # 클릭→이 level로 setLevel(다음 세부 밴드)
 
 
 class MarkerFeed(BaseModel):
@@ -654,10 +667,31 @@ def _fetch_markers(
     return markers
 
 
-def _admin_level(spec: HardFilterSpec) -> Literal["sigungu", "dong"]:
-    """줌 레벨 → 행정단위. 레벨 미지정이거나 충분히 줌아웃(≥임계)이면 시군구(구), 아니면 동."""
-    zoomed_in = spec.level is not None and spec.level < REGION_SIGUNGU_MIN_LEVEL
-    return "dong" if zoomed_in else "sigungu"
+def _zoom_band(spec: HardFilterSpec) -> Literal["sido", "sigungu", "dong", "individual"]:
+    """줌 레벨 → 행정 밴드(admin-clustering·줌-driven). 레벨 미지정→시군구(안전 거친 기본).
+
+    level ≥ L_SIDO → 시도 · L_SIGUNGU≤<L_SIDO → 시군구 · L_DONG≤<L_SIGUNGU → 읍면동 ·
+    <L_DONG → 개별 건물. 밀도가 아니라 줌이 밴드를 정한다(MARKER_INDIVIDUAL_MAX는 안전망만).
+    """
+    lvl = spec.level
+    if lvl is None:
+        return "sigungu"
+    if lvl >= L_SIDO:
+        return "sido"
+    if lvl >= L_SIGUNGU:
+        return "sigungu"
+    if lvl >= L_DONG:
+        return "dong"
+    return "individual"
+
+
+def _zoom_to(admin: Literal["sido", "sigungu", "dong"]) -> int:
+    """클러스터 클릭 시 줌인 목표 level — 현 밴드 floor 바로 아래(다음 세부 밴드 착지·결정적)."""
+    if admin == "sido":
+        return L_SIDO - 1   # → 시군구 밴드
+    if admin == "sigungu":
+        return L_SIGUNGU - 1  # → 읍면동 밴드
+    return L_DONG - 1       # dong → 개별 건물 밴드
 
 
 def _ppp_subquery(spec: HardFilterSpec) -> tuple[str, list[object]]:
@@ -684,7 +718,7 @@ def _region_clusters(
     spec: HardFilterSpec,
     where: str,
     params: list[object],
-    admin: Literal["sigungu", "dong"],
+    admin: Literal["sido", "sigungu", "dong"],
 ) -> list[Cluster]:
     """행정구역(구 or 동) GROUP BY → 구역당 {중심(AVG)·카운트·라벨·평균 평당가}. 무편향·완전·unique.
 
@@ -696,28 +730,36 @@ def _region_clusters(
     ppp_sub, ppp_params = _ppp_subquery(spec)
     # ★ 별칭은 컬럼명(c.sigungu·c.dong)과 충돌 않게 rsgg/rdong — SQLite GROUP BY가 별칭 대신 실
     # 컬럼에 바인딩하면 시군구 레벨도 동으로 묶이는 버그(라벨 중복·레벨 무시). rdong은 컬럼 아님.
-    if admin == "sigungu":
-        group_keys = f"{_SIGUNGU} AS rsgg, '' AS rdong"
-    else:
-        group_keys = f"{_SIGUNGU} AS rsgg, {_DONG} AS rdong"
+    # admin-clustering: 밴드별 GROUP BY 키. 시도=sido만·시군구=sigungu·읍면동=(시군구,읍면동).
+    # 별칭은 컬럼명과 충돌 않게 rsido/rsgg/rdong(SQLite가 별칭 대신 실컬럼에 바인드하는 버그 방지).
+    if admin == "sido":
+        group_keys = f"{_SIDO} AS rsido, '' AS rsgg, '' AS rdong"
+    elif admin == "sigungu":
+        group_keys = f"'' AS rsido, {_SIGUNGU} AS rsgg, '' AS rdong"
+    else:  # dong(읍면동)
+        group_keys = f"'' AS rsido, {_SIGUNGU} AS rsgg, {_DONG} AS rdong"
     sql = (
         f"SELECT {group_keys}, "
         "AVG(c.lat) AS clat, AVG(c.lng) AS clng, COUNT(*) AS n, "
         f"AVG({ppp_sub}) AS ppp "
-        f"FROM complex c WHERE {where} GROUP BY rsgg, rdong"
+        f"FROM complex c WHERE {where} GROUP BY rsido, rsgg, rdong"
     )
     p: list[object] = [*ppp_params, *params]  # ppp_sub는 SELECT라 WHERE보다 먼저 바인드
+    zoom_to = _zoom_to(admin)
     out: list[Cluster] = []
     for r in conn.execute(sql, p).fetchall():
+        sido = (r["rsido"] or "").strip()
         sgg = (r["rsgg"] or "").strip()
         dong = (r["rdong"] or "").strip()
-        if admin == "dong":
+        if admin == "sido":
+            label = sido or None
+        elif admin == "dong":
             label = f"{sgg} {dong}".strip() if dong else (sgg or None)
         else:
             label = sgg or None
         out.append(Cluster(
             lat=r["clat"], lng=r["clng"], count=int(r["n"]),
-            region=label, ppp=r["ppp"],
+            region=label, ppp=r["ppp"], admin=admin, zoom_to=zoom_to,
         ))
     return out
 
@@ -745,10 +787,19 @@ def search_marker_feed(
     parts, params = _marker_where(conn, spec)
     where = " AND ".join(parts)
     total = conn.execute(f"SELECT COUNT(*) FROM complex c WHERE {where}", params).fetchone()[0]
-    if total <= individual_max or not spec.has_bbox:
-        # 정상: 개별 전부(threshold 바운드·절단 0). 무-bbox+대량(degenerate)만 안전캡.
+    # admin-clustering: 줌 밴드가 모드를 정한다(밀도-only 아님). 무-bbox(degenerate)는 개별 capped.
+    band = _zoom_band(spec)
+    if not spec.has_bbox:
         limit = None if total <= individual_max else MARKER_CAP
         markers = _fetch_markers(conn, spec, parts, params, limit=limit)
         return MarkerFeed(mode="markers", markers=markers)
-    clusters = _region_clusters(conn, spec, where, params, _admin_level(spec))
+    if band == "individual":
+        # 읍면동 이하 줌인 → 서버 개별 마커 직접(클라 grid 병합 0). 안전망: 뷰포트 개별 >MAX면
+        # 최하위 행정(읍면동)으로 폴백(수천 마커 방지) — 정상 driver는 줌, MAX는 방어만.
+        if total <= individual_max:
+            markers = _fetch_markers(conn, spec, parts, params, limit=None)
+            return MarkerFeed(mode="markers", markers=markers)
+        clusters = _region_clusters(conn, spec, where, params, "dong")
+        return MarkerFeed(mode="clusters", clusters=clusters)
+    clusters = _region_clusters(conn, spec, where, params, band)
     return MarkerFeed(mode="clusters", clusters=clusters)

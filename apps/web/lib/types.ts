@@ -291,8 +291,10 @@ export interface Cluster {
   lat: number;
   lng: number;
   count: number;
-  region?: string | null; // 구역명(시군구 or "시군구 동") — 라벨. 없으면 카운트만.
+  region?: string | null; // 구역명(시도 or 시군구 or "시군구 읍면동") — 라벨. 없으면 카운트만.
   ppp?: number | null; // 구역 평균 평당가(만원/평) — 프론트 tier 색용. 거래 0이면 null(중립색).
+  admin?: string; // admin-clustering: 'sido'|'sigungu'|'dong'(읍면동) — 행정 레벨.
+  zoom_to?: number; // 클릭→이 level로 줌인(다음 세부 밴드 결정적 착지).
 }
 // 마커 피드 — 서버가 밀도로 모드 결정. markers(개별·≤MAX·price) 또는 clusters(grid 집계). 한쪽만 채움.
 export interface MarkerFeed {

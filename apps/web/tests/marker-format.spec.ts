@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { cellSize, markerFeedLabel } from "../lib/markers";
+import { markerFeedLabel } from "../lib/markers";
 import type { MarkerCandidate } from "../lib/types";
 
-// marker-zoom-rent: 순수 함수 단위 테스트(페이지 불요) — ② 월세 라벨 보증금/월세 · ① 줌-aware 셀.
+// 마커 라벨 순수 함수 단위 테스트 — 월세 보증금/월세 둘 다. (admin-clustering: cellSize geometric
+// 셀은 제거 — 클러스터링은 서버 행정 계층, 건물 레벨선 서버 개별 마커 직접 렌더.)
 
 function mk(p: Partial<MarkerCandidate>): MarkerCandidate {
   return { complex_id: "x", name: "x", lat: 37.5, lng: 127, price: null, net_area: 84, ...p };
@@ -26,17 +27,5 @@ test.describe("② markerFeedLabel — 월세 보증금/월세 둘 다", () => {
   });
   test("데이터 없음: null", () => {
     expect(markerFeedLabel(mk({ price: null }))).toBeNull();
-  });
-});
-
-test.describe("① cellSize — 줌-aware 건물스케일", () => {
-  test("깊은 줌일수록 작은 셀(단조 증가)", () => {
-    expect(cellSize(2)).toBeLessThan(cellSize(4));
-    expect(cellSize(4)).toBeLessThan(cellSize(6));
-  });
-  test("street줌(level 4)은 구 0.0044°(≈440m)보다 훨씬 잘게(건물스케일)", () => {
-    // 구 cellSize(4)=0.0025*2=0.005° → 새 값은 그보다 작아야(건물별 마커 가능).
-    expect(cellSize(4)).toBeLessThan(0.0025);
-    expect(cellSize(4)).toBeGreaterThan(0); // 양수
   });
 });
