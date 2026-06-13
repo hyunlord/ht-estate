@@ -41,7 +41,8 @@ fi
 
 echo "== [5/6] enable + start =="
 systemctl enable --now ht-estate-api.service
-for t in ht-estate-ingest.timer ht-estate-enrich.timer ht-estate-poi.timer; do
+for t in ht-estate-ingest.timer ht-estate-enrich.timer ht-estate-poi.timer \
+         ht-estate-unit-type.timer; do
   [ -f "/etc/systemd/system/$t" ] && systemctl enable --now "$t" || true
 done
 # web: **enable만**(부팅 생존) — `--now` 미사용. 임시 nohup 웹이 아직 :3100 점유(핸드오프 finish서

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { fetchEnrichment, fetchReputation } from "@/lib/api";
+import { fetchEnrichment, fetchReputation, fetchUnitTypes } from "@/lib/api";
 import { formatArea, hogangnonoSearchUrl, naverSearchUrl, wonToShort } from "@/lib/format";
 import type {
   AreaBucket,
@@ -18,6 +18,8 @@ import type {
   ReputationResponse,
   SchoolNear,
   ReviewSummary,
+  UnitTypeCatalog,
+  UnitTypeRow,
 } from "@/lib/types";
 
 // 온디맨드 폴링 — 라이브 추출 ~22–60s(로컬 Gemma 경합). 3s 간격·최대 25회(≈75s) 후 멈춤.
@@ -383,6 +385,46 @@ function bucketAmount(b: AreaBucket): string {
   }
   return wonToShort(b.recent_amount);
 }
+// ── unit-type-catalog: 전 세대타입(거래+미거래) — 행=전용면적·세대수·(실거래/미거래) ──
+function unitAmount(r: UnitTypeRow): string {
+  if (r.recent_amount == null) return "—";
+  if (r.recent_rent_type === "monthly") {
+    return `${wonToShort(r.recent_amount)}/${(r.recent_monthly_rent ?? 0).toLocaleString()}`;
+  }
+  return wonToShort(r.recent_amount);
+}
+function UnitTypes({ types, unit }: { types: UnitTypeRow[]; unit: AreaUnit }) {
+  if (types.length === 0) return null;
+  return (
+    <div className="abreak" data-testid="unit-types">
+      <div className="abreak-h">전체 세대타입</div>
+      {types.map((r, i) => (
+        <div className="abreak-r" data-testid="unit-type-row" key={i}>
+          <span className="ab-a" data-testid="unit-type-area">
+            전용 {formatArea(r.net_area, unit)}
+          </span>
+          <span className="ab-n" data-testid="unit-type-households">
+            {r.household_count != null ? `${r.household_count.toLocaleString()}세대` : ""}
+          </span>
+          <span className="ab-p" data-testid="unit-type-amount">
+            {r.traded ? (
+              <>
+                {unitAmount(r)}
+                {r.recent_deal_date ? ` (${r.recent_deal_date.slice(0, 7)})` : ""}
+                {` · ${r.transaction_count}건`}
+              </>
+            ) : (
+              <span className="untraded" data-testid="unit-type-untraded">
+                미거래
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AreaBuckets({ buckets, unit }: { buckets: AreaBucket[]; unit: AreaUnit }) {
   if (buckets.length === 0) return null;
   return (
@@ -580,6 +622,20 @@ export function DetailPanel({
     };
   }, [cid]);
 
+  // unit-type-catalog: 전 세대타입(거래+미거래) — /unit-types 병합 조회(deal_type별 실거래 매칭).
+  // graceful: 실패/미적재(has_catalog=false)면 candidate.area_buckets 폴백(현 거동·무회귀).
+  const dealType = candidate.representative_trade?.rent_type ?? "sale";
+  const [unitCatalog, setUnitCatalog] = useState<UnitTypeCatalog | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchUnitTypes(cid, dealType, ctrl.signal)
+      .then((c) => setUnitCatalog(c))
+      .catch(() => {
+        /* graceful: 실패 → area_buckets 폴백 유지 */
+      });
+    return () => ctrl.abort();
+  }, [cid, dealType]);
+
   // detail-panel-sidebar: 좌측 엣지 드래그로 패널 너비 조절(clamp). 맵은 MapView ResizeObserver가
   // relayout. 값은 컬럼 width(인라인)로 적용 → .map flex가 그만큼 줄어 맵을 덮지 않는다.
   const [width, setWidth] = useState(460);
@@ -669,13 +725,24 @@ export function DetailPanel({
         )}
       </div>
 
-      {candidate.area_buckets && candidate.area_buckets.length > 0 && (
-        <AreaBuckets buckets={candidate.area_buckets} unit={unit} />
-      )}
-      {candidate.area_buckets && candidate.area_buckets.length > 0 && (
-        <div className="abreak-note" data-testid="area-buckets-note">
-          평형은 <b>MOLIT 실거래</b> 기반(거래된 평형만). 미거래 세대타입은 포함되지 않습니다.
-        </div>
+      {/* unit-type-catalog: catalog 있으면 전 세대타입(거래+미거래·세대수)·없으면 거래된 평형만(폴백). */}
+      {unitCatalog?.has_catalog && unitCatalog.types.length > 0 ? (
+        <>
+          <UnitTypes types={unitCatalog.types} unit={unit} />
+          <div className="abreak-note" data-testid="unit-types-note">
+            전용면적별 <b>전체 세대타입</b>(세대수·<b>건축물대장</b>) + 실거래(매칭 평형). 미거래 타입 포함.
+          </div>
+        </>
+      ) : (
+        candidate.area_buckets &&
+        candidate.area_buckets.length > 0 && (
+          <>
+            <AreaBuckets buckets={candidate.area_buckets} unit={unit} />
+            <div className="abreak-note" data-testid="area-buckets-note">
+              평형은 <b>MOLIT 실거래</b> 기반(거래된 평형만). 미거래 세대타입은 포함되지 않습니다.
+            </div>
+          </>
+        )
       )}
 
       <div className="evhead">근거 · 출처</div>

@@ -9,6 +9,7 @@ import type {
   MarkerFeed,
   NlSearchResponse,
   ReputationResponse,
+  UnitTypeCatalog,
 } from "./types";
 
 // 기본은 **같은-오리진 프록시**(`/api` → next.config rewrites → 127.0.0.1:8000). 공개 URL 1개·CORS 불요.
@@ -34,6 +35,21 @@ export async function fetchEnrichment(
   });
   if (!res.ok) throw new Error(`enrichment failed: ${res.status}`);
   return (await res.json()) as EnrichmentResponse;
+}
+
+/** 전 세대타입 (unit-type-catalog) — GET /complexes/{id}/unit-types?deal_type=.
+ * catalog ∪ 실거래 병합(거래+미거래·세대수). has_catalog=false면 거래된 평형만(graceful 폴백). */
+export async function fetchUnitTypes(
+  complexId: string,
+  dealType: string,
+  signal?: AbortSignal,
+): Promise<UnitTypeCatalog> {
+  const res = await fetch(
+    `${API_BASE}/complexes/${encodeURIComponent(complexId)}/unit-types?deal_type=${dealType}`,
+    { signal },
+  );
+  if (!res.ok) throw new Error(`unit-types failed: ${res.status}`);
+  return (await res.json()) as UnitTypeCatalog;
 }
 
 /** 단지 평판 RAG (E3-3) — POST /complexes/{id}/reputation {query}.

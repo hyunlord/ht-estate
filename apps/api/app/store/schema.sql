@@ -265,3 +265,19 @@ CREATE TABLE IF NOT EXISTS pipeline_state (
   expected_complete_at TIMESTAMP,          -- ETA(rate 산출 가능시·optional)
   updated_at           TIMESTAMP
 );
+
+-- unit_type: 전 세대타입 카탈로그(unit-type-catalog) — 전용면적별 세대수(거래 무관). area_buckets는
+-- MOLIT 실거래(거래된 평형만)이라 미거래 타입이 빠짐 → 디테일이 catalog ∪ 실거래로 전 타입 노출.
+-- 소스: 'ledger_exclusive'(건축물대장 전유부 getBrExposPubuseAreaInfo·집합건물 호별 전유면적 집계).
+-- 'kapt_area' 예약(K-apt 면적 엔드포인트 발굴 시). **additive·enrich가 이 테이블만 write**(canonical/
+-- 좌표 무접촉 → 지문/counts 불변)·멱등 UPSERT((단지,면적,소스) PK·DROP/DELETE/TRUNCATE 0)·provenance.
+CREATE TABLE IF NOT EXISTS unit_type (
+  complex_id      TEXT NOT NULL REFERENCES complex(complex_id),
+  net_area        REAL NOT NULL,        -- 전용면적 ㎡(버킷 대표·single-linkage 집계)
+  household_count INTEGER,              -- 그 면적의 세대(호) 수
+  source          TEXT NOT NULL,        -- 'ledger_exclusive' | 'kapt_area'
+  source_url      TEXT,                 -- attribution(대장 열람 딥링크)
+  fetched_at      TIMESTAMP,
+  PRIMARY KEY (complex_id, net_area, source)
+);
+CREATE INDEX IF NOT EXISTS idx_unit_type_complex ON unit_type(complex_id);

@@ -137,6 +137,105 @@ def fetch_title_info(
     return parse_title_info(xml_text)
 
 
+# ── unit-type-catalog: 전유부(전유공용면적) — 집합건물 호별 전유면적 → 전 세대타입 ──
+EXPOS_AREA_OP = "getBrExposPubuseAreaInfo"
+
+
+def parse_exclusive_areas(xml_text: str) -> list[float]:
+    """전유공용면적 XML → **전유·주건축물** 호별 전용면적 리스트(호 1개=면적 1개). 공용/부속 제외.
+
+    resultCode 비성공이면 raise. 한 호에 전유 1행 → 면적 리스트 길이=호수(세대수 집계 모수).
+    """
+    root = fromstring(xml_text)
+    ensure_success(root)
+    out: list[float] = []
+    for el in root.findall(".//item"):
+        if _parse.text(el, "exposPubuseGbCdNm") != "전유":
+            continue
+        if _parse.text(el, "mainAtchGbCdNm") not in (None, "주건축물"):
+            continue  # 부속(주차장 등) 제외 — 주건축물 전유만
+        area = _pos_float(el, "area")
+        if area is not None:
+            out.append(area)
+    return out
+
+
+def _area_tolerance(area: float) -> float:
+    """평형 버킷 single-linkage 톨러런스(㎡) — repo._area_threshold 미러(clamp(5%·면적,1.5,4.0))."""
+    return min(4.0, max(1.5, 0.05 * area))
+
+
+def cluster_areas(areas: list[float]) -> list[tuple[float, int]]:
+    """전유면적 리스트 → (대표 전용면적, 세대수) 버킷 — single-linkage(59.94/59.97 합침).
+
+    인접 면적차가 톨러런스 초과면 새 버킷. 대표=버킷 최빈 면적(tie→큰 값). 면적순 정렬 반환.
+    repo._cluster_area_buckets와 동일 클러스터링(실거래 버킷과 면적 매칭 정합).
+    """
+    rounded = sorted(round(a, 2) for a in areas if a > 0)
+    if not rounded:
+        return []
+    groups: list[list[float]] = []
+    current: list[float] = []
+    for a in rounded:
+        if current and (a - current[-1]) > _area_tolerance(current[-1]):
+            groups.append(current)
+            current = []
+        current.append(a)
+    if current:
+        groups.append(current)
+    out: list[tuple[float, int]] = []
+    for g in groups:
+        counts: dict[float, int] = {}
+        for a in g:
+            counts[a] = counts.get(a, 0) + 1
+        top = max(counts.values())
+        rep = max(a for a, c in counts.items() if c == top)  # 최빈(tie→큰 면적)
+        out.append((rep, len(g)))
+    return out
+
+
+def _total_count(xml_text: str) -> int:
+    root = fromstring(xml_text)
+    el = root.find(".//totalCount")
+    return int(el.text) if el is not None and el.text and el.text.isdigit() else 0
+
+
+def fetch_exclusive_areas(
+    sigungu_cd: str,
+    bjdong_cd: str,
+    bun: str,
+    ji: str,
+    *,
+    api_key: str,
+    plat_gb_cd: str = "0",
+    num_of_rows: int = DEFAULT_NUM_OF_ROWS,
+    max_pages: int = 60,
+    client: httpx.Client | None = None,
+    timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+) -> list[float]:
+    """한 지번의 전유부 전 페이지 → 전유 주건축물 전용면적 리스트(집계 전). 0건이면 빈 리스트.
+
+    totalCount 기준 페이지네이션(전유+공용 합산 totalCount라 max_pages로 바운드·대형 집합건물 안전).
+    """
+    base = {
+        "serviceKey": api_key, "sigunguCd": sigungu_cd, "bjdongCd": bjdong_cd,
+        "platGbCd": plat_gb_cd, "bun": bun, "ji": ji,
+        "numOfRows": num_of_rows, "_type": "xml",
+    }
+    areas: list[float] = []
+    page = 1
+    while page <= max_pages:
+        xml_text = fetch_text(
+            f"{BASE_URL}/{EXPOS_AREA_OP}", {**base, "pageNo": page}, client=client, timeout=timeout
+        )
+        areas.extend(parse_exclusive_areas(xml_text))
+        total = _total_count(xml_text)
+        if page * num_of_rows >= total or total == 0:
+            break
+        page += 1
+    return areas
+
+
 def to_bun_ji(jibun_canonical: str | None) -> tuple[str, str] | None:
     """정규화 지번('489' | '489-1') → (bun, ji) 0패딩 4자리('0489','0001'). 무효면 None.
 

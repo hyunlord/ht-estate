@@ -1,0 +1,9 @@
+<response><header><resultCode>00</resultCode><resultMsg>NORMAL SERVICE</resultMsg></header><body><items>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>201호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>오피스텔</mainPurpsCdNm><area>66.47</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>201호</hoNm><exposPubuseGbCdNm>공용</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>계단실</mainPurpsCdNm><area>18.20</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>202호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>오피스텔</mainPurpsCdNm><area>66.50</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>301호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>오피스텔</mainPurpsCdNm><area>84.92</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>302호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>오피스텔</mainPurpsCdNm><area>84.95</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>B01호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>부속건축물</mainAtchGbCdNm><mainPurpsCdNm>주차장</mainPurpsCdNm><area>120.00</area></item>
+<item><bldNm>KCC 파크타운</bldNm><dongNm>101동</dongNm><hoNm>303호</hoNm><exposPubuseGbCdNm>전유</exposPubuseGbCdNm><mainAtchGbCdNm>주건축물</mainAtchGbCdNm><mainPurpsCdNm>오피스텔</mainPurpsCdNm><area>26.30</area></item>
+</items></body></response>

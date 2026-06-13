@@ -1,0 +1,17 @@
+# 전 세대타입 카탈로그 tick — enrich_unit_type.py(건축물대장 전유부). 비-아파트 전용면적별 세대수를
+# unit_type에만 write(좌표/canonical 무접촉 → 지문/counts 불변) (unit-type-catalog).
+# 공유 .ingest.lock(C47) 청크단위 spin-acquire/release로 거래·enrich·poi cron과 직렬화·공존.
+# 건축HUB 일쿼터/429 우아중단 → 다음날 resume(stage='unit_type' 진행 기록). 멀티데이 누적.
+[Unit]
+Description=ht-estate unit-type catalog tick (building-ledger 전유부, daily)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+# --limit 0=쿼터까지(quota-stop이 다음날 resume). 전유부는 호별 페이지네이션이라 건물당 호출이 많음
+# → --interval로 throttle. 비-아파트(~150k) 멀티데이 백필(POI/ledger처럼 시간 두고 채움).
+ExecStart=/home/hyunlord/.local/bin/uv run python scripts/enrich_unit_type.py --limit 0 --batch-size 20 --interval 0.3

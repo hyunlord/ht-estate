@@ -445,6 +445,82 @@ def _cluster_area_buckets(spec: HardFilterSpec, trades: list[sqlite3.Row]) -> li
     return buckets
 
 
+# ── unit-type-catalog: 전 세대타입(catalog ∪ 실거래) 병합 — 디테일 "평형별" 전 타입(거래+미거래) ──
+class UnitTypeRow(BaseModel):
+    """전 세대타입 한 행 — 전용면적 + 세대수(catalog) + 실거래(있으면)/미거래."""
+
+    net_area: float | None
+    household_count: int | None  # catalog 세대수(미거래 타입도 세대수 표시). catalog 없으면 None.
+    transaction_count: int  # 실거래 건수(0=미거래)
+    recent_amount: int | None = None  # 만원 (매매=price / 전월세=deposit)
+    recent_monthly_rent: int | None = None
+    recent_rent_type: str | None = None
+    recent_deal_date: str | None = None
+    amount_min: int | None = None
+    amount_max: int | None = None
+    traded: bool  # 실거래 매칭 여부
+
+
+class UnitTypeCatalog(BaseModel):
+    """디테일 전 세대타입 — has_catalog면 catalog∪거래(전 타입+세대수)·아니면 거래 버킷만(폴백)."""
+
+    has_catalog: bool  # unit_type 적재됨(전 타입+세대수) vs 폴백(거래된 평형만·현 거동)
+    types: list[UnitTypeRow]
+
+
+def unit_type_catalog(
+    conn: sqlite3.Connection, spec: HardFilterSpec, complex_id: str
+) -> UnitTypeCatalog:
+    """catalog(unit_type) ∪ 실거래(area_buckets) 병합 → 전 세대타입. read-only.
+
+    catalog 각 (면적,세대수)에 거래 버킷을 면적 톨러런스로 매칭(있으면 실거래 부착·없으면 미거래).
+    catalog에 없는 거래 버킷도 포함(거래 데이터 유지). **graceful**: catalog 0이면 has_catalog=False
+    + 거래 버킷만(현 거동·무회귀). 좌표/canonical 무접촉(unit_type·txn read만).
+    """
+    from app.store.unit_type_repo import unit_types_for
+
+    catalog = unit_types_for(conn, complex_id)
+    twhere, tparams = _txn_where(spec)
+    trades = _matching_trades(conn, spec, complex_id, twhere, tparams)
+    buckets = _cluster_area_buckets(spec, trades)
+
+    def _row_from_bucket(b: AreaBucket, household: int | None, traded: bool) -> UnitTypeRow:
+        return UnitTypeRow(
+            net_area=b.net_area, household_count=household,
+            transaction_count=b.transaction_count, recent_amount=b.recent_amount,
+            recent_monthly_rent=b.recent_monthly_rent, recent_rent_type=b.recent_rent_type,
+            recent_deal_date=b.recent_deal_date, amount_min=b.amount_min,
+            amount_max=b.amount_max, traded=traded,
+        )
+
+    used: set[int] = set()
+    rows: list[UnitTypeRow] = []
+    for cat in catalog:
+        na = float(cat["net_area"])  # type: ignore[arg-type]
+        hh = cat["household_count"]
+        # 면적 톨러런스 내 가장 가까운 미사용 거래 버킷 매칭
+        best: AreaBucket | None = None
+        best_d = _area_threshold(na)
+        for b in buckets:
+            if id(b) in used or b.net_area is None:
+                continue
+            d = abs(b.net_area - na)
+            if d <= best_d:
+                best, best_d = b, d
+        if best is not None:
+            used.add(id(best))
+            rows.append(_row_from_bucket(best, hh, traded=True))
+        else:
+            rows.append(UnitTypeRow(
+                net_area=na, household_count=hh, transaction_count=0, traded=False))
+    # catalog 외 거래 버킷(catalog 불완전 대비 — 거래 데이터 유지)
+    for b in buckets:
+        if id(b) not in used:
+            rows.append(_row_from_bucket(b, None, traded=True))
+    rows.sort(key=lambda r: (r.net_area is None, r.net_area or 0.0))
+    return UnitTypeCatalog(has_catalog=len(catalog) > 0, types=rows)
+
+
 def search_complexes(conn: sqlite3.Connection, spec: HardFilterSpec) -> list[Candidate]:
     """complex 속성+bbox 필터 → (txn 필터시) 매칭거래 EXISTS → 후보. 이진 in/out, limit."""
     schools = _resolve_assigned(conn, spec)

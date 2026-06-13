@@ -187,6 +187,12 @@ def bootstrap_pipeline_state(conn: sqlite3.Connection, now: datetime | None = No
     rec("dong_backfill", target=addr, current=dong, status=_bounded_status(dong, addr),
         metric="complex with dong(extract_dong)", intro_sql=None)
 
+    # ── 전 세대타입 카탈로그(unit-type-catalog·비아파트 대장 전유부) ──
+    ut = int(_scalar(conn, "SELECT COUNT(DISTINCT complex_id) FROM unit_type"))
+    rec("unit_type_catalog", target=total, current=ut, status=_bounded_status(ut, total),
+        metric="complexes with unit-type catalog(전용면적별 세대수)",
+        intro_sql="SELECT MIN(fetched_at) FROM unit_type")
+
     # ── 온디맨드(후보-한정 lazy·목표 없음) ──
     gp = int(_scalar(
         conn,

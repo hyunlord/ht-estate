@@ -45,7 +45,14 @@ from app.search.nl_parse import (
 )
 from app.search.pet import ALIAS_ATTRIBUTES, PetSummary, attach_pet, synthesize_pet
 from app.search.ranking import rank_candidates
-from app.search.repo import Candidate, MarkerFeed, search_complexes, search_marker_feed
+from app.search.repo import (
+    Candidate,
+    MarkerFeed,
+    UnitTypeCatalog,
+    search_complexes,
+    search_marker_feed,
+    unit_type_catalog,
+)
 from app.search.review import attach_review
 from app.search.spec import HardFilterSpec
 from app.store.db import get_connection
@@ -310,6 +317,20 @@ def markers_endpoint(
     instant-perf: 응답 캐시(데이터 시그니처 무효화) — 광역 ppp 집계를 웜 히트로(맵 first-paint).
     """
     return _markers_cached(conn, spec)
+
+
+@app.get("/complexes/{complex_id}/unit-types")
+def unit_types_endpoint(
+    complex_id: str,
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+    deal_type: str = "sale",
+) -> UnitTypeCatalog:
+    """전 세대타입(unit-type-catalog) — unit_type catalog ∪ 실거래 병합(거래+미거래·세대수).
+
+    has_catalog면 전 타입(미거래 포함)·아니면 거래된 평형만(graceful 폴백·현 거동). deal_type별
+    실거래 매칭. unit_type·txn read만(좌표/canonical 무접촉 → 지문/counts 불변)."""
+    spec = HardFilterSpec.model_validate({"deal_type": deal_type})
+    return unit_type_catalog(conn, spec, complex_id)
 
 
 @app.post("/complexes/search/nl")

@@ -300,6 +300,24 @@ export interface MarkerFeed {
   clusters: Cluster[];
 }
 
+// unit-type-catalog: 전 세대타입(거래+미거래) — catalog ∪ 실거래 병합(디테일 /unit-types).
+export interface UnitTypeRow {
+  net_area: number | null;
+  household_count: number | null; // catalog 세대수(미거래 타입도). catalog 없으면 null.
+  transaction_count: number; // 실거래 건수(0=미거래)
+  recent_amount: number | null;
+  recent_monthly_rent?: number | null;
+  recent_rent_type?: string | null;
+  recent_deal_date: string | null;
+  amount_min?: number | null;
+  amount_max?: number | null;
+  traded: boolean;
+}
+export interface UnitTypeCatalog {
+  has_catalog: boolean; // true=전 타입(미거래 포함)·false=거래된 평형만(graceful 폴백)
+  types: UnitTypeRow[];
+}
+
 // 면적 단위 토글 — 평/㎡. 1평 = 3.3058㎡.
 export type AreaUnit = "pyeong" | "sqm";
 

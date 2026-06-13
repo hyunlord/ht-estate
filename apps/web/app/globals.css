@@ -812,6 +812,11 @@ body {
   flex: 0 0 auto;
   color: var(--faint);
 }
+/* unit-type-catalog: 미거래 세대타입 표시(거래 없음·세대수만) */
+.untraded {
+  color: var(--faint);
+  font-style: italic;
+}
 /* detail-panel-sidebar: 평형 데이터 출처 안내(MOLIT 실거래 기반·미거래 세대타입 제외) */
 .abreak-note {
   padding: 8px 20px 12px;

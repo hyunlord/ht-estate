@@ -37,10 +37,19 @@ export async function routeCriteria(page: Page): Promise<void> {
   await page.route("**/criteria", (route) => route.fulfill({ json: CRITERIA_MOCK }));
 }
 
-// page 픽스처 확장 — 모든 테스트에 /criteria 자동 라우트(spec이 별도 라우트 등록해도 공존).
+// unit-type-catalog: 디테일이 마운트 시 GET /unit-types를 친다 — 기본은 has_catalog=false(graceful
+// 폴백·area_buckets 거동 유지·404 콘솔오염 0). 전 세대타입을 테스트하는 spec은 자체 라우트로 override.
+export async function routeUnitTypes(page: Page): Promise<void> {
+  await page.route("**/unit-types**", (route) =>
+    route.fulfill({ json: { has_catalog: false, types: [] } }),
+  );
+}
+
+// page 픽스처 확장 — 모든 테스트에 /criteria + /unit-types 기본 라우트(spec 별도 라우트와 공존·override).
 export const test = base.extend({
   page: async ({ page }, provide) => {
     await routeCriteria(page);
+    await routeUnitTypes(page);
     await provide(page); // Playwright fixture에 page 주입(React Hook 아님 — use* 이름 회피)
   },
 });

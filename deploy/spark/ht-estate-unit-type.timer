@@ -1,0 +1,10 @@
+# 전 세대타입 카탈로그 일일 tick — poi(04:50) 뒤 05:20 KST(시차·락 경합 회피). 멀티데이 누적.
+[Unit]
+Description=ht-estate unit-type catalog tick (daily 05:20 KST)
+
+[Timer]
+OnCalendar=*-*-* 05:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
