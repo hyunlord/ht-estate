@@ -1,0 +1,10 @@
+# Kakao 헬스장 신호 일일 tick — unit-type(05:20) 뒤 05:50 KST(시차·락 경합 회피). 멀티데이 누적.
+[Unit]
+Description=ht-estate Kakao gym signal tick (daily 05:50 KST)
+
+[Timer]
+OnCalendar=*-*-* 05:50:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -193,6 +193,18 @@ def bootstrap_pipeline_state(conn: sqlite3.Connection, now: datetime | None = No
         metric="complexes with unit-type catalog(전용면적별 세대수)",
         intro_sql="SELECT MIN(fetched_at) FROM unit_type")
 
+    # ── Kakao Local 헬스장 신호(gym-kakao·비아파트 ≤50m) ──
+    gk_scanned = int(_scalar(
+        conn, "SELECT COUNT(DISTINCT region) FROM ingest_progress WHERE stage='gym_kakao'"))
+    gk_found = int(_scalar(
+        conn, "SELECT COUNT(DISTINCT complex_id) FROM enrichment "
+        "WHERE attribute='gym' AND source_type='kakao_local'"))
+    rec("gym_kakao", target=total, current=gk_scanned,
+        status=_bounded_status(gk_scanned, total),
+        metric=f"비아파트 Kakao gym 스캔(신호 확인 {gk_found})",
+        intro_sql="SELECT MIN(fetched_at) FROM enrichment "
+                  "WHERE attribute='gym' AND source_type='kakao_local'")
+
     # ── 온디맨드(후보-한정 lazy·목표 없음) ──
     gp = int(_scalar(
         conn,

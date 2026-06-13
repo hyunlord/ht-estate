@@ -1,0 +1,16 @@
+# Kakao Local 헬스장 신호 tick — enrich_gym_kakao.py(Kakao Local). 비아파트 ≤50m 헬스장 → gym
+# enrichment 사실(source_type='kakao_local')만 write(좌표/canonical 무접촉 → 지문/counts 불변) (gym-kakao).
+# 공유 .ingest.lock(C47) 청크 spin-acquire/release로 거래·enrich·poi·unit-type cron과 직렬화·공존.
+# Kakao 일쿼터(429/400 code-10) 우아중단 → 다음날 resume(stage='gym_kakao'). 멀티데이·비아파트 집중.
+[Unit]
+Description=ht-estate Kakao gym signal tick (비아파트, daily)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+# --limit 0=쿼터까지(quota-stop이 다음날 resume). 단지당 2키워드 콜 → --interval throttle.
+ExecStart=/home/hyunlord/.local/bin/uv run python scripts/enrich_gym_kakao.py --limit 0 --batch-size 25 --interval 0.1

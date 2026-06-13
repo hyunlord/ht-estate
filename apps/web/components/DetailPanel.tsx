@@ -123,7 +123,8 @@ const GYM_ICON: Record<GymSummary["has_gym"], string> = { yes: "✓", no: "✗",
 // detail-panel-polish ④: 단정(✓있음/✗없음)은 신뢰 가능할 때만 — 비아파트는 K-apt amenities가 없어
 // 저신뢰 온디맨드 추출이라 단정 "없음"이 오탐(예 KCC: agent_research conf 0.31). 고신뢰(conf≥0.7) 또는
 // 신뢰 출처(official/kapt)일 때만 단정·아니면 advisory(△ "정보 없음 · 확인 권장"). 검색 필터는 무관(표시만).
-const GYM_TRUST_SOURCES = new Set(["official", "kapt"]);
+// gym-kakao: Kakao Local 동일위치 헬스장 POI = 신뢰 출처(물리 co-located·conf 0.88도 ≥0.7 게이트 통과).
+const GYM_TRUST_SOURCES = new Set(["official", "kapt", "kakao_local"]);
 function gymDefinitive(gym: GymSummary): boolean {
   if (gym.confidence != null && gym.confidence >= 0.7) return true;
   return gym.sources.some((s) => GYM_TRUST_SOURCES.has(s.source_type));

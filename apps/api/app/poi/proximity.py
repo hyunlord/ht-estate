@@ -123,6 +123,18 @@ class KakaoLocalClient:
             data = self._get("keyword", {**base, "query": keyword})
         return compute(data.get("documents", []), data.get("meta", {}).get("total_count", 0))
 
+    def keyword_docs(
+        self, keyword: str, x: float, y: float, *, radius: int, size: int = 5
+    ) -> list[dict]:
+        """키워드 검색 raw 문서(거리순) — gym-kakao처럼 place명·거리·url이 필요한 근접 매치용.
+
+        반경(m) 내 정렬 결과. 동일 quota/일시오류 처리(_get) 재사용. radius는 호출별 지정."""
+        data = self._get(
+            "keyword", {"x": x, "y": y, "radius": radius, "sort": "distance", "size": size,
+                        "query": keyword}
+        )
+        return data.get("documents", [])
+
 
 def _is_quota_400(resp: httpx.Response) -> bool:
     """HTTP 400이 Kakao 일쿼터 초과(code -10·"API limit has been exceeded.")인지 판별.
