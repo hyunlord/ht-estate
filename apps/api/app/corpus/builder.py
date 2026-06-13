@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.corpus.chunker import chunk_doc
+from app.corpus.relevance import ChunkClassifier, filter_docs, region_tokens
 from app.corpus.store import PendingChunk, is_fresh, write_chunks
 from app.embed.client import Embedder, EmbedUnavailable
 from app.enrich.fetcher import SourceFetcher
@@ -26,6 +27,7 @@ from app.enrich.fetcher import SourceFetcher
 BUILT = "built"               # 청크 적재 완료
 FRESH = "fresh"               # 신선(TTL+레시피 유효) → skip
 NO_SOURCE = "no_source"       # 소스 0건(전부 실패/무결과) → defer
+NO_RELEVANT = "no_relevant"   # 건물검증+노이즈 필터 후 0(오염 reject)
 EMBED_DEFERRED = "embed_deferred"  # embed down → defer(write skip·캐시 유지)
 LOCK_YIELD = "lock_yield"     # C47 락 점유 → 양보(다음 트리거 resume)
 
@@ -57,10 +59,11 @@ def build_corpus(
     lock: Callable[[], object] | None = None,
     max_chunks: int = 40,
     force: bool = False,
+    classifier: ChunkClassifier | None = None,
 ) -> BuildResult:
-    """단지 1건 코퍼스 build. fetch→청킹→embed→(C47 락)write. graceful·멱등·반쪽 0.
+    """단지 1건 코퍼스 build. fetch→건물검증+노이즈필터→청킹→embed→(C47 락)write. graceful·멱등.
 
-    name=단지명(소스 쿼리). lock=C47 ShlockBatch 호출자(미주입이면 무락 — 테스트/단독).
+    name=단지명(소스 쿼리). classifier=선택 LLM doc 분류기(룰 통과분 precision 재확인). lock=C47.
     """
     # 1) 신선하면 skip(레시피+TTL) — 모델/만료 시에만 rebuild. 레시피는 클라 config로 결정.
     if not force and is_fresh(conn, complex_id, _recipe_of(embed_client), now=now):
@@ -73,6 +76,16 @@ def build_corpus(
         docs = []
     if not docs:
         return BuildResult(NO_SOURCE, docs_fetched=0)
+
+    # 2b) 건물검증(단지명+지역) + 노이즈 필터(경매/인테리어/대출) + 선택 LLM (rag-corpus-quality).
+    # 지역(sigungu/dong) complex서 read(없으면 이름만). 오염 doc(해운대 스위첸·파라곤·경매) reject.
+    row = conn.execute(
+        "SELECT sigungu, dong FROM complex WHERE complex_id = ?", (complex_id,)
+    ).fetchone()
+    rtokens = region_tokens(row["sigungu"], row["dong"]) if row else []
+    docs = filter_docs(docs, name=name, region_toks=rtokens, classifier=classifier)
+    if not docs:
+        return BuildResult(NO_RELEVANT)  # 전부 오염/무관 → 적재 안 함(빈 코퍼스·UI "후기 미수집")
 
     # 3) 청킹 — chunk마다 source_type/url + span_ref(인용정밀).
     pending: list[PendingChunk] = []

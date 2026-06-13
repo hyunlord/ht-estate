@@ -561,7 +561,7 @@ function ReputationSection({ cid, reputationQuery }: { cid: string; reputationQu
             </span>
           )}
           {!pending && result?.status === "unavailable" && (
-            <span data-testid="reputation-status">정보 없음 / 미구성</span>
+            <span data-testid="reputation-status">후기 분석 미구성</span>
           )}
           {!pending && result?.status === "ready" && (
             <>
@@ -569,7 +569,11 @@ function ReputationSection({ cid, reputationQuery }: { cid: string; reputationQu
                 <span data-testid="reputation-summary">{result.summary}</span>
               ) : (
                 result.citations.length === 0 && (
-                  <span data-testid="reputation-status">관련 후기 없음</span>
+                  // rag-corpus-quality: 코퍼스 0/thin·매치 0 → 빈 "정보 없음"이 아니라 정직하게 "미수집".
+                  // 청크가 있으면 위 summary 또는 아래 인용이 렌더(현재 동작 유지).
+                  <span className="conf" data-testid="reputation-empty">
+                    아직 수집된 후기가 없어요 (후기 미수집)
+                  </span>
                 )
               )}
               <CitationLinks citations={result.citations} />

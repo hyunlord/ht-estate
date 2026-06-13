@@ -96,3 +96,29 @@ test("reputation: gemma degrade → 인용만(evidence-only·summary 없음)", a
   await expect(card.getByTestId("reputation-citation-link").first()).toBeVisible();
   await expect(card.getByTestId("reputation-summary")).toHaveCount(0);
 });
+
+// rag-corpus-quality: 코퍼스 0/thin(매치 0·인용 0) → 정직하게 "후기 미수집"(빈 "정보 없음" 아님).
+test("reputation: 코퍼스 미수집 → '후기 미수집' 정직 표기(인용·요약 없음)", async ({ page }) => {
+  await page.route("**/complexes/search", (route) => route.fulfill({ json: CANDIDATES }));
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
+  await page.route("**/enrichment", (route) =>
+    route.fulfill({
+      json: { complex_id: "A1", gym: { status: "ready", summary: null }, pet: { status: "ready", summary: null } },
+    }),
+  );
+  await page.route("**/reputation", (route) =>
+    route.fulfill({
+      json: { complex_id: "A1", status: "ready", summary: null, citations: [], degraded: [] },
+    }),
+  );
+
+  await page.goto("/", { waitUntil: "networkidle" });
+  await page.getByTestId("result-item").nth(0).click();
+  const card = page.getByTestId("complex-card");
+  await card.getByTestId("reputation-chip").filter({ hasText: "주차" }).click();
+
+  // 정직한 미수집 표기 + 요약/인용 없음(빈 칩·"정보 없음" 아님)
+  await expect(card.getByTestId("reputation-empty")).toContainText("미수집");
+  await expect(card.getByTestId("reputation-summary")).toHaveCount(0);
+  await expect(card.getByTestId("reputation-citation-link")).toHaveCount(0);
+});

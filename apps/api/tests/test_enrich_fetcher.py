@@ -84,6 +84,22 @@ def test_blank_link_or_text_skipped() -> None:
     assert [d.source_url for d in docs] == ["http://ok/2"]
 
 
+def test_quota_429_sets_flag_but_stays_graceful() -> None:
+    # rag-corpus-quality: 429 → quota_blocked 플래그(bulk backoff 신호) + 여전히 빈결과(계약 불변).
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={})
+
+    f = NaverSourceFetcher("id", "sec", client=_client(handler))
+    assert f.fetch("q", kind="web") == []  # graceful 빈결과(crash 0)
+    assert f.quota_blocked is True  # 폴링 신호 set
+
+
+def test_quota_flag_clear_on_success() -> None:
+    f = NaverSourceFetcher("id", "sec", client=_client(_ok_handler))
+    f.fetch("q", kind="web")
+    assert f.quota_blocked is False
+
+
 def test_env_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
     monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)

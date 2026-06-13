@@ -77,6 +77,9 @@ class NaverSourceFetcher:
     verticals: tuple[tuple[str, str], ...] = field(
         default=(("blog", "blog"), ("cafearticle", "cafe"), ("webkr", "web"), ("news", "web"))
     )
+    # rag-corpus-quality: 429(레이트/일쿼터) 감지 플래그 — bulk 러너가 폴링해 우아중단(backoff).
+    # fetch는 여전히 graceful 빈결과 반환(on-demand/enrich 계약 불변), 이 플래그만 추가 신호.
+    quota_blocked: bool = field(default=False)
 
     def fetch(self, query: str, *, kind: str) -> list[SourceDoc]:
         docs: list[SourceDoc] = []
@@ -97,6 +100,8 @@ class NaverSourceFetcher:
         cl = self.client or httpx.Client(timeout=self.timeout)
         try:
             resp = cl.get(url, headers=headers, params=params)
+            if resp.status_code == 429:
+                self.quota_blocked = True  # 레이트/일쿼터 — bulk가 폴링해 backoff(빈결과는 그대로)
             resp.raise_for_status()
             items = resp.json().get("items", [])
         except (httpx.HTTPError, ValueError, KeyError, TypeError):

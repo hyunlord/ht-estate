@@ -215,8 +215,9 @@ def bootstrap_pipeline_state(conn: sqlite3.Connection, now: datetime | None = No
         intro_sql="SELECT MIN(fetched_at) FROM enrichment "
                   "WHERE attribute IN ('gym','pet','pet_allowed')")
     e3 = int(_scalar(conn, "SELECT COUNT(*) FROM review_chunk"))
+    e3_cx = int(_scalar(conn, "SELECT COUNT(DISTINCT complex_id) FROM review_chunk"))
     rec("e3_rag_corpus", target=None, current=e3, status="on_demand",
-        metric="review_chunk rows (on-demand RAG 코퍼스)",
+        metric=f"review_chunk rows (건물검증·노이즈필터 적재·단지 {e3_cx})",
         intro_sql="SELECT MIN(fetched_at) FROM review_chunk")
 
 

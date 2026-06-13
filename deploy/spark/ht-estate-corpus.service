@@ -1,0 +1,17 @@
+# 후기/평판 코퍼스 bulk 적재 tick — build_corpus.py --bulk (rag-corpus-quality). 거래 많은 단지부터
+# Naver blog/cafe → 건물검증+노이즈 필터(+ENRICH_LLM 있으면 gemma) → review_chunk(+vec)만 write
+# (좌표/canonical 무접촉 → 지문/counts 불변). on-demand-only 탈출·멀티데이 누적.
+# 공유 .ingest.lock(C47) 청크 spin-acquire/release로 거래·enrich·poi·unit-type·gym cron과 직렬화.
+# Naver 429(쿼터) → fetcher.quota_blocked 폴링 → 우아중단(다음 run resume·완료분 보존·stage=corpus_bulk).
+[Unit]
+Description=ht-estate review corpus bulk build tick (거래순, daily)
+
+[Service]
+Type=oneshot
+User=hyunlord
+Group=hyunlord
+WorkingDirectory=/home/hyunlord/github/ht-estate/apps/api
+Environment=HOME=/home/hyunlord
+Environment=PATH=/home/hyunlord/.local/bin:/usr/local/bin:/usr/bin:/bin
+# --limit=이번 run 단지 캡(throughput·쿼터 여유). --min-txn=조회 가능성 필터. --interval=콜 throttle.
+ExecStart=/home/hyunlord/.local/bin/uv run python scripts/build_corpus.py --bulk --limit 300 --min-txn 5 --batch-size 20 --interval 0.2

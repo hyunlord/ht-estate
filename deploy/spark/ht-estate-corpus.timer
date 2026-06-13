@@ -1,0 +1,10 @@
+# 후기 코퍼스 bulk 일일 tick — gym(05:50) 뒤 06:20 KST(시차·락 경합 회피). 멀티데이 누적.
+[Unit]
+Description=ht-estate review corpus bulk build tick (daily 06:20 KST)
+
+[Timer]
+OnCalendar=*-*-* 06:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -99,10 +99,11 @@ class DownProvider:
 
 
 def _docs() -> list[SourceDoc]:
+    # rag-corpus-quality 건물검증 게이트 통과 위해 doc 텍스트에 단지명 포함(실 후기 형태).
     return [
-        SourceDoc(source_type="blog", source_url="https://blog/1", text="주차 정말 넉넉해요 여유"),
-        SourceDoc(source_type="cafe", source_url="https://cafe/2", text="층간소음 민원이 잦다는"),
-        SourceDoc(source_type="blog", source_url="https://blog/3", text="관리 상태 양호한 편"),
+        SourceDoc(source_type="blog", source_url="https://blog/1", text="가단지 주차 넉넉해요"),
+        SourceDoc(source_type="cafe", source_url="https://cafe/2", text="가단지 층간소음 잦다는"),
+        SourceDoc(source_type="blog", source_url="https://blog/3", text="가단지 관리 상태 양호"),
     ]
 
 
@@ -149,7 +150,7 @@ def test_retrieval_complex_filtered(db: sqlite3.Connection) -> None:
     )
     db.commit()
     build_corpus(db, "C2", "나단지", fetcher=_F([
-        SourceDoc(source_type="blog", source_url="https://other/x", text="주차 관련 다른단지"),
+        SourceDoc(source_type="blog", source_url="https://other/x", text="나단지 주차 관련"),
     ]), embed_client=FakeEmbed(), now=NOW)
     r = synthesize_reputation(
         db, "C1", "주차", embed_client=FakeEmbed(), rerank_client=FakeRerank(),

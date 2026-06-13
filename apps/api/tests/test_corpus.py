@@ -19,6 +19,7 @@ from app.corpus.builder import (
     EMBED_DEFERRED,
     FRESH,
     LOCK_YIELD,
+    NO_RELEVANT,
     NO_SOURCE,
     build_corpus,
 )
@@ -91,9 +92,10 @@ def _seed_build(conn: sqlite3.Connection, **kw):  # type: ignore[no-untyped-def]
 
 
 def _docs() -> list[SourceDoc]:
+    # rag-corpus-quality: 건물검증 게이트 통과하려 doc 텍스트에 단지명 포함(실 후기 형태).
     return [
-        SourceDoc(source_type="blog", source_url="https://blog/1", text="주차 정말 넉넉해요"),
-        SourceDoc(source_type="cafe", source_url="https://cafe/2", text="학군 좋다는 평"),
+        SourceDoc(source_type="blog", source_url="https://blog/1", text="가단지 주차 넉넉해요"),
+        SourceDoc(source_type="cafe", source_url="https://cafe/2", text="가단지 학군 좋다는 평"),
     ]
 
 
@@ -241,6 +243,38 @@ def test_build_embed_down_keeps_existing_cache(db: sqlite3.Connection) -> None:
 def test_build_no_source_defers(db: sqlite3.Connection) -> None:
     r = build_corpus(db, "C1", "가단지", fetcher=FakeFetcher([]), embed_client=FakeEmbed(), now=NOW)
     assert r.status == NO_SOURCE and chunk_count(db, "C1") == 0
+
+
+# ── builder: rag-corpus-quality 건물검증+노이즈 필터(적재시) ──
+def test_build_rejects_off_building_and_noise(db: sqlite3.Connection) -> None:
+    # 딴 건물(가단지 미포함)·경매 광고만 → 전부 filter → NO_RELEVANT·write 0(오염 적재 0).
+    docs = [
+        SourceDoc(source_type="blog", source_url="u1", text="나단지 주차 넉넉해요"),  # 딴 단지
+        SourceDoc(source_type="blog", source_url="u2", text="가단지 경매 감정가 입찰"),  # 노이즈
+    ]
+    r = build_corpus(db, "C1", "가단지", fetcher=FakeFetcher(docs),
+                     embed_client=FakeEmbed(), now=NOW)
+    assert r.status == NO_RELEVANT and chunk_count(db, "C1") == 0
+
+
+def test_build_keeps_only_relevant_docs(db: sqlite3.Connection) -> None:
+    # 혼합: 관련 1 + 딴단지 1 + 노이즈 1 → 관련 doc만 적재.
+    docs = [
+        SourceDoc(source_type="blog", source_url="u1", text="가단지 층간소음 적고 관리 좋아요"),
+        SourceDoc(source_type="cafe", source_url="u2", text="다른단지 인테리어 시공"),  # 딴+노이즈
+        SourceDoc(source_type="blog", source_url="u3", text="가단지 담보대출 잘 나와요"),  # 노이즈
+    ]
+    r = build_corpus(db, "C1", "가단지", fetcher=FakeFetcher(docs),
+                     embed_client=FakeEmbed(), now=NOW)
+    assert r.status == BUILT and r.chunks_written == 1  # 관련 후기 1건만
+
+
+def test_build_classifier_rejects_borderline(db: sqlite3.Connection) -> None:
+    # 룰 통과(가단지·후기)이나 LLM 분류기가 reject → 적재 0(precision 경계).
+    docs = [SourceDoc(source_type="blog", source_url="u1", text="가단지 주차 넉넉")]
+    r = build_corpus(db, "C1", "가단지", fetcher=FakeFetcher(docs), embed_client=FakeEmbed(),
+                     now=NOW, classifier=lambda _t: False)
+    assert r.status == NO_RELEVANT and chunk_count(db, "C1") == 0
 
 
 def test_build_source_fetch_exception_defers(db: sqlite3.Connection) -> None:
