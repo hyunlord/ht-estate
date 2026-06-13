@@ -82,6 +82,20 @@ def done_ids(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in rows}
 
 
+def reset_stale_progress(conn: sqlite3.Connection) -> int:
+    """게이트 변경 후 재시도용 — '기록은 됐으나 청크 0'(NO_RELEVANT/NO_SOURCE)인 corpus_bulk
+    진입분만 ledger서 삭제 → 다음 bulk서 새 게이트로 재시도. **청크 있는(BUILT) 단지는 보존**
+    (재fetch 0·쿼터 절약). ingest_progress만 삭제(review_chunk/_vec·canonical 무접촉). 삭제 수 반환.
+    """
+    cur = conn.execute(
+        "DELETE FROM ingest_progress WHERE stage = ? "
+        "AND region NOT IN (SELECT DISTINCT complex_id FROM review_chunk)",
+        (CORPUS_STAGE,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def run_bulk(
     conn: sqlite3.Connection,
     *,
@@ -159,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ttl-weeks", type=int, default=3)
     p.add_argument("--max-chunks", type=int, default=40)
     p.add_argument("--force", action="store_true", help="단건: 신선해도 재build")
+    p.add_argument("--reset-stale", action="store_true",
+                   help="bulk: 청크 0인 corpus_bulk ledger 삭제(게이트 변경 후 재시도)")
     p.add_argument("--lock", default=None, help="공유 락(기본 <db디렉토리>/.ingest.lock)")
     p.add_argument("--max-spin", type=float, default=60.0)
     args = p.parse_args(argv)
@@ -178,6 +194,9 @@ def main(argv: list[str] | None = None) -> int:
     ttl = timedelta(weeks=args.ttl_weeks)
 
     if args.bulk:
+        if args.reset_stale:
+            n = reset_stale_progress(conn)
+            print(f"[reset-stale] 청크 0인 corpus_bulk ledger {n}건 삭제 → 새 게이트로 재시도")
         run_bulk(
             conn, fetcher=fetcher, embed_client=client, provider=provider, lock=lock,
             limit=args.limit, min_txn=args.min_txn, batch_size=args.batch_size,
