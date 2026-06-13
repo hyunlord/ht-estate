@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import app.settings  # noqa: F401  (루트 .env 로딩 — provider/fetcher env 활성화: 온디맨드 라이브)
+from app.chat.orchestrator import ChatResult, ChatTurn, run_chat
 from app.corpus.ondemand import OnDemandCorpus
 from app.corpus.vec import ensure_vec_table
 from app.embed.client import EmbedClient, embed_client_from_env
@@ -32,7 +33,7 @@ from app.enrich.store import read_facts
 from app.poi.store import attach_poi
 from app.reputation.service import PENDING as REP_PENDING
 from app.reputation.service import UNAVAILABLE as REP_UNAVAILABLE
-from app.reputation.service import synthesize_reputation
+from app.reputation.service import ReputationResult, synthesize_reputation
 from app.school.assignment import attach_assignment
 from app.school.store import attach_school
 from app.search.cache import cached
@@ -452,4 +453,45 @@ def complex_reputation_endpoint(
             for c in result.citations
         ],
         degraded=result.degraded,
+    )
+
+
+class ChatRequest(BaseModel):
+    """대화형 에이전트 입력 (E5-1) — message + 멀티턴 history + context(현 filter_spec·bbox).
+
+    history는 프론트가 보유(claude -p 무상태·엔드포인트 무상태)·매 콜 스레딩. context는 현 필터/지도
+    범위(HardFilterSpec·bbox 포함) — 후속/열린 질문이 이 후보 집합 위에서 grounding되게.
+    """
+
+    message: str
+    history: list[ChatTurn] = []
+    context: HardFilterSpec | None = None
+
+
+@app.post("/chat")
+def chat_endpoint(
+    body: ChatRequest,
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+    runner: Annotated[ClaudeRunner, Depends(get_query_runner)],
+    deps: Annotated[ReputationDeps, Depends(get_reputation)],
+) -> ChatResult:
+    """대화형 오케스트레이터 (E5-1) — (a)필터 parse_query (b)bounded grounding (c)ground-only 합성.
+
+    **재사용**: parse_query(claude -p)·_run_search(attach_*+rank 동일)·reputation/RAG 엔진·기존
+    provenance. **read-only**(canonical write 0·유일 write는 기존 온디맨드 코퍼스 메타 → 지문/counts
+    불변). 환각방지: ground-only 프롬프트 + referenced_complexes 실id만. graceful: 평판 down →
+    구조화 데이터로 답변(crash 0). 검색/필터/랭킹/마커 거동 불변(additive·재사용 미변경)."""
+    def reputation_fn(c: sqlite3.Connection, cid: str, query: str) -> ReputationResult | None:
+        try:
+            ensure_vec_table(c)  # 읽기 conn에 vec0 로드(평판 knn) — graceful
+            return synthesize_reputation(
+                c, cid, query, embed_client=deps.embed_client,
+                rerank_client=deps.embed_client, provider=deps.provider,
+            )
+        except Exception:  # noqa: BLE001 — 평판 엔진 down(embed/gemma/vec) → grounding 저하·답변 지속
+            return None
+
+    return run_chat(
+        conn, message=body.message, history=body.history, context_spec=body.context,
+        runner=runner, search_fn=_run_search, reputation_fn=reputation_fn,
     )
