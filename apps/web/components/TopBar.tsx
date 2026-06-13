@@ -8,6 +8,7 @@ import type {
   DealType,
   HardFilterSpec,
   Preference,
+  PropertyType,
   QuickFilter,
   SoftCriterion,
 } from "@/lib/types";
@@ -22,6 +23,16 @@ const SEG: { value: DealType; label: string }[] = [
   { value: "sale", label: "매매" },
   { value: "jeonse", label: "전세" },
   { value: "monthly", label: "월세" },
+];
+
+// filter-trim(C): 주택유형 고정 컨트롤(categorical SEG·boolean 칩 아님). null=전체(필터 없음).
+// 값은 REGISTRY property_type criterion enum 재사용(데이터: rowhouse>apartment>officetel) →
+// 선택 시 spec.property_type(기존 하드필터 경로·NL "오피스텔"/"빌라"와 동일 필드). detached는 데이터 0.
+const PROPERTY_SEG: { value: PropertyType | null; label: string }[] = [
+  { value: null, label: "전체" },
+  { value: "apartment", label: "아파트" },
+  { value: "officetel", label: "오피스텔" },
+  { value: "rowhouse", label: "빌라/연립" },
 ];
 
 // 지하주차(parking_underground)는 REGISTRY criterion이 아닌 core hard 필드 → 고정 칩(net_area처럼).
@@ -45,6 +56,7 @@ export function TopBar({
   quickFilters?: QuickFilter[]; // registry-driven 퀵 토글(GET /criteria) — page가 주입
 }) {
   const [dealType, setDealType] = useState<DealType>("sale");
+  const [propertyType, setPropertyType] = useState<PropertyType | null>(null);  // (C) 주택유형
   const [chips, setChips] = useState<Record<string, boolean>>({});
   const [ranges, setRanges] = useState<Ranges>({});
   const [open, setOpen] = useState<string | null>(null);
@@ -55,9 +67,13 @@ export function TopBar({
   const areaMax = unit === "pyeong" ? 60 : 200;
   const areaStep = unit === "pyeong" ? 0.5 : 1;
 
-  function buildSpec(dt: DealType, ch: Record<string, boolean>, rg: Ranges, u: AreaUnit): HardFilterSpec {
+  function buildSpec(
+    dt: DealType, ch: Record<string, boolean>, rg: Ranges, u: AreaUnit, pt: PropertyType | null,
+  ): HardFilterSpec {
     const spec: HardFilterSpec = { limit: 100 };
     if (dt !== "sale") spec.deal_type = dt;
+    // (C) 주택유형: 선택 시 spec.property_type(기존 하드필터 경로·NL과 동일 필드). null=전체(필터 없음).
+    if (pt) spec.property_type = pt;
     // 면적: 현 단위 → ㎡ canonical.
     const aMin = num(rg.areaMin);
     const aMax = num(rg.areaMax);
@@ -101,22 +117,27 @@ export function TopBar({
     return spec;
   }
 
-  const commit = (dt: DealType, ch: Record<string, boolean>, rg: Ranges, u: AreaUnit) =>
-    onChange(buildSpec(dt, ch, rg, u));
+  const commit = (
+    dt: DealType, ch: Record<string, boolean>, rg: Ranges, u: AreaUnit, pt: PropertyType | null,
+  ) => onChange(buildSpec(dt, ch, rg, u, pt));
 
   const pickSeg = (dt: DealType) => {
     setDealType(dt);
-    commit(dt, chips, ranges, unit);
+    commit(dt, chips, ranges, unit, propertyType);
+  };
+  const pickPropertyType = (pt: PropertyType | null) => {
+    setPropertyType(pt);
+    commit(dealType, chips, ranges, unit, pt);  // 라운드트립: 선택→spec.property_type·전체→제거
   };
   const toggleChip = (id: string) => {
     const next = { ...chips, [id]: !chips[id] };
     setChips(next);
-    commit(dealType, next, ranges, unit);
+    commit(dealType, next, ranges, unit, propertyType);
   };
   const setRange = (k: string, v: string) => setRanges((p) => ({ ...p, [k]: v }));
   const applyDropdown = () => {
     setOpen(null);
-    commit(dealType, chips, ranges, unit);
+    commit(dealType, chips, ranges, unit, propertyType);
   };
 
   const pickUnit = (u: AreaUnit) => {
@@ -180,6 +201,22 @@ export function TopBar({
             onClick={() => pickSeg(s.value)}
           >
             {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* (C) 주택유형 고정 컨트롤 — categorical SEG. 전체=필터 없음. spec.property_type 재사용. */}
+      <div className="seg" data-testid="property-type">
+        {PROPERTY_SEG.map((p) => (
+          <button
+            key={p.value ?? "all"}
+            type="button"
+            data-testid={`property-type-${p.value ?? "all"}`}
+            aria-pressed={propertyType === p.value}
+            className={propertyType === p.value ? "on" : ""}
+            onClick={() => pickPropertyType(p.value)}
+          >
+            {p.label}
           </button>
         ))}
       </div>
@@ -338,7 +375,7 @@ export function TopBar({
         <input
           data-testid="nl-search"
           value={query}
-          placeholder="자연어로 더 많은 조건: 어린이집 가까운 · CCTV 많은 · 공원 근처 · 오피스텔"
+          placeholder="자연어로 더 많은 조건: CCTV 많은 · 공원 근처 · 병원 가까운 · 엘베 많은"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -350,8 +387,8 @@ export function TopBar({
       </div>
       {/* filter-trim: long-tail 조건은 NL로 도달(registry-grounded 파서·어휘 손실 0) — 안내 표면화. */}
       <div className="nl-hint" data-testid="nl-hint">
-        칩에 없는 조건은 검색창에 자연어로: <b>어린이집 가까운</b> · <b>CCTV 많은</b> · <b>공원 근처</b> ·
-        <b>병원 가까운</b> · <b>오피스텔</b>
+        칩에 없는 조건은 검색창에 자연어로: <b>CCTV 많은</b> · <b>공원 근처</b> · <b>병원 가까운</b> ·
+        <b>엘베 많은</b> · <b>약국 가까운</b>
       </div>
     </div>
   );

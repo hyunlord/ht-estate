@@ -63,10 +63,10 @@ def test_quick_filters_major_split(client: TestClient) -> None:
     body = client.get("/criteria").json()
     qf = {q["id"]: q for q in body["quick_filters"]}
     major = {qid for qid, q in qf.items() if q.get("major")}
-    # 메이저: 헬스장·역세권·세대당주차(흔히 쓰는 고가치)
-    assert major == {"gym_q", "subway_poi", "parking_q"}, major
+    # 메이저(B 어맨드): 역세권·세대당주차·헬스장 + 어린이집·초등(5칩·고가치)
+    assert major == {"gym_q", "subway_poi", "parking_q", "has_daycare", "elem_school"}, major
     # long-tail은 major=False(기본 칩 미노출·NL 도달) — 카탈로그엔 여전히 존재(드리프트 0).
-    for qid in ("elem_school", "conv_poi", "has_daycare", "cctv", "park_poi", "pet_q"):
+    for qid in ("mid_school", "conv_poi", "cctv", "park_poi", "pet_q"):
         assert qid in qf and qf[qid]["major"] is False, qid
     # 신규 메이저 퀵필터 parking_q 배선(hard parking_ratio_gte=1.0)
     assert qf["parking_q"]["apply"] == "hard"

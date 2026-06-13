@@ -48,17 +48,52 @@ test("filter-trim: 기본 칩 = 메이저만(+고정) · long-tail 칩 없음 ·
     .poll(() => (bodies.at(-1) as { soft?: { gym?: string } })?.soft?.gym)
     .toBe("preferred");
 
-  // ★ long-tail 칩은 기본 노출 안 됨(어린이집·초등·편의점·CCTV·공원) — REGISTRY엔 있으나 칩 미렌더.
-  for (const id of ["chip-has_daycare", "chip-elem_school", "chip-conv_poi", "chip-cctv", "chip-park_poi"]) {
+  // B 어맨드: 어린이집·초등도 메이저 칩(5칩) — 노출 확인.
+  await expect(page.getByTestId("chip-has_daycare")).toBeVisible();
+  await expect(page.getByTestId("chip-elem_school")).toBeVisible();
+
+  // ★ long-tail 칩은 기본 노출 안 됨(편의점·CCTV·공원) — REGISTRY엔 있으나 칩 미렌더.
+  for (const id of ["chip-conv_poi", "chip-cctv", "chip-park_poi"]) {
     await expect(page.getByTestId(id)).toHaveCount(0);
   }
 
   // long-tail 도달 경로(NL 안내) 표면화.
-  await expect(page.getByTestId("nl-hint")).toContainText("어린이집");
   await expect(page.getByTestId("nl-hint")).toContainText("공원");
 
   // ResultList 뱃지: criteria_eval 값 포맷은 그대로(칩 trim과 무관·표시 전용).
   const card = page.getByTestId("result-item").first();
   await expect(card).toContainText("초등학교 거리 75m");
   await expect(card).toContainText("편의점 12");
+});
+
+// filter-trim-amend (C): 주택유형 고정 컨트롤 — 기존 spec.property_type 하드필터 경로 재사용(라운드트립).
+test("주택유형 컨트롤: 선택→spec.property_type · 전체→필터 제거 (NL과 동일 필드)", async ({ page }) => {
+  const bodies: Record<string, unknown>[] = [];
+  await page.route("**/complexes/search", (route) => {
+    bodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    route.fulfill({ json: CAND });
+  });
+  await page.route("**/complexes/markers", (route) => route.fulfill({ json: { mode: "markers", markers: [], clusters: [] } }));
+  await page.goto("/", { waitUntil: "networkidle" });
+
+  // 기본 = 전체(필터 없음).
+  await expect(page.getByTestId("property-type-all")).toHaveAttribute("aria-pressed", "true");
+
+  // 오피스텔 선택 → spec.property_type=officetel(NL "오피스텔"과 동일 필드).
+  await page.getByTestId("property-type-officetel").click();
+  await expect
+    .poll(() => (bodies.at(-1) as { property_type?: string })?.property_type)
+    .toBe("officetel");
+
+  // 빌라/연립 → rowhouse.
+  await page.getByTestId("property-type-rowhouse").click();
+  await expect
+    .poll(() => (bodies.at(-1) as { property_type?: string })?.property_type)
+    .toBe("rowhouse");
+
+  // 전체 → property_type 제거(필터 없음·라운드트립).
+  await page.getByTestId("property-type-all").click();
+  await expect
+    .poll(() => (bodies.at(-1) as { property_type?: string })?.property_type ?? null)
+    .toBe(null);
 });
