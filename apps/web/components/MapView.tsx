@@ -26,12 +26,15 @@ export function MapView({
   loading,
   onBoundsChange,
   onSelectId,
+  panTo,
 }: {
   feed: MarkerFeed; // server-marker-clustering: mode=markers(개별) 또는 clusters(grid 집계)
   selectedId: string | null;
   loading: boolean;
   onBoundsChange: (bbox: Bbox, level: number) => void; // level=줌(클러스터 행정단위 구/동 선택)
   onSelectId: (complexId: string) => void;
+  // E5-2: 채팅 단지 참조 클릭 → 그 단지 좌표로 지도 이동(setCenter 재사용). nonce로 동일 좌표 재클릭도 발화.
+  panTo?: { lat: number; lng: number; nonce: number } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
@@ -225,6 +228,15 @@ export function MapView({
     renderMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed, selectedId, ready]);
+
+  // E5-2: 채팅 단지 참조 클릭 → setCenter(panTo). nonce 변경마다 발화(동일 좌표 재클릭도 이동).
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map || !panTo) return;
+    map.setCenter(new maps.LatLng(panTo.lat, panTo.lng));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panTo?.nonce, ready]);
 
   return (
     <div data-testid="map-container" style={{ position: "absolute", inset: 0 }}>

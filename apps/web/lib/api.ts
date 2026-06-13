@@ -3,6 +3,8 @@
 import type {
   Bbox,
   Candidate,
+  ChatResult,
+  ChatTurn,
   CriteriaResponse,
   EnrichmentResponse,
   HardFilterSpec,
@@ -71,6 +73,24 @@ export async function fetchReputation(
   );
   if (!res.ok) throw new Error(`reputation failed: ${res.status}`);
   return (await res.json()) as ReputationResponse;
+}
+
+/** 대화형 에이전트 (E5-2) — POST /chat { message, history, context(spec+bbox) } → grounded 답변.
+ *  멀티턴: 호출부가 누적 history 전달(백엔드 무상태). graceful: 실패는 throw(호출부 인라인 에러). */
+export async function chat(
+  message: string,
+  history: ChatTurn[],
+  context: HardFilterSpec,
+  signal?: AbortSignal,
+): Promise<ChatResult> {
+  const res = await fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history, context }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`chat failed: ${res.status}`);
+  return (await res.json()) as ChatResult;
 }
 
 /** 자연어 질의 → 레지스트리-grounded spec + 감지칩 + 매핑불가 + 랭크 후보(#3b).

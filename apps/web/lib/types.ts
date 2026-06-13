@@ -333,6 +333,24 @@ export interface Detected {
   phrase?: string | null;
 }
 
+// 대화형 에이전트(E5-2) — POST /chat 계약(E5-1 백엔드와 동형).
+export interface ChatTurn {
+  role: "user" | "assistant"; // 백엔드 history 스레딩용(에이전트 턴은 "assistant")
+  content: string;
+}
+export interface ChatCitation {
+  source_type: string;
+  source_url: string;
+  span_ref?: string | null;
+  snippet?: string | null;
+}
+export interface ChatResult {
+  answer: string; // 근거 prose
+  referenced_complexes: string[]; // 답변 언급 단지(실 complex_id) — 클릭→지도+detail
+  citations: ChatCitation[]; // 주장 근거(기존 provenance)
+  updated_spec: HardFilterSpec | null; // 메시지가 필터 바꿨으면(아니면 null·필터/지도 불변)
+}
+
 // NL 검색 응답(#3b) — backend NlSearchResponse와 동형.
 // spec=확정 filter_spec(투명성·칩 재료) · detected=감지칩 · unsupported=매핑 불가 · candidates=랭크.
 export interface NlSearchResponse {
