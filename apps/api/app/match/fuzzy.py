@@ -6,6 +6,7 @@ recall은 후속(지번 매칭·동 cross-spelling)으로 개선 여지.
 
 from __future__ import annotations
 
+from collections import Counter
 from difflib import SequenceMatcher
 
 from .normalize import name_numbers, normalize_name, normalize_school_name
@@ -14,6 +15,21 @@ from .normalize import name_numbers, normalize_name, normalize_school_name
 DEFAULT_THRESHOLD = 0.85
 DEFAULT_AMBIGUITY_GAP = 0.05
 _CONTAINMENT_SCORE = 0.9
+
+
+def _token_ratio(query: str, candidate: str) -> float:
+    """순서 무관 문자-멀티셋(bag) Dice 비율 0..1 — 재배열/접두접미 위치차로 SequenceMatcher
+    순차비율이 깎이는 **동일 단지명**을 보강한다(join-recovery #6-①).
+
+    예: "마을현대2단지" vs "현대2단지마을"(블록 재배열) — 순차비율은 ~0.71로 임계 미달이나
+    문자 구성은 동일 → bag Dice 1.0. similarity가 **번호가드 통과 후** max로만 합치므로
+    차/단지 구분(번호 disjoint→0.0)은 불변이고 점수는 절대 낮아지지 않는다(monotonic-up).
+    길이차가 크면 분모가 커져 Dice가 깎인다("청담대림이편한세상"⊃"청담대림"=0.615<0.85 유지).
+    """
+    if not query or not candidate:
+        return 0.0
+    overlap = sum((Counter(query) & Counter(candidate)).values())
+    return 2 * overlap / (len(query) + len(candidate))
 
 
 def similarity(query_raw: str, candidate_raw: str) -> float:
@@ -35,7 +51,12 @@ def similarity(query_raw: str, candidate_raw: str) -> float:
     nq, nc = name_numbers(query), name_numbers(candidate)
     if nq and nc and nq.isdisjoint(nc):
         return 0.0
-    base = SequenceMatcher(None, query, candidate).ratio()
+    # 번호가드 통과 후에만 합산 — 차/단지 disjoint는 위에서 이미 0.0으로 거절됨.
+    # 순차비율(블록 순서 민감)과 문자-bag 비율(순서 무관)의 max → monotonic-up(점수 안 낮춤).
+    base = max(
+        SequenceMatcher(None, query, candidate).ratio(),
+        _token_ratio(query, candidate),
+    )
     if len(query) >= 2 and query in candidate:
         base = max(base, _CONTAINMENT_SCORE)
     return base

@@ -233,8 +233,10 @@ def test_jibun_number_guard_rejects_different_cha_same_lot() -> None:
 
 def test_jibun_parsefix_trailing_dash_enables_rescue() -> None:
     # K-apt 주소가 "본번-"(빈 부번)이라 지번 파싱 실패 → 지번 peer 없음 → 회수 불가였던 단지.
-    # 실데이터 쌍(목동우성3 → 목동3차우성아파트, 이름 유사도 0.727): 이름 path는 임계(0.85) 미달
-    # 이라 무매치, 지번(338)만이 회수 경로. 파싱 fix로 단지 지번이 떨어져야 단일 점유 회수(P2-4).
+    # 쌍(목동우성 → 목동3차우성아파트, 이름 유사도 0.80): 이름 path는 임계(0.85) 미달이라 무매치,
+    # 지번(338)만이 회수 경로. 파싱 fix로 단지 지번이 떨어져야 단일 점유 회수(P2-4).
+    # (join-recovery #6-①: 번호까지 든 "목동우성3"은 토큰-인지 보강으로 이름 path가 직접 회수하므로
+    #  지번 rescue 데모는 번호 없는 "목동우성"=0.80<0.85로 유지 — 지번 경로 커버리지 보존.)
     conn = get_connection(":memory:")
     init_db(conn)
     conn.execute(
@@ -243,14 +245,32 @@ def test_jibun_parsefix_trailing_dash_enables_rescue() -> None:
     )
     conn.execute(
         'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code, jibun) VALUES '
-        "('T1', '목동우성3', '목동', '1147010200', '338')"
+        "('T1', '목동우성', '목동', '1147010200', '338')"
     )
     conn.commit()
-    # 이름 path만으론 무매치(0.727 < 0.85 임계) — 포함관계도 아님(어순 차이).
+    # 이름 path만으론 무매치(0.80 < 0.85 임계) — 포함관계도 아님(중간 '3차').
     assert backfill_matches(conn, use_jibun=False)["matched"] == 0
     assert _complex_id(conn, "T1") is None
-    # 지번 ON: 파싱 fix가 단지 지번 338을 만들어 단일 점유 회수(이름 0.727 ≥ floor 0.70).
+    # 지번 ON: 파싱 fix가 단지 지번 338을 만들어 단일 점유 회수(이름 0.80 ≥ floor 0.70).
     conn.execute('UPDATE "transaction" SET complex_id = NULL, match_confidence = NULL')
+    conn.commit()
+    assert backfill_matches(conn, use_jibun=True)["matched"] == 1
+    assert _complex_id(conn, "T1") == "C1"
+
+
+def test_token_aware_name_recovers_reordered_with_number() -> None:
+    # join-recovery #6-①: "목동우성3"↔"목동3차우성아파트"(번호 3 일치·블록 재배열) — 토큰-인지
+    # 유사도가 이름 path만으로 직접 회수(지번 불요). monotonic-up·번호가드 통과 후 회수.
+    conn = get_connection(":memory:")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO complex (complex_id, name, bjd_code, legal_addr) VALUES "
+        "('C1', '목동3차우성아파트', '1147010200', '서울특별시 양천구 목동 338 목동3차우성아파트')"
+    )
+    conn.execute(
+        'INSERT INTO "transaction" (txn_id, apt_name_raw, legal_dong, bjd_code, jibun) VALUES '
+        "('T1', '목동우성3', '목동', '1147010200', '999')"  # 지번 불일치 → 이름 path만이 경로
+    )
     conn.commit()
     assert backfill_matches(conn, use_jibun=True)["matched"] == 1
     assert _complex_id(conn, "T1") == "C1"
