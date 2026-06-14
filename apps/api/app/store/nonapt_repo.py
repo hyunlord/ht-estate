@@ -18,7 +18,9 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 import httpx
 
@@ -28,7 +30,6 @@ from app.sources.molit_nonapt import (
     NonAptKind,
     NonAptRentTrade,
     NonAptSaleTrade,
-    NonAptTradeBase,
     fetch_nonapt_rent,
     fetch_nonapt_sale,
 )
@@ -36,7 +37,32 @@ from app.store.regions import sigungu_label
 from app.throttle import Throttle
 
 
-def building_key(trade: NonAptTradeBase) -> str:
+class BuildingTradeLike(Protocol):
+    """building_key·geocode·건물 upsert가 읽는 거래 필드(구조적·duck-typed).
+
+    NonAptTradeBase·DerivedAptTrade가 구조적으로 충족. property_type[:2]가 키 접두 —
+    rowhouse→ro·officetel→of·apartment→ap(K-apt 단지코드[콜론 없음]와 구분).
+    """
+
+    # read-only property로 선언 — 공변(covariant). 가변 속성 protocol은 불변이라 NonAptKind(Literal)
+    # 같은 str 서브타입이 비할당됨 → property로 회피(NonAptTradeBase·DerivedAptTrade 충족).
+    @property
+    def property_type(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def legal_dong(self) -> str: ...
+    @property
+    def jibun(self) -> str | None: ...
+    @property
+    def sgg_cd(self) -> str | None: ...
+    @property
+    def sgg_nm(self) -> str | None: ...
+    @property
+    def build_year(self) -> int | None: ...
+
+
+def building_key(trade: BuildingTradeLike) -> str:
     """거래 → 결정론 PNU식 건물 키(complex_id). 같은 건물의 여러 거래는 같은 키(멱등)."""
     jibun_c = to_canonical(from_molit(None, None, trade.jibun)) or "?"
     name_n = normalize_name(trade.name) or "?"
@@ -44,7 +70,7 @@ def building_key(trade: NonAptTradeBase) -> str:
     return ":".join(parts)
 
 
-def _geocodable_addr(trade: NonAptTradeBase) -> str:
+def _geocodable_addr(trade: BuildingTradeLike) -> str:
     """geocode용 지번 주소 — '시도 시군구 법정동 지번'. backfill_coords가 road_addr로 처리.
 
     roadNm이 없어 '법정동 지번'만이면 동/구명 전국 중복 시 Kakao가 타도시로 오지오코딩한다
@@ -63,7 +89,7 @@ _BUILDING_COLS = (
 
 
 def upsert_nonapt_building(
-    conn: sqlite3.Connection, trade: NonAptTradeBase, *, updated_at: datetime | None = None
+    conn: sqlite3.Connection, trade: BuildingTradeLike, *, updated_at: datetime | None = None
 ) -> str:
     """도출 건물 → complex 행 upsert(멱등). building_key 반환. lat/lng/geo는 보존(미갱신)."""
     when = (updated_at or datetime.now(UTC)).isoformat()
@@ -87,6 +113,54 @@ def upsert_nonapt_building(
         values,
     )
     return key
+
+
+# building-add(#6-③B): orphan 아파트 거래(transaction/rent_transaction 행)를 미등재 건물로 도출.
+# K-apt fuzzy join 미스(complex_id NULL)를 nonapt식 결정론 키로 건물화 — property_type='apartment'·
+# complex_id 'ap:' 접두(K-apt 단지코드[콜론 없음]·ro:/of:와 구분). 지문 re-baseline이 K-apt 서브셋
+# 무드리프트를 ap: 제외로 증명 가능. building_key/upsert_nonapt_building을 그대로 재사용(동형).
+@dataclass(frozen=True)
+class DerivedAptTrade:
+    """orphan 아파트 거래 → 건물 도출 trade(BuildingTradeLike 충족). 결손이면 도출불가(천장)."""
+
+    name: str
+    legal_dong: str
+    jibun: str | None
+    sgg_cd: str | None
+    build_year: int | None
+    property_type: str = "apartment"
+    sgg_nm: str | None = None
+
+    @classmethod
+    def from_txn_row(cls, row: sqlite3.Row) -> DerivedAptTrade:
+        """txn/rent_transaction 행(apt_name_raw·bjd_code·legal_dong·jibun·build_year) → trade."""
+        bjd = row["bjd_code"]
+        return cls(
+            name=row["apt_name_raw"] or "",
+            legal_dong=row["legal_dong"] or "",
+            jibun=row["jibun"],
+            sgg_cd=bjd[:5] if bjd and len(bjd) >= 5 else None,
+            build_year=row["build_year"],
+        )
+
+
+def is_derivable_apt(row: sqlite3.Row) -> bool:
+    """orphan 행이 비-degenerate 건물키 산출 가능한가(jibun 캐논·정규화명·sgg 모두 존재).
+
+    도출불가(전월세 jibun/bjd 결손 등)는 NULL 유지 — 억지 생성 금지(missing=keep·천장 수용).
+    """
+    if not (row["apt_name_raw"] and normalize_name(row["apt_name_raw"])):
+        return False
+    if not (row["bjd_code"] and len(row["bjd_code"]) >= 5):
+        return False
+    return to_canonical(from_molit(None, None, row["jibun"])) is not None
+
+
+def upsert_apartment_building(
+    conn: sqlite3.Connection, trade: DerivedAptTrade, *, updated_at: datetime | None = None
+) -> str:
+    """도출 아파트 건물 → thin complex 행 upsert(geo 보존·멱등). upsert_nonapt_building 재사용."""
+    return upsert_nonapt_building(conn, trade, updated_at=updated_at)
 
 
 def make_nonapt_rent_txn_id(trade: NonAptRentTrade) -> str:
