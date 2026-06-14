@@ -3,12 +3,17 @@
 enrich/적재가 아파트 lat/lng를 건드리지 않았음을 before==after로 증명하는 결정론 지문.
 지문 = `sha256( "complex_id|lat|lng" 줄들, property_type='apartment', ORDER BY complex_id )[:16]`.
 
-표준 베이스라인 **163df7cd7e6a3cc2**(아파트 22,028, fba2fb1 시점). 과거 의뢰서의
-`4907f64de2b44fed`는 산출 레시피가 문서/코드에 없어 재현 불가 → 이 코드화 지문으로 대체·표준화.
+표준 베이스라인 **e190614fa353cbcf**(아파트 41,691, #6-③B building-add 후). K-apt 마스터
+22,028 서브셋은 `--kapt-only`로 **163df7cd7e6a3cc2** 무드리프트 유지(좌표 무접촉 증명).
 
-    uv run python scripts/geocode_fingerprint.py                       # 현재 지문 출력
-    uv run python scripts/geocode_fingerprint.py --db path/to.db       # 지정 DB
-    uv run python scripts/geocode_fingerprint.py --expect 163df7cd7e6a3cc2  # 불변검증(exit1=불일치)
+전환 기록(C98·#6-③B building-add): `163df7cd7e6a3cc2`(apt 22,028) → `e190614fa353cbcf`
+(apt 41,691). 사유: 거래-도출 아파트 +19,663(`ap:` 접두·19,614 지오코딩·49 무결과 NULL) 추가로
+complex 172,879 → 192,542·apartment 22,028 → 41,691. 기존 K-apt 좌표는 무드리프트(`--kapt-only`
+== 163df7cd7e6a3cc2 불변). 과거 `4907f64de2b44fed`(레시피 부재 재현불가)는 163df7로 대체됐었음.
+
+    uv run python scripts/geocode_fingerprint.py                          # 현재 전체 지문
+    uv run python scripts/geocode_fingerprint.py --expect e190614fa353cbcf  # 전체 불변검증
+    uv run python scripts/geocode_fingerprint.py --kapt-only --expect 163df7cd7e6a3cc2
 """
 
 from __future__ import annotations
@@ -21,8 +26,11 @@ import _bootstrap  # noqa: F401  (apps/api를 sys.path에)
 
 from app.store.db import DEFAULT_DB_PATH, get_connection
 
-# 베이스라인 — fba2fb1(enrich-1) 시점 아파트 22,028 좌표. enrich는 좌표 무접촉이라 불변이어야 함.
-BASELINE = "163df7cd7e6a3cc2"
+# 베이스라인 — #6-③B building-add 후 아파트 41,691(K-apt 22,028 + 도출 ap: 19,663). enrich/적재는
+# 좌표 무접촉이라 불변이어야 함. K-apt 서브셋 무드리프트는 --kapt-only(== KAPT_BASELINE)로 검증.
+BASELINE = "e190614fa353cbcf"
+# K-apt 마스터 22,028 서브셋(콜론 없는 단지코드) 무드리프트 floor — building-add 전반 불변(C98).
+KAPT_BASELINE = "163df7cd7e6a3cc2"
 
 
 def geocode_fingerprint(conn: sqlite3.Connection, *, kapt_only: bool = False) -> tuple[str, int]:
