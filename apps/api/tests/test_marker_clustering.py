@@ -13,7 +13,7 @@ import sqlite3
 
 from app.search.repo import L_DONG, L_SIDO, L_SIGUNGU, search_marker_feed
 from app.search.spec import HardFilterSpec
-from app.store.db import _backfill_dong, get_connection, init_db
+from app.store.db import _backfill_dong, _backfill_region, get_connection, init_db
 
 # 강남(저 A-id)·부천(고 ro:/of:-id) 두 구역을 가진 bbox.
 WIDE = {"min_lat": 37.40, "max_lat": 37.56, "min_lng": 126.74, "max_lng": 127.10}
@@ -294,3 +294,38 @@ def test_cluster_ppp_is_region_representative_average() -> None:
     expected = ((100000 * SQM_PER_PYEONG / 100) + (200000 * SQM_PER_PYEONG / 100)) / 2
     assert cl.ppp is not None and abs(cl.ppp - expected) < 1e-6
     assert cl.count == 12  # 카운트엔 거래없는 패딩도 포함(완전)
+
+
+# ── region-normalize(#6-②): sido 백필 + bjd authoritative sigungu 교정 ──
+def test_backfill_region_sido_and_sigungu() -> None:
+    conn = _conn()
+    cols = ("complex_id, name, sido, sigungu, bjd_code, road_addr, legal_addr, "
+            "property_type, lat, lng")
+    conn.executemany(
+        f"INSERT INTO complex ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            # (a) bjd-present·sido 빈·sigungu bare("용인시") → sido 채움+sigungu 일반구 교정.
+            ("C1", "c1", None, "용인시", "4146100000", "",
+             "경기도 용인시 처인구 ...", "apartment", 37.2, 127.2),
+            # (b) bjd-present 통합시 일반구 머지형 — CSV canonical이라 sigungu 불변.
+            ("C2", "c2", None, "안산상록구", "4127100000", "",
+             "경기도 안산상록구 일동 ...", "apartment", 37.3, 126.8),
+            # (c) bjd-absent·sido 빈·주소 변종("강원") → canonical_sido 매핑.
+            ("C3", "c3", None, "춘천시", None, "", "강원 춘천시 ...", "rowhouse", 37.8, 127.7),
+            # (d) bjd-absent·주소 없음 → sido 소스 없음 → NULL 유지.
+            ("C4", "c4", None, None, None, "", "", "officetel", 37.5, 127.0),
+        ],
+    )
+    conn.commit()
+    res = _backfill_region(conn)
+    got = {
+        r["complex_id"]: (r["sido"], r["sigungu"])
+        for r in conn.execute("SELECT complex_id, sido, sigungu FROM complex")
+    }
+    assert got["C1"] == ("경기도", "용인처인구")  # bjd authoritative: bare 시 → 일반구
+    assert got["C2"] == ("경기도", "안산상록구")  # 머지형 = CSV canonical → 불변(임의 시삽입 X)
+    assert got["C3"][0] == "강원특별자치도"  # 변종 정규화
+    assert got["C4"] == (None, None)  # 소스 없음 → NULL 유지
+    assert res["sido_filled"] == 3 and res["sigungu_fixed"] == 1
+    # 멱등: 재실행 0/0.
+    assert _backfill_region(conn) == {"sido_filled": 0, "sigungu_fixed": 0}

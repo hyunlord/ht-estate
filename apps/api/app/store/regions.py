@@ -43,6 +43,59 @@ def sigungu_label(sgg_cd: str | None) -> str | None:
     return _sgg_map().get(sgg_cd.strip())
 
 
+# region-normalize(#6-②): 시군구코드 → (sido, sigungu) 구조화 룩업 + 시도 변종 정규화.
+# sigungu_kr.csv가 진실원천(CSV의 sigungu가 통합시 일반구 머지형 "용인처인구"·공백 없음).
+@lru_cache(maxsize=1)
+def _sgg_region_map() -> dict[str, tuple[str, str]]:
+    """시군구코드 → (sido, sigungu) — CSV authoritative. 비면 빈 맵."""
+    out: dict[str, tuple[str, str]] = {}
+    if not _REGIONS_CSV.exists():
+        return out
+    with _REGIONS_CSV.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            code = (row.get("code") or "").strip()
+            sido = (row.get("sido") or "").strip()
+            sigungu = (row.get("sigungu") or "").strip()
+            if code and sido:
+                out[code] = (sido, sigungu)
+    return out
+
+
+@lru_cache(maxsize=1)
+def _sido_set() -> frozenset[str]:
+    """CSV canonical 시도명 집합 — canonical_sido가 '정규화 결과가 CSV에 있나' 검증에 씀."""
+    return frozenset(sido for sido, _ in _sgg_region_map().values())
+
+
+# 도명변경 변종 → CSV canonical(2024 특별자치 전환 등). **임의 시삽입 아님** — 명시 매핑만.
+# canonical_sido는 결과가 CSV 집합에 있을 때만 반환(미매칭 변종은 None → 백필이 NULL 유지·§9 보고).
+_SIDO_VARIANTS = {
+    "강원": "강원특별자치도", "강원도": "강원특별자치도",
+    "전북": "전북특별자치도", "전라북도": "전북특별자치도",
+    "제주": "제주특별자치도", "제주도": "제주특별자치도",
+    "세종": "세종특별자치시", "세종시": "세종특별자치시",
+}
+
+
+def region_by_code(sgg_cd: str | None) -> tuple[str, str] | None:
+    """5자리 시군구코드 → (sido, sigungu) CSV canonical. 미매핑/None이면 None."""
+    if not sgg_cd:
+        return None
+    return _sgg_region_map().get(sgg_cd.strip())
+
+
+def canonical_sido(raw: str | None) -> str | None:
+    """파싱한 시도 변종을 CSV canonical로. CSV에 이미 있으면 그대로, 알려진 변종이면 매핑,
+    그 외(미매칭)는 None(억지 정규화 금지 — 백필이 NULL 유지하고 §9에 보고)."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s in _sido_set():
+        return s
+    mapped = _SIDO_VARIANTS.get(s)
+    return mapped if mapped and mapped in _sido_set() else None
+
+
 @lru_cache(maxsize=1)
 def _bjdong_map() -> dict[tuple[str, str], str]:
     """(sgg_cd, 법정동명) → bjdongCd(5자리)(1회 로드·캐시). CSV 없으면 빈 맵(미enrich)."""

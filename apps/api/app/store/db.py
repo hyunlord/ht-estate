@@ -92,6 +92,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE complex SET property_type = 'apartment' WHERE property_type IS NULL")
     _backfill_sigungu(conn)  # initial-load-perf: 클러스터 라벨 시군구 — 주소 파싱→컬럼(핫쿼리 가속)
     _backfill_dong(conn)  # region-clustering: 동 레벨 클러스터 키 — legal_addr→dong(extract_dong)
+    _backfill_region(conn)  # region-normalize(#6-②): sido 백필 + bjd authoritative sigungu 교정
     conn.commit()
     # pipeline-state: 적재기 자기서술 원장 부트스트랩(provenance서 출생/진행 유도·멱등·META만).
     # 비치명(실패해도 init_db 무중단) — canonical 작업은 위에서 이미 커밋됨.
@@ -139,3 +140,42 @@ def _backfill_dong(conn: sqlite3.Connection) -> int:
     if updates:
         conn.executemany("UPDATE complex SET dong = ? WHERE complex_id = ?", updates)
     return len(updates)
+
+
+# region-normalize(#6-②): sido 백필(현 0행) + bjd_code authoritative sigungu 교정. sigungu_kr.csv가
+# 진실원천. 우선순위: bjd_code 있으면 sgg_cd(bjd_code[:5])→CSV canonical(변종 0·아파트), 없으면
+# 주소 첫토큰→canonical_sido(강원→강원특별자치도 등 명시 변종맵·CSV 미매칭은 NULL 유지). sigungu는
+# bjd 있는 행만 CSV로 교정(bare 시 "용인시"→일반구 "용인처인구"·parse 불완전 보정) — 통합시 일반구
+# 머지형("안산상록구")은 CSV canonical이라 그대로(임의 시삽입 금지). region 컬럼만 UPDATE → 좌표/행
+# 무접촉(지문/counts 불변)·멱등(빈 sido만·이미 canonical인 sigungu는 동일값이라 무변경).
+def _backfill_region(conn: sqlite3.Connection) -> dict[str, int]:
+    """sido 백필 + bjd authoritative sigungu 교정(region 컬럼만·멱등)."""
+    from app.store.regions import canonical_sido, region_by_code
+
+    # 레거시 테이블 방어 — sido/bjd_code 등 base 컬럼이 없는 구 스키마면 no-op(init_db 안전).
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(complex)")}
+    if not {"sido", "sigungu", "bjd_code", "road_addr", "legal_addr"} <= cols:
+        return {"sido_filled": 0, "sigungu_fixed": 0}
+
+    rows = conn.execute(
+        "SELECT complex_id, sido, sigungu, bjd_code, "
+        "COALESCE(NULLIF(road_addr, ''), legal_addr, '') AS addr FROM complex"
+    ).fetchall()
+    sido_updates: list[tuple[str, str]] = []
+    sgg_updates: list[tuple[str, str]] = []
+    for r in rows:
+        cid = r["complex_id"]
+        bjd = r["bjd_code"]
+        reg = region_by_code(bjd[:5]) if bjd and len(bjd) >= 5 else None
+        if not (r["sido"] or "").strip():  # sido: 빈 행만(멱등)
+            parsed = canonical_sido(r["addr"].split(" ", 1)[0]) if r["addr"] else None
+            sido = reg[0] if reg else parsed
+            if sido:
+                sido_updates.append((sido, cid))
+        if reg and reg[1] and (r["sigungu"] or "") != reg[1]:  # sigungu: bjd authoritative 교정
+            sgg_updates.append((reg[1], cid))
+    if sido_updates:
+        conn.executemany("UPDATE complex SET sido = ? WHERE complex_id = ?", sido_updates)
+    if sgg_updates:
+        conn.executemany("UPDATE complex SET sigungu = ? WHERE complex_id = ?", sgg_updates)
+    return {"sido_filled": len(sido_updates), "sigungu_fixed": len(sgg_updates)}
