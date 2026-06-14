@@ -17,8 +17,14 @@ from app.throttle import Throttle
 
 Geocode = Callable[[str], tuple[float, float] | None]
 
-# 비-아파트 도출 건물(바운드 geocode 대상). 아파트는 backfill_coords(공유)가 처리 — 무접촉.
+# 비-아파트 도출 건물(바운드 geocode 대상). #6-③B: 거래-도출 아파트(ap: 콜론 키)도 포함.
+# 마스터 K-apt(콜론 없는 단지코드)는 제외 → 기존 K-apt 좌표 무접촉(--kapt-only 무드리프트 보존).
+# backfill_coords(글로벌·type 무필터)는 K-apt NULL도 건드려 floor 위험 → 도출 건물은 이 경로로.
 _NONAPT_TYPES = ("rowhouse", "officetel")
+_DERIVED_GEOCODE_FILTER = (
+    f"(property_type IN ({', '.join(repr(t) for t in _NONAPT_TYPES)}) "
+    "OR (property_type = 'apartment' AND complex_id LIKE 'ap:%'))"
+)
 # 도심 우선 — 메트로가 nonapt 건물의 ~90%(서울·경기·인천·부산…) → 핵심 좌표를 먼저 확보.
 # 시도코드(complex_id `pt:sgg:…`의 sgg 앞2)로 정렬. GLOB '??:NN*'로 안정 추출(substr 비의존).
 _CITY_FIRST = ("11", "41", "28", "26", "27", "30", "29", "31", "36")
@@ -50,12 +56,11 @@ def geocode_nonapt_pending(
     {geocoded, considered, remaining, stopped} 반환(stopped: 1=Kakao 에러 중단, 0=정상).
     """
     when = (updated_at or datetime.now(UTC)).isoformat()
-    types_ph = ",".join("?" * len(_NONAPT_TYPES))
     rows = conn.execute(
         f"SELECT complex_id, road_addr FROM complex "
-        f"WHERE lat IS NULL AND road_addr IS NOT NULL AND property_type IN ({types_ph}) "
+        f"WHERE lat IS NULL AND road_addr IS NOT NULL AND {_DERIVED_GEOCODE_FILTER} "
         f"ORDER BY {_city_first_order()} LIMIT ?",
-        (*_NONAPT_TYPES, limit),
+        (limit,),
     ).fetchall()
 
     geocoded = 0
@@ -82,8 +87,7 @@ def geocode_nonapt_pending(
 
     remaining = conn.execute(
         f"SELECT COUNT(*) FROM complex WHERE lat IS NULL AND road_addr IS NOT NULL "
-        f"AND property_type IN ({types_ph})",
-        _NONAPT_TYPES,
+        f"AND {_DERIVED_GEOCODE_FILTER}"
     ).fetchone()[0]
     return {
         "geocoded": geocoded,

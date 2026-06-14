@@ -42,6 +42,21 @@ def test_only_nonapt_lat_null_targeted_apartment_excluded() -> None:
     assert rh_lat == 37.5
 
 
+def test_derived_apartment_ap_prefix_targeted_kapt_master_excluded() -> None:
+    # #6-③B: 거래-도출 아파트(ap: 콜론 키)는 geocode 대상. 마스터 K-apt(콜론 없는 단지코드)는 제외
+    # → 기존 K-apt 좌표 무접촉(지문 --kapt-only 무드리프트 보존).
+    conn = _conn()
+    ap = "ap:11680:역삼동:711-1:래미안"
+    _seed(conn, ap, "apartment", "서울특별시 강남구 역삼동 711-1")  # 도출 아파트 → 대상
+    _seed(conn, "A10022731", "apartment", "서울특별시 강남구 테헤란로 1")  # 마스터 K-apt → 제외
+    res = geocode_nonapt_pending(conn, _all_geocode, limit=100, geo_source=GEO)
+    assert res["geocoded"] == 1 and res["remaining"] == 0
+    ap_lat = conn.execute("SELECT lat FROM complex WHERE complex_id=?", (ap,)).fetchone()["lat"]
+    assert ap_lat == 37.5
+    kapt = conn.execute("SELECT lat FROM complex WHERE complex_id='A10022731'").fetchone()["lat"]
+    assert kapt is None  # 마스터 K-apt 무접촉(floor)
+
+
 def test_city_first_order_seoul_before_busan() -> None:
     conn = _conn()
     _seed(conn, "ro:26110:영주동:1-1:busan", "rowhouse", "부산광역시 중구 영주동 1-1")
